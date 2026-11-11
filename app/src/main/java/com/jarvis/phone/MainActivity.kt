@@ -56,36 +56,78 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** 사용자가 고른 .litertlm 파일을 앱 내부 저장소로 복사 (약 2.6GB, 1~2분). */
+    /**
+     * 사용자가 고른 .litertlm 파일을 앱 내부 저장소로 복사 (E4B 약 3.7GB, 2~3분).
+     * 화면을 나가도 취소되지 않도록 앱 전역 스코프에서 실행.
+     */
     fun importModel(uri: Uri) {
         val ctx = getApplication<Application>()
         busy = true
-        viewModelScope.launch(Dispatchers.IO) {
+        AppScope.io.launch {
+            fun ui(block: () -> Unit) { AppScope.main.launch { block() } }
+            val tmp = java.io.File(ctx.filesDir, "model.tmp")
             try {
-                val total = ctx.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: -1L
-                val tmp = java.io.File(ctx.filesDir, "model.tmp")
-                ctx.contentResolver.openInputStream(uri)!!.use { input ->
-                    tmp.outputStream().use { out ->
-                        val buf = ByteArray(1 shl 20)
-                        var copied = 0L; var lastPct = -1
-                        while (true) {
-                            val n = input.read(buf); if (n < 0) break
-                            out.write(buf, 0, n); copied += n
-                            if (total > 0) {
-                                val pct = (copied * 100 / total).toInt()
-                                if (pct != lastPct) { lastPct = pct
-                                    withContext(Dispatchers.Main) { status = "모델 복사 중… $pct%" } }
-                            }
-                        }
+                // 1) 파일 정보 확인
+                var name = "?"; var total = -1L
+                ctx.contentResolver.query(uri, null, null, null, null)?.use { c ->
+                    if (c.moveToFirst()) {
+                        val ni = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                        val si = c.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                        if (ni >= 0) name = c.getString(ni) ?: "?"
+                        if (si >= 0 && !c.isNull(si)) total = c.getLong(si)
                     }
                 }
+                if (total <= 0) total = runCatching {
+                    ctx.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: -1L
+                }.getOrDefault(-1L)
+                ui { status = "선택한 파일: $name (${if (total > 0) "${total / 1_000_000}MB" else "크기 모름"})" }
+
+                if (name.endsWith(".crdownload") || name.endsWith(".part") || name.endsWith(".tmp"))
+                    error("아직 다운로드 중인 파일이에요. 다운로드가 끝난 뒤 다시 선택하세요.")
+                if (total in 1 until 500_000_000L)
+                    error("파일이 너무 작아요(${total / 1_000_000}MB). 모델 파일이 아니거나 다운로드가 덜 됐어요. " +
+                          "HuggingFace에서 파일 옆 다운로드(↓) 버튼으로 받은 .litertlm 파일을 선택하세요.")
+
+                // 2) 저장공간 확인 (복사본 + 여유 500MB)
+                val free = ctx.filesDir.usableSpace
+                if (total > 0 && free < total + 500_000_000L)
+                    error("저장공간 부족: 필요 ${(total + 500_000_000L) / 1_000_000}MB, 남은 공간 ${free / 1_000_000}MB")
+
+                // 3) 복사
+                tmp.delete()
+                val input = ctx.contentResolver.openInputStream(uri)
+                    ?: error("파일을 열 수 없어요. '내 파일' 앱 → 다운로드 폴더에서 다시 선택해 보세요.")
+                var copied = 0L
+                input.use { inp ->
+                    java.io.FileOutputStream(tmp).use { out ->
+                        val buf = ByteArray(4 shl 20)
+                        var lastPct = -1
+                        while (true) {
+                            val n = inp.read(buf); if (n < 0) break
+                            out.write(buf, 0, n); copied += n
+                            val pct = if (total > 0) (copied * 100 / total).toInt() else -1
+                            if (pct != lastPct) { lastPct = pct
+                                val mb = copied / 1_000_000
+                                ui { status = if (pct >= 0) "모델 복사 중… $pct%" else "모델 복사 중… ${mb}MB" } }
+                        }
+                        out.fd.sync()
+                    }
+                }
+                if (total > 0 && copied != total)
+                    error("복사가 중간에 끊겼어요 (${copied / 1_000_000}/${total / 1_000_000}MB). 다시 시도하세요.")
+
+                // 4) 기존 모델 교체
                 summarizer.close()
-                tmp.renameTo(summarizer.modelFile)
-                withContext(Dispatchers.Main) { status = "모델 준비 완료" }
+                java.nio.file.Files.move(tmp.toPath(), summarizer.modelFile.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                ui { status = "모델 준비 완료 (${copied / 1_000_000}MB)" }
             } catch (t: Throwable) {
-                withContext(Dispatchers.Main) { status = "모델 복사 실패: ${t.message}" }
+                tmp.delete()
+                val msg = if (t is IllegalStateException) t.message
+                          else "${t.javaClass.simpleName}: ${t.message}"
+                ui { status = "모델 복사 실패 — $msg" }
             } finally {
-                withContext(Dispatchers.Main) { busy = false; refresh() }
+                ui { busy = false; refresh() }
             }
         }
     }
