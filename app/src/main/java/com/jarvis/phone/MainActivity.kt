@@ -123,8 +123,14 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
                 ui { status = "모델 준비 완료 (${copied / 1_000_000}MB)" }
             } catch (t: Throwable) {
                 tmp.delete()
-                val msg = if (t is IllegalStateException) t.message
-                          else "${t.javaClass.simpleName}: ${t.message}"
+                val raw = t.message.orEmpty()
+                val msg = when {
+                    t is IllegalStateException -> raw
+                    "pending" in raw || "trashed" in raw ->
+                        "다운로드가 아직 끝나지 않았거나(또는 멈췄거나) 휴지통에 있는 파일이에요. " +
+                        "파일 선택 화면 왼쪽 메뉴(☰)에서 'Galaxy Z Fold4 → Download' 폴더로 들어가 직접 선택해 보세요."
+                    else -> "${t.javaClass.simpleName}: $raw"
+                }
                 ui { status = "모델 복사 실패 — $msg" }
             } finally {
                 ui { busy = false; refresh() }
