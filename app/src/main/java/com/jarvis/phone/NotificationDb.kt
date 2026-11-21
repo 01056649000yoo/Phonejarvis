@@ -102,6 +102,25 @@ class NotificationDb private constructor(ctx: Context) :
 
     fun today(): List<NotiItem> = since(startOfToday())
 
+    /** 최근 days일 동안 알림을 보낸 앱별 건수와 제목 예시 (많은 순). 알림 앱 정리 추천에 씀. */
+    fun appStats(days: Int = 7): List<AppStat> {
+        val from = (System.currentTimeMillis() - days * 24L * 3600 * 1000).toString()
+        val out = mutableListOf<AppStat>()
+        readableDatabase.rawQuery(
+            "SELECT pkg, MAX(app), COUNT(*) FROM noti WHERE time>=? GROUP BY pkg ORDER BY 3 DESC", arrayOf(from)
+        ).use { c ->
+            while (c.moveToNext()) {
+                val pkg = c.getString(0)
+                val samples = readableDatabase.rawQuery(
+                    "SELECT title FROM noti WHERE pkg=? AND time>=? AND title<>'' GROUP BY title ORDER BY MAX(time) DESC LIMIT 3",
+                    arrayOf(pkg, from)
+                ).use { s -> buildList { while (s.moveToNext()) add(s.getString(0)) } }
+                out += AppStat(pkg, c.getString(1), c.getInt(2), samples)
+            }
+        }
+        return out
+    }
+
     fun purgeOld(days: Int = 7) {
         val cutoff = System.currentTimeMillis() - days * 24L * 3600 * 1000
         writableDatabase.delete("noti", "time<?", arrayOf(cutoff.toString()))

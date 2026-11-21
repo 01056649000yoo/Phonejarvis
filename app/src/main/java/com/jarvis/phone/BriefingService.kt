@@ -22,7 +22,7 @@ import kotlinx.coroutines.launch
 
 /**
  * 예약 브리핑을 실행하는 포그라운드 서비스.
- * 지난 브리핑 이후(최대 24시간) 쌓인 알림을 Gemma로 요약 → DB 저장 → 결과를 알림으로 보여준다.
+ * 오늘(0시 이후) 지난 브리핑 다음에 쌓인 알림을 Gemma로 요약 → DB 저장 → 결과를 알림으로 보여준다.
  */
 class BriefingService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -31,6 +31,14 @@ class BriefingService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // 진행 알림의 "중지" 버튼
+        if (intent?.action == ACTION_STOP) {
+            Summarizer.get(this).requestStop()
+            if (running) Notifications.notify(this, Notifications.ID_PROGRESS,
+                Notifications.progress(this, "멈추는 중… 지금 하던 부분이 끝나면 멈춰요 (최대 1분)", showStop = false))
+            else stopSelf()
+            return START_NOT_STICKY
+        }
         Notifications.ensureChannels(this)
         ServiceCompat.startForeground(
             this, Notifications.ID_PROGRESS, Notifications.progress(this, "브리핑 준비 중…"),
@@ -53,6 +61,9 @@ class BriefingService : Service() {
                 }
                 Notifications.notify(this@BriefingService, Notifications.ID_RESULT,
                     Notifications.result(this@BriefingService, result.title, result.body))
+            } catch (s: Summarizer.StoppedException) {
+                Notifications.notify(this@BriefingService, Notifications.ID_RESULT,
+                    Notifications.result(this@BriefingService, "$label 중지됨", s.message ?: "중지했어요."))
             } catch (t: Throwable) {
                 Notifications.notify(this@BriefingService, Notifications.ID_RESULT,
                     Notifications.result(this@BriefingService, "$label 실패", "${t.javaClass.simpleName}: ${t.message}"))
@@ -70,20 +81,21 @@ class BriefingService : Service() {
 
     override fun onDestroy() { scope.cancel(); super.onDestroy() }
 
-    companion object { const val EXTRA_LABEL = "label" }
+    companion object {
+        const val EXTRA_LABEL = "label"
+        const val ACTION_STOP = "com.jarvis.phone.STOP_BRIEFING"
+    }
 }
 
 /** 브리핑 실행 로직 (서비스·화면 공용). */
 object Briefings {
     data class Outcome(val title: String, val body: String)
 
-    private const val DAY = 24L * 3600 * 1000
 
-    /** 지난 브리핑 이후(최대 24시간)의 알림을 요약해 저장. */
+    /** 하루 단위: 오늘 0시 이후, 지난 브리핑 다음에 온 알림만 요약해 저장 (어제 이전 알림은 넣지 않음). */
     suspend fun runSinceLast(ctx: Context, label: String, onStatus: (String) -> Unit): Outcome {
         val db = NotificationDb.get(ctx)
-        val now = System.currentTimeMillis()
-        val from = maxOf(db.lastBriefing()?.time ?: 0L, now - DAY)
+        val from = maxOf(db.lastBriefing()?.time ?: 0L, NotificationDb.startOfToday())
         return run(ctx, label, from, onStatus)
     }
 
@@ -92,7 +104,8 @@ object Briefings {
         val summarizer = Summarizer.get(ctx)
         if (!summarizer.hasModel()) return Outcome("$label 건너뜀", "AI 모델이 없어요. 쌤톡스 앱에서 모델 파일을 선택하세요.")
 
-        val items = db.since(from)
+        val excluded = AppFilter.excluded(ctx)
+        val items = db.since(from).filterNot { it.pkg in excluded }   // 설정에서 뺀 앱은 요약에서도 제외
         if (items.isEmpty()) return Outcome(label, "새로 온 알림이 없어요.")
 
         val start = System.currentTimeMillis()
@@ -124,7 +137,7 @@ object Notifications {
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
-    fun progress(ctx: Context, text: String): Notification =
+    fun progress(ctx: Context, text: String, showStop: Boolean = true): Notification =
         NotificationCompat.Builder(ctx, CH_PROGRESS)
             .setSmallIcon(R.drawable.ic_stat_ssamtox)
             .setColor(0xFF2E4A3D.toInt())
@@ -133,6 +146,14 @@ object Notifications {
             .setProgress(0, 0, true)
             .setOngoing(true)
             .setSilent(true)
+            .apply {
+                // 너무 오래 걸릴 때 알림창에서 바로 멈추기
+                if (showStop) addAction(0, "중지", PendingIntent.getService(
+                    ctx, 1,
+                    Intent(ctx, BriefingService::class.java).setAction(BriefingService.ACTION_STOP),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                ))
+            }
             .build()
 
     fun result(ctx: Context, title: String, body: String): Notification =

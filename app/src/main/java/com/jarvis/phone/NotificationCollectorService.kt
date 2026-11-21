@@ -13,6 +13,7 @@ class NotificationCollectorService : NotificationListenerService() {
         if (sbn.isOngoing) return                                          // 음악 재생, 다운로드 진행 등 상시 알림 제외
         if (n.flags and Notification.FLAG_GROUP_SUMMARY != 0) return       // "새 메시지 3개" 같은 묶음 요약 제외
         if (sbn.packageName in IGNORED_PACKAGES) return
+        if (sbn.packageName in AppFilter.excluded(this)) return            // 설정에서 '빼기'한 앱
 
         val ex = n.extras
         val title = ex.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim().orEmpty()

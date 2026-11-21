@@ -122,6 +122,72 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
 
     fun importFound(f: ModelFinder.Found) = importModel(Uri.fromFile(f.file))
 
+    // ── 탭: 브리핑(결과만) / 설정 ──
+    enum class Tab { BRIEFING, SETTINGS }
+    /** 처음 들어오면 설정 탭부터. 알림 앱 정리를 한 번 적용한 뒤에는 브리핑 탭부터. */
+    var tab by mutableStateOf(if (prefs.getBoolean("apps_setup_done", false)) Tab.BRIEFING else Tab.SETTINGS)
+
+    // ── 알림 앱 정리 (AI 추천) ──
+    var appRecs by mutableStateOf<List<AppRec>>(emptyList())
+        private set
+    var excludedApps by mutableStateOf(AppFilter.excluded(app))
+        private set
+    var aiBusy by mutableStateOf(false)
+        private set
+    private var aiDoneFor: Set<String> = emptySet()
+
+    /** 앱 목록과 규칙 추천을 바로 보여 주고, 모델이 있으면 AI 추천으로 다시 다듬음 (앱 목록이 바뀌었을 때만). */
+    fun loadApps() {
+        val ctx = getApplication<Application>()
+        viewModelScope.launch {
+            val stats = withContext(Dispatchers.IO) { db.appStats(7) }
+            val pkgs = stats.map { it.pkg }.toSet()
+            if (pkgs == aiDoneFor && appRecs.isNotEmpty()) return@launch
+            val rules = AppAdvisor.byRules(stats)
+            appRecs = rules
+            excludedApps = AppFilter.excluded(ctx)
+            if (!summarizer.hasModel() || stats.isEmpty() || aiBusy) return@launch
+            aiBusy = true
+            try {
+                appRecs = AppAdvisor.byAi(ctx, rules)
+                aiDoneFor = pkgs
+            } finally { aiBusy = false }
+        }
+    }
+
+    fun setAppKeep(pkg: String, keep: Boolean) {
+        val ctx = getApplication<Application>()
+        AppFilter.setKeep(ctx, pkg, keep)
+        excludedApps = AppFilter.excluded(ctx)
+        refresh()
+    }
+
+    /** "추천대로 적용": 한 번에 반영하고 브리핑 탭으로. */
+    fun applyAppRecs() {
+        val ctx = getApplication<Application>()
+        AppFilter.apply(ctx, appRecs)
+        excludedApps = AppFilter.excluded(ctx)
+        prefs.edit().putBoolean("apps_setup_done", true).apply()
+        val dropped = appRecs.count { !it.keep }
+        status = if (dropped > 0) "앱 ${dropped}개를 뺐어요. 이제 학교·연락 알림만 모아요." else "추천대로 적용했어요."
+        tab = Tab.BRIEFING
+        refresh()
+    }
+
+    /** 버전마다 "바뀐 점" 한 줄. 닫으면 다음 버전까지 다시 안 보임. */
+    var showWhatsNew by mutableStateOf(prefs.getString("whats_new_seen", null) != appVersion)
+        private set
+    fun closeWhatsNew() {
+        prefs.edit().putString("whats_new_seen", appVersion).apply()
+        showWhatsNew = false
+    }
+
+    /** 아직 알림이 없을 때 "나중에 할게요": 브리핑 탭으로. */
+    fun skipAppSetup() {
+        prefs.edit().putBoolean("apps_setup_done", true).apply()
+        tab = Tab.BRIEFING
+    }
+
     /** 메인 화면의 "모델 바꾸기/받기": 설치 안내의 폰 진단 단계부터 다시 보여줌. */
     fun openModelGuide() {
         onboardingStep = 1
@@ -154,9 +220,11 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         slots = readSlots()
         // 모델 받기 단계에 있으면(권한 설정에서 돌아온 경우 포함) 다운로드 폴더를 다시 찾아봄
         if (!onboardingDone && onboardingStep == 2) scanDownloads()
+        if (onboardingDone) loadApps()
         viewModelScope.launch(Dispatchers.IO) {
             db.purgeOld()
-            val items = db.today()
+            val excluded = AppFilter.excluded(ctx)
+            val items = db.today().filterNot { it.pkg in excluded }
             val last = db.lastBriefing()
             withContext(Dispatchers.Main) { todayItems = items; lastBriefing = last }
         }
@@ -259,10 +327,21 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 summary = out.body
                 lastBriefing = withContext(Dispatchers.IO) { db.lastBriefing() }
+            } catch (s: Summarizer.StoppedException) {
+                status = s.message ?: "중지했어요."
             } catch (t: Throwable) {
                 status = "요약 실패: ${t.message}"
-            } finally { busy = false }
+            } finally { busy = false; stopping = false }
         }
+    }
+
+    /** 요약이 너무 오래 걸릴 때 "중지". 지금 하던 부분이 끝나면 멈추고 그때까지 정리한 것을 보여 줌. */
+    var stopping by mutableStateOf(false)
+        private set
+    fun stopSummary() {
+        summarizer.requestStop()
+        stopping = true
+        status = "멈추는 중… 지금 하던 부분이 끝나면 멈춰요 (최대 1분)"
     }
 
     // 엔진은 예약 브리핑과 공유하므로 화면이 닫힐 때 메모리만 돌려줌
@@ -290,152 +369,3 @@ class MainActivity : ComponentActivity() {
     override fun onResume() { super.onResume(); vm.refresh() }
 }
 
-@Composable
-fun JarvisScreen(vm: JarvisViewModel) {
-    val ctx = androidx.compose.ui.platform.LocalContext.current
-    val timeFmt = remember { SimpleDateFormat("HH:mm", Locale.KOREA) }
-    val dayTimeFmt = remember { SimpleDateFormat("M/d HH:mm", Locale.KOREA) }
-
-    Column(
-        Modifier.fillMaxSize().safeDrawingPadding().padding(16.dp)
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            SsamLogo(48.dp)
-            Column {
-                Text("쌤톡스", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary)
-                Text("선생님을 위한 디지털 디톡스 · v${vm.appVersion}", style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-
-        // 1. 알림 접근 권한
-        SetupCard(
-            done = vm.listenerEnabled,
-            title = "① 알림 접근 권한",
-            desc = if (vm.listenerEnabled) "허용됨" else "다른 앱의 알림을 읽으려면 허용이 필요해요",
-            button = "설정 열기",
-        ) { ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
-
-        // 2. 모델 파일
-        SetupCard(
-            done = vm.hasModel,
-            title = "② AI 모델",
-            desc = if (vm.hasModel) "${vm.installedModel?.title ?: "직접 고른 모델"} · " +
-                       "${vm.summarizer.modelFile.length() / 1_000_000}MB"
-                   else "폰 진단 후 맞는 모델을 받아요",
-            button = if (vm.hasModel) "바꾸기" else "받기",
-            enabled = !vm.busy,
-        ) { vm.openModelGuide() }
-
-        // 3. 자동 브리핑 결과를 알림으로 받기 위한 권한 (Android 13+)
-        val notiPermLauncher = rememberLauncherForActivityResult(
-            ActivityResultContracts.RequestPermission()) { vm.refresh() }
-        SetupCard(
-            done = vm.notiPermission,
-            title = "③ 알림 표시 권한",
-            desc = if (vm.notiPermission) "허용됨" else "자동 브리핑 결과를 알림으로 받으려면 필요해요",
-            button = "허용하기",
-            enabled = !vm.notiPermission,
-        ) {
-            if (Build.VERSION.SDK_INT >= 33) notiPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            else ctx.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                .putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName))
-        }
-
-        // 4. 자동 브리핑 시간
-        Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("⏰ 자동 브리핑", fontWeight = FontWeight.Bold)
-                Text("정한 시각에 지난 브리핑 이후(최대 24시간) 알림을 요약해 알림으로 보내줘요.",
-                    style = MaterialTheme.typography.bodySmall)
-                vm.slots.forEach { s ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(s.slot.label, Modifier.weight(1f))
-                        TextButton(onClick = {
-                            TimePickerDialog(ctx, { _, h, m -> vm.setSlot(s.slot, true, h * 60 + m) },
-                                s.minute / 60, s.minute % 60, true).show()
-                        }) { Text("%02d:%02d".format(s.minute / 60, s.minute % 60)) }
-                        Switch(checked = s.on, onCheckedChange = { vm.setSlot(s.slot, it, s.minute) })
-                    }
-                }
-                OutlinedButton(
-                    onClick = { vm.briefNow() },
-                    enabled = vm.hasModel && !vm.busy,
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text("지금 브리핑 받아보기 (테스트)") }
-            }
-        }
-
-        // 5. 요약
-        Button(
-            onClick = { vm.summarizeToday() },
-            enabled = vm.hasModel && !vm.busy && vm.todayItems.isNotEmpty(),
-            modifier = Modifier.fillMaxWidth().height(56.dp)
-        ) { Text("오늘 알림 ${vm.todayItems.size}건 요약하기") }
-
-        if (vm.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-        if (vm.status.isNotEmpty()) Text(vm.status, style = MaterialTheme.typography.bodySmall)
-
-        // 브리핑 카드: 로고처럼 칠판 그린 바탕에 분필 크림 글씨
-        val briefingColors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer,
-            contentColor = MaterialTheme.colorScheme.onPrimaryContainer)
-        if (vm.summary.isNotEmpty()) {
-            Card(Modifier.fillMaxWidth(), colors = briefingColors) {
-                Text(vm.summary, Modifier.padding(16.dp), style = MaterialTheme.typography.bodyLarge)
-            }
-        } else vm.lastBriefing?.let { b ->
-            // 마지막 브리핑 (예약 브리핑 포함)
-            Card(Modifier.fillMaxWidth(), colors = briefingColors) {
-                Column(Modifier.padding(16.dp)) {
-                    Text("${b.label} · ${dayTimeFmt.format(b.time)} · 알림 ${b.count}건",
-                        style = MaterialTheme.typography.labelMedium)
-                    Spacer(Modifier.height(8.dp))
-                    Text(b.text, style = MaterialTheme.typography.bodyLarge)
-                }
-            }
-        }
-
-        // 수집된 원본: 디톡스 취지에 맞게 기본은 접어 두고 한 줄 요약만. 필요할 때만 펼침.
-        if (vm.todayItems.isNotEmpty()) {
-            var expanded by rememberSaveable { mutableStateOf(false) }
-            val apps = vm.todayItems.map { it.app }.distinct()
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("오늘 모은 알림 ${vm.todayItems.size}건", fontWeight = FontWeight.Bold)
-                            Text(apps.take(3).joinToString(", ") + if (apps.size > 3) " 외 ${apps.size - 3}개 앱" else "",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-                        }
-                        TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "접기" else "원본 보기") }
-                    }
-                    if (expanded) vm.todayItems.takeLast(30).reversed().forEach {
-                        Text("${timeFmt.format(it.time)} [${it.app}] ${it.title}: ${it.text}",
-                            style = MaterialTheme.typography.bodySmall, maxLines = 2)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SetupCard(
-    done: Boolean, title: String, desc: String, button: String,
-    enabled: Boolean = true, onClick: () -> Unit,
-) {
-    Card(Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(16.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text((if (done) "✅ " else "⬜ ") + title, fontWeight = FontWeight.Bold)
-                Text(desc, style = MaterialTheme.typography.bodySmall)
-            }
-            OutlinedButton(onClick = onClick, enabled = enabled) { Text(button) }
-        }
-    }
-}
