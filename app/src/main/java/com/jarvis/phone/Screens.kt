@@ -33,10 +33,13 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** 이번 버전에서 바뀐 점 한 줄 (버전 올릴 때 같이 고치기). */
-private const val WHATS_NEW = "이름 넣는 칸·알림 앱 정리를 흰 카드로 — 글자가 또렷하게 · 전화는 늘 그대로"
+private const val WHATS_NEW = "보안 점검 — 인증번호 알림은 모으지 않고, 백업 비밀번호는 6자 이상으로 더 튼튼하게"
 
 /** 업데이트 내역 큰 창 (버전 올릴 때 같이 고치기) */
 private val WHATS_NEW_DETAIL = listOf(
+    "🔐 인증번호는 모으지 않아요" to "은행·본인확인 인증번호 알림은 상태바에 그대로 두고, 쌤톡스에는 저장하지 않아요. 요약·위젯·알림 탭에도 나오지 않아요.",
+    "🔒 백업 비밀번호를 더 튼튼하게" to "새로 정하는 백업 비밀번호는 6자 이상이고 글자도 섞을 수 있어요. 예전 4~5자리 비밀번호는 그대로 쓰이지만 바꿔 달라고 알려 드려요. 예전에 만든 백업 파일도 그대로 열려요.",
+    "📵 새 폰 옮기기에서 빠져요" to "폰을 바꿀 때 자동으로 옮겨지는 데이터에 알림 내용·학생 기록이 들어가지 않게 했어요. 설정은 💾 백업(암호화)으로 옮겨요.",
     "👀 글자가 또렷하게" to "사람 묶음·학부모 명부의 이름 넣는 칸과 🌱 알림 앱 정리가 진한 초록 바탕이라 입력한 글자와 '최근 연락한 사람' 칩이 잘 안 보였어요. 흰 카드로 바꿔 또렷하게 보여요.",
     "📞 전화는 늘 그대로" to "🔇 소리도 끄기를 켜도 전화는 쌤톡스가 손대지 않아요. 누가 걸어도 평소처럼 울리고, 끄는 것은 메시지·알림 소리뿐이에요. 예전에 만든 '쌤톡스 모아 두기' 모드는 저절로 새로 바뀌어요.",
     "🐢 하단 메뉴가 멈추던 것" to "앱을 열 때마다 알림 앱 추천을 하려고 큰 AI 모델을 불러오느라 화면이 버벅였어요. 이제 AI 추천은 설정 → 🌱 알림 앱 정리를 열었을 때만, 정리 중이 아닐 때만 해요. 앱 아이콘은 한 번 읽으면 모아 두고, 탭은 더 가볍게 바뀌어요.",
@@ -1303,7 +1306,7 @@ private fun BackupCard(vm: JarvisViewModel) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("💾 백업·복원", style = MaterialTheme.typography.titleMedium)
-            Text("앱을 지웠다 다시 깔아도 명부·학부모 연결·키워드·방·브리핑 시각·시간표가 그대로 돌아와요. " +
+            Text("앱을 지웠다 다시 깔아도 명부·학부모 연결·키워드·방·모아서 알림 시각이 그대로 돌아와요. " +
                  "메시지 내용과 학생별 기록은 넣지 않아요. 백업 파일도 폰 밖으로 나가지 않아요.",
                 style = MaterialTheme.typography.bodySmall)
             Text(
@@ -1315,21 +1318,23 @@ private fun BackupCard(vm: JarvisViewModel) {
             var pinInput by rememberSaveable { mutableStateOf("") }
             var changing by rememberSaveable { mutableStateOf(false) }
             if (!vm.hasBackupPin || changing) {
-                Text(if (vm.hasBackupPin) "🔒 새 백업 비밀번호" else "🔒 먼저 백업 비밀번호를 정해 주세요 (숫자 4~12자리)",
+                Text(if (vm.hasBackupPin) "🔒 새 백업 비밀번호" else "🔒 먼저 백업 비밀번호를 정해 주세요 (6자 이상, 글자·숫자)",
                     fontWeight = FontWeight.Medium, color = Ssam.Blush)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(value = pinInput, onValueChange = { pinInput = it.filter { c -> c.isDigit() }.take(12) },
-                        singleLine = true, placeholder = { Text("예: 4자리 이상") }, modifier = Modifier.weight(1f),
+                    OutlinedTextField(value = pinInput, onValueChange = { pinInput = it.filterNot { c -> c.isWhitespace() }.take(20) },
+                        singleLine = true, placeholder = { Text("6자 이상") }, modifier = Modifier.weight(1f),
                         visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
                         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                            keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword))
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Password))
                     Button(onClick = { vm.setBackupPin(pinInput); pinInput = ""; changing = false },
-                        enabled = pinInput.length >= 4) { Text("정하기") }
+                        enabled = pinInput.length >= BackupCrypto.MIN_LEN) { Text("정하기") }
                 }
                 Text("새 폰에서 불러올 때 이 비밀번호가 필요해요. 꼭 기억해 두세요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("🔒 백업 비밀번호 설정됨 · 백업 파일은 암호화돼요", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                Text(if (vm.weakPin) "⚠️ 백업 비밀번호가 짧아요 · 6자 이상으로 바꿔 주세요" else "🔒 백업 비밀번호 설정됨 · 백업 파일은 암호화돼요",
+                    Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
+                    color = if (vm.weakPin) MaterialTheme.colorScheme.tertiary else androidx.compose.ui.graphics.Color.Unspecified)
                 TextButton(onClick = { changing = true }) { Text("바꾸기") }
             }
 

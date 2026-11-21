@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 🔒 알림 내용·학생 기록이 든 앱 데이터는 구글 클라우드 백업에도, 새 폰으로 옮기기(기기 간 전송)에도 넣지 않음.
+     설정은 앱의 💾 백업(암호화)으로만 옮긴다. (Android 12+ 에서는 allowBackup=false 만으로 기기 간 전송이 막히지 않음) -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
+    </device-transfer>
+</data-extraction-rules>

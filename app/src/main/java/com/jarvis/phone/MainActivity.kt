@@ -514,9 +514,12 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     fun cancelPin() { pinAsk = null; pinError = "" }
     var hasBackupPin by mutableStateOf(BackupCrypto.hasPin(app))
         private set
+    /** 예전에 정한 짧은 비밀번호(4~5자리) — 바꾸라고 안내 */
+    var weakPin by mutableStateOf((BackupCrypto.pin(app)?.length ?: 99) < BackupCrypto.MIN_LEN)
+        private set
     fun setBackupPin(pin: String) {
-        if (pin.length !in 4..12) { status = "백업 비밀번호는 4~12자로 정해 주세요."; return }
-        BackupCrypto.setPin(getApplication<Application>(), pin); hasBackupPin = true
+        if (pin.length !in BackupCrypto.MIN_LEN..20) { status = "백업 비밀번호는 ${BackupCrypto.MIN_LEN}~20자로 정해 주세요."; return }
+        BackupCrypto.setPin(getApplication<Application>(), pin); hasBackupPin = true; weakPin = false
         status = "💾 백업 비밀번호를 정했어요. 새 폰에서 불러올 때 이 비밀번호가 필요해요."
     }
     /** 복원 뒤 화면 상태를 저장된 설정으로 다시 읽기 */
@@ -1082,7 +1085,7 @@ class MainActivity : ComponentActivity() {
                                     OutlinedTextField(value = pin, onValueChange = { pin = it }, singleLine = true,
                                         visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
                                         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                                            keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword),
+                                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Password),
                                         isError = vm.pinError.isNotEmpty(),
                                         supportingText = { if (vm.pinError.isNotEmpty()) Text(vm.pinError) })
                                 }

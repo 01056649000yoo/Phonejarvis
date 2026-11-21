@@ -42,6 +42,8 @@ class NotificationCollectorService : NotificationListenerService() {
         // 🚫 광고성 문자·카톡은 모으지 않음 (오늘 거른 수만 셈)
         if (rules.isBlockedAd(sbn.packageName, room, title, text)) { AdFilter.addOne(this); return }
         if (!rules.allows(sbn.packageName, room, title, text)) return
+        // 🔐 인증번호·승인번호 알림은 모으지 않음(저장·요약·위젯에 남지 않게) — 상태바에는 그대로 둠
+        if (isSecretCode("$title $text")) return
 
         NotificationDb.get(this).insert(
             pkg = sbn.packageName,
@@ -135,6 +137,10 @@ class NotificationCollectorService : NotificationListenerService() {
             "com.sec.android.app.clockpackage", "com.google.android.deskclock",
         )
         private val NEVER_HIDE_WORDS = listOf("인증번호", "인증 번호", "인증코드", "승인번호", "OTP", "재난", "긴급", "경보", "부재중")
+        private val SECRET_WORDS = listOf("인증번호", "인증 번호", "인증코드", "승인번호", "OTP", "보안코드", "비밀번호")
+        /** 인증번호·일회용 비밀번호처럼 남기면 안 되는 알림인지 */
+        fun isSecretCode(t: String): Boolean = SECRET_WORDS.any { it in t } || OTP.containsMatchIn(t)
+
         /** "[Web발신] … 123456" 같은 6자리 안팎 인증번호 */
         private val OTP = Regex("""(인증|확인|본인)[^\n]{0,12}\d{4,8}""")
 

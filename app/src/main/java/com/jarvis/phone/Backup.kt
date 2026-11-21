@@ -23,7 +23,7 @@ object Backup {
     private val FILES = listOf("apps", "briefing", "quiet", "app", "storage", "people")
     private val SKIP = mapOf(
         "apps" to setOf("handled", "ad_day", "ad_count"),
-        "quiet" to setOf("last", "since", "we_set_dnd"),
+        "quiet" to setOf("last", "since", "we_set_dnd", "zen_rule", "zen_rule_v"),   // 방해 금지 모드 번호는 폰마다 다름
         "storage" to setOf("last_clean", "last_vacuum"),
     )
     /** "app" 묶음은 이것만 (설치 안내 진행·모델 정보는 기기마다 다름) */
@@ -112,9 +112,22 @@ object Backup {
     fun restoreFromDownloads(ctx: Context, pin: String? = null): Result<String> = runCatching { restore(ctx, file().readText(), pin) }
 
     fun restoreFrom(ctx: Context, uri: Uri, pin: String? = null): Result<String> = runCatching {
-        val text = ctx.contentResolver.openInputStream(uri)!!.use { it.readBytes().toString(Charsets.UTF_8) }
-        restore(ctx, text, pin)
+        restore(ctx, readSmall(ctx, uri), pin)
     }
+
+    /** 받은 파일 읽기: 백업은 수십 KB — 2MB 넘는 파일은 열지 않음(다른 앱이 보낸 큰 파일로 멈추지 않게) */
+    fun readSmall(ctx: Context, uri: Uri): String {
+        ctx.contentResolver.openInputStream(uri)!!.use { inp ->
+            val out = java.io.ByteArrayOutputStream(); val buf = ByteArray(16 * 1024); var total = 0
+            while (true) {
+                val n = inp.read(buf); if (n < 0) break
+                total += n; require(total <= MAX_BYTES) { "백업 파일이 너무 커요. 쌤톡스 백업 파일이 맞는지 확인해 주세요." }
+                out.write(buf, 0, n)
+            }
+            return out.toString(Charsets.UTF_8.name())
+        }
+    }
+    private const val MAX_BYTES = 2_000_000
 
     /** 백업 내용을 설정에 덮어쓰고 알람을 다시 예약. 돌려주는 값은 요약 한 줄. */
     /** 암호화된 백업인데 비밀번호를 아직 안 받았을 때 */
@@ -176,8 +189,7 @@ object BackupShare {
 
     /** 받은 파일이 쌤톡스 백업인지 보고 (저장 시각, 요약)을 돌려줌 */
     fun peek(ctx: Context, uri: Uri): Result<Pair<Long, String>> = runCatching {
-        val text = ctx.contentResolver.openInputStream(uri)!!.use { it.readBytes().toString(Charsets.UTF_8) }
-        val j = JSONObject(text)
+        val j = JSONObject(Backup.readSmall(ctx, uri))
         require(j.optString("format") == "ssamtox-backup") { "쌤톡스 백업 파일이 아니에요." }
         j.optLong("created") to j.optString("summary")
     }
@@ -198,16 +210,20 @@ object BackupShare {
  * 파일 겉에는 저장 시각과 요약(학생 수 등 숫자)만 보임 — 이름·번호는 암호 안에.
  */
 object BackupCrypto {
-    private const val ITER = 120_000
+    /** 새로 만드는 백업의 반복 횟수(2026-11-22 120,000 → 600,000). 파일에 적어 두어 옛 백업도 그대로 열림 */
+    private const val ITER = 600_000
+    private const val OLD_ITER = 120_000
+    /** 새로 정하는 비밀번호는 6자 이상(글자·숫자 섞어도 됨) — 숫자 4자리는 백업 파일만 있으면 금방 풀림 */
+    const val MIN_LEN = 6
     private fun meta(ctx: Context) = ctx.getSharedPreferences("backup_meta", Context.MODE_PRIVATE)
 
     fun pin(ctx: Context): String? = meta(ctx).getString("pin", null)
     fun hasPin(ctx: Context) = !pin(ctx).isNullOrEmpty()
     fun setPin(ctx: Context, pin: String) = meta(ctx).edit().putString("pin", pin).apply()
 
-    private fun key(pin: String, salt: ByteArray): javax.crypto.spec.SecretKeySpec {
+    private fun key(pin: String, salt: ByteArray, iter: Int = ITER): javax.crypto.spec.SecretKeySpec {
         val f = javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
-        val k = f.generateSecret(javax.crypto.spec.PBEKeySpec(pin.toCharArray(), salt, ITER, 256)).encoded
+        val k = f.generateSecret(javax.crypto.spec.PBEKeySpec(pin.toCharArray(), salt, iter, 256)).encoded
         return javax.crypto.spec.SecretKeySpec(k, "AES")
     }
     private fun b64(b: ByteArray) = android.util.Base64.encodeToString(b, android.util.Base64.NO_WRAP)
@@ -225,7 +241,7 @@ object BackupCrypto {
         return JSONObject()
             .put("format", "ssamtox-backup").put("version", 2).put("enc", true)
             .put("created", p.optLong("created")).put("summary", p.optString("summary"))
-            .put("salt", b64(salt)).put("iv", b64(iv)).put("data", b64(data))
+            .put("salt", b64(salt)).put("iv", b64(iv)).put("iter", ITER).put("data", b64(data))
             .toString(2)
     }
 
@@ -235,7 +251,8 @@ object BackupCrypto {
     fun decrypt(text: String, pin: String): String {
         val j = JSONObject(text)
         val c = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")
-        c.init(javax.crypto.Cipher.DECRYPT_MODE, key(pin, unb64(j.getString("salt"))),
+        val iter = j.optInt("iter", OLD_ITER).coerceIn(OLD_ITER, 5_000_000)
+        c.init(javax.crypto.Cipher.DECRYPT_MODE, key(pin, unb64(j.getString("salt")), iter),
             javax.crypto.spec.GCMParameterSpec(128, unb64(j.getString("iv"))))
         return try { String(c.doFinal(unb64(j.getString("data"))), Charsets.UTF_8) }
         catch (e: javax.crypto.AEADBadTagException) { throw IllegalArgumentException("백업 비밀번호가 달라요.") }
