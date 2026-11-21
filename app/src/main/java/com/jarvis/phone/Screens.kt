@@ -33,10 +33,11 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** 이번 버전에서 바뀐 점 한 줄 (버전 올릴 때 같이 고치기). */
-private const val WHATS_NEW = "하단 메뉴 멈춤 고침 · 화면을 더 깔끔하게 — 지금 정리하기 버튼이 맨 위로"
+private const val WHATS_NEW = "이름 넣는 칸·알림 앱 정리를 흰 카드로 — 글자가 또렷하게 · 전화는 늘 그대로"
 
 /** 업데이트 내역 큰 창 (버전 올릴 때 같이 고치기) */
 private val WHATS_NEW_DETAIL = listOf(
+    "👀 글자가 또렷하게" to "사람 묶음·학부모 명부의 이름 넣는 칸과 🌱 알림 앱 정리가 진한 초록 바탕이라 입력한 글자와 '최근 연락한 사람' 칩이 잘 안 보였어요. 흰 카드로 바꿔 또렷하게 보여요.",
     "📞 전화는 늘 그대로" to "🔇 소리도 끄기를 켜도 전화는 쌤톡스가 손대지 않아요. 누가 걸어도 평소처럼 울리고, 끄는 것은 메시지·알림 소리뿐이에요. 예전에 만든 '쌤톡스 모아 두기' 모드는 저절로 새로 바뀌어요.",
     "🐢 하단 메뉴가 멈추던 것" to "앱을 열 때마다 알림 앱 추천을 하려고 큰 AI 모델을 불러오느라 화면이 버벅였어요. 이제 AI 추천은 설정 → 🌱 알림 앱 정리를 열었을 때만, 정리 중이 아닐 때만 해요. 앱 아이콘은 한 번 읽으면 모아 두고, 탭은 더 가볍게 바뀌어요.",
     "✨ 더 깔끔한 화면" to "카드를 흰 종이처럼 또렷하게, 하단 메뉴의 고른 탭은 새싹 연두로 바꿨어요. 가장 많이 쓰는 '지금 정리하기' 버튼은 요약 탭 맨 위로 올렸고, 알림 탭의 아직 요약 안 한 알림은 최근 3건만 보이게 접어 두었어요(더 보기로 펼침).",
@@ -660,14 +661,12 @@ private fun CustomGroupCard(vm: JarvisViewModel, g: PeopleGroup) {
     LaunchedEffect(g.id) { vm.loadRecentSenders() }
     var raw by rememberSaveable(g.id) { mutableStateOf("") }
     val members = vm.groupMembers[g.id].orEmpty()
-    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(
-        containerColor = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer)) {
+    Card(Modifier.fillMaxWidth()) {
         Column(Modifier.animateContentSize(Motion.size).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("＋ 이름 넣기", style = MaterialTheme.typography.titleMedium)
             OutlinedTextField(value = raw, onValueChange = { raw = it }, minLines = 3, modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text("예) 김교감, 박부장, 이선생 … 쉼표·줄바꿈 아무렇게나") })
-            Button(onClick = { if (vm.addMembers(g.id, raw) > 0) raw = "" }, enabled = raw.isNotBlank(), modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = Ssam.Sprout, contentColor = Ssam.Ink)) { Text("넣기", fontWeight = FontWeight.Bold) }
+            Button(onClick = { if (vm.addMembers(g.id, raw) > 0) raw = "" }, enabled = raw.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("넣기", fontWeight = FontWeight.Bold) }
             Text("알림에 뜨는 이름 그대로 넣으세요. 그 이름이 보낸 알림이나, 내용에 그 이름이 나온 알림을 이 묶음으로 모아요.",
                 style = MaterialTheme.typography.bodySmall)
             val recent = vm.recentSenders.filter { it !in members }
@@ -726,8 +725,7 @@ private fun ParentsPage(vm: JarvisViewModel) {
     Text("학부모 이름을 쭉 넣기만 하세요. 쉼표·줄바꿈 아무렇게나 써도 돼요. 문자·카톡·밴드 등 어떤 앱이든 그 이름이 들어간 알림을 학부모 연락으로 모아 답장까지 추천해요.",
         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(
-        containerColor = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer)) {
+    Card(Modifier.fillMaxWidth()) {
         Column(Modifier.animateContentSize(Motion.size).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("＋ 이름 넣기", style = MaterialTheme.typography.titleMedium)
             OutlinedTextField(value = raw, onValueChange = { raw = it }, minLines = 3, modifier = Modifier.fillMaxWidth(),
@@ -736,7 +734,6 @@ private fun ParentsPage(vm: JarvisViewModel) {
                 onClick = { if (vm.addParentsRaw(raw) > 0) raw = "" },
                 enabled = raw.isNotBlank(),
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = Ssam.Sprout, contentColor = Ssam.Ink),
             ) { Text("넣기", fontWeight = FontWeight.Bold) }
             Text("알림에 뜨는 이름 그대로 넣으면 돼요. '맘·아빠' 같은 관계는 있으면 같이 알아보고, 우리 반 학생 이름이 들어 있으면 그 학생 학부모로 묶어요.",
                 style = MaterialTheme.typography.bodySmall)
@@ -822,9 +819,7 @@ private fun SystemSettings(vm: JarvisViewModel) {
 @Composable
 private fun AppCleanupCard(vm: JarvisViewModel) {
     val recs = vm.appRecs
-    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(
-        containerColor = MaterialTheme.colorScheme.primaryContainer,
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer)) {
+    Card(Modifier.fillMaxWidth()) {
         Column(Modifier.animateContentSize(Motion.size).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("🌱 알림 앱 정리", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text(
@@ -837,7 +832,7 @@ private fun AppCleanupCard(vm: JarvisViewModel) {
                 style = MaterialTheme.typography.bodyMedium,
             )
             // 늘 보이는 안내: 목록은 실제로 알림이 온 앱만 나옴
-            Surface(color = Ssam.Chalk.copy(alpha = 0.12f), shape = MaterialTheme.shapes.medium) {
+            Surface(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f), shape = MaterialTheme.shapes.medium) {
                 Text(
                     "ℹ️ 이 목록에는 폰에 실제로 알림이 온 앱만 나와요. 카톡·문자·밴드 같은 메시지·SNS 앱은 " +
                     "그 앱의 알림을 켜 두어야 쌤톡스가 모을 수 있고, 여기 목록에도 떠요.",
@@ -845,8 +840,7 @@ private fun AppCleanupCard(vm: JarvisViewModel) {
                 )
             }
             // ＋ 앱 추가: 기본은 모든 앱을 모으고, 뺄 앱만 끔. 목록에 없는 앱은 여기서 추가(2026-11-21 선생님: 눈에 안 띈다 → 꽉 찬 버튼)
-            Button(onClick = { vm.openAddApps() }, modifier = Modifier.fillMaxWidth().height(52.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Ssam.Sprout, contentColor = Ssam.Ink)) {
+            Button(onClick = { vm.openAddApps() }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
                 Text("＋ 목록에 없는 앱 추가하기", fontWeight = FontWeight.Bold)
             }
             Text("모든 앱 알림을 기본으로 모아요. 아래 목록에서 뺄 앱만 끄고, 목록에 없는 앱은 위 버튼으로 추가하세요.",
@@ -860,15 +854,15 @@ private fun AppCleanupCard(vm: JarvisViewModel) {
                          else "꺼짐 · 광고성 문자·카톡도 모아요", style = MaterialTheme.typography.bodySmall)
                 }
                 Switch(checked = vm.adFilterOn, onCheckedChange = { vm.setAdFilter(it) },
-                    colors = SwitchDefaults.colors(checkedTrackColor = Ssam.Sprout, checkedThumbColor = Ssam.Ink))
+                    colors = SwitchDefaults.colors())
             }
-            if (vm.aiBusy) LinearProgressIndicator(Modifier.fillMaxWidth(), color = Ssam.Sprout)
+            if (vm.aiBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
 
             // 설치돼 있는데 알림이 0건인 메시지 앱 (카톡 등): 원인 안내 + 그 앱의 알림 설정 바로 열기
             if (vm.silentApps.isNotEmpty()) {
                 val ctx = LocalContext.current
                 Text("⚠️ 알림이 안 들어오는 메시지 앱", style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Bold, color = Ssam.Blush)
+                    fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.tertiary)
                 vm.silentApps.forEach { (pkg, name) ->
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text("$name · 최근 7일 0건", fontWeight = FontWeight.Medium)
@@ -883,13 +877,13 @@ private fun AppCleanupCard(vm: JarvisViewModel) {
                             OutlinedButton(onClick = {
                                 ctx.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
                                     .putExtra(Settings.EXTRA_APP_PACKAGE, pkg))
-                            }) { Text("알림 설정 열기", color = Ssam.Chalk) }
-                            TextButton(onClick = { vm.dismissSilent(pkg) }) { Text("안 써요 · 숨기기", color = Ssam.Chalk) }
+                            }) { Text("알림 설정 열기", color = MaterialTheme.colorScheme.primary) }
+                            TextButton(onClick = { vm.dismissSilent(pkg) }) { Text("안 써요 · 숨기기", color = MaterialTheme.colorScheme.primary) }
                         }
                     }
                 }
                 if (!vm.listenerEnabled) Text("쌤톡스의 '알림 접근' 권한도 꺼져 있어요. 아래 기본 설정에서 켜 주세요.",
-                    style = MaterialTheme.typography.bodySmall, color = Ssam.Blush)
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
             }
 
             // 한 번 적용한 뒤에는 새로 알림을 보낸 앱이 생길 때만 다시 물어봄
@@ -901,7 +895,6 @@ private fun AppCleanupCard(vm: JarvisViewModel) {
                 Button(
                     onClick = { vm.applyAppRecs() },
                     modifier = Modifier.fillMaxWidth().height(52.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Ssam.Sprout, contentColor = Ssam.Ink),
                 ) { Text(if (drop > 0) "추천대로 적용 (앱 ${drop}개 빼기)" else "추천대로 적용", fontWeight = FontWeight.Bold) }
                 Text("또는 아래에서 앱마다 켜고 끄세요. 끈 앱은 모으지도, 요약하지도 않아요.",
                     style = MaterialTheme.typography.bodySmall)
@@ -926,7 +919,7 @@ private fun AppCleanupCard(vm: JarvisViewModel) {
                         else TextButton(onClick = { showOthers = !showOthers }, contentPadding = PaddingValues(0.dp)) {
                             Text("📱 그 밖의 앱 ${others.size}개 (빼기 추천 ${others.count { !it.keep }}) " +
                                 if (showOthers) "▾ 접기" else "▸ 펼치기",
-                                color = Ssam.Chalk, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                                color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
                         }
                     }
                     if (g == 2 && !showOthers) return@forEachIndexed
@@ -938,13 +931,13 @@ private fun AppCleanupCard(vm: JarvisViewModel) {
                                 fontWeight = FontWeight.Medium)
                             Text((if (r.keep) "추천: 모으기 — " else "추천: 빼기 — ") + r.reason,
                                 style = MaterialTheme.typography.bodySmall,
-                                color = if (r.keep) Ssam.Sprout else Ssam.Blush)
+                                color = if (r.keep) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.tertiary)
                             // ⭐ 중요 앱으로 올리기 / 내리기 (업무·일정으로 자동 분류된 앱은 원래 위에 있음)
                             if (g == 2) TextButton(onClick = { vm.setImportant(r.stat.pkg, true) }, contentPadding = PaddingValues(0.dp)) {
-                                Text("⭐ 중요 앱으로 올리기", color = Ssam.Chalk, style = MaterialTheme.typography.labelLarge)
+                                Text("⭐ 중요 앱으로 올리기", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
                             } else if (r.stat.pkg in imp && !AppAdvisor.isWork(r.stat.app, r.stat.pkg)) TextButton(
                                 onClick = { vm.setImportant(r.stat.pkg, false) }, contentPadding = PaddingValues(0.dp)) {
-                                Text("⭐ 중요 앱에서 내리기", color = Ssam.Chalk, style = MaterialTheme.typography.labelLarge)
+                                Text("⭐ 중요 앱에서 내리기", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
                             }
                             // 메시지·SNS 앱은 방 단위로 고르기
                             if (msg && keepNow) {
@@ -952,20 +945,20 @@ private fun AppCleanupCard(vm: JarvisViewModel) {
                                 TextButton(onClick = { vm.openRooms(r.stat.pkg, r.stat.app) },
                                     contentPadding = PaddingValues(0.dp)) {
                                     Text(if (off > 0) "💬 방 고르기 (뺀 방 ${off}개) ›" else "💬 방 고르기 ›",
-                                        color = Ssam.Chalk, style = MaterialTheme.typography.labelLarge)
+                                        color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
                                 }
                             }
                         }
                         Switch(
                             checked = keepNow,
                             onCheckedChange = { vm.setAppKeep(r.stat.pkg, it) },
-                            colors = SwitchDefaults.colors(checkedTrackColor = Ssam.Sprout, checkedThumbColor = Ssam.Ink),
+                            colors = SwitchDefaults.colors(),
                         )
                     }
                 }
             }
             if (recs.isEmpty()) {
-                OutlinedButton(onClick = { vm.skipAppSetup() }) { Text("나중에 할게요", color = Ssam.Chalk) }
+                OutlinedButton(onClick = { vm.skipAppSetup() }) { Text("나중에 할게요", color = MaterialTheme.colorScheme.primary) }
             }
         }
     }
