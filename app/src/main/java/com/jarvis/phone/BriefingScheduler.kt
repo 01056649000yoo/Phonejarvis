@@ -10,9 +10,9 @@ import androidx.core.content.ContextCompat
 import java.util.Calendar
 
 /** 아침·저녁 브리핑 시간 설정. 시간은 자정부터의 분(예: 08:00 = 480). */
-enum class BriefingSlot(val label: String, val defaultMinute: Int) {
-    MORNING("아침 브리핑", 8 * 60),
-    EVENING("저녁 브리핑", 21 * 60);
+enum class BriefingSlot(val label: String, val defaultMinute: Int, val presets: List<Int>) {
+    MORNING("🌅 아침 브리핑 (조회)", 8 * 60, listOf(7 * 60 + 30, 8 * 60, 8 * 60 + 30, 9 * 60)),
+    EVENING("🌙 저녁 브리핑 (종례)", 21 * 60, listOf(16 * 60 + 30, 17 * 60, 18 * 60, 21 * 60));
 
     private val key get() = name.lowercase()
 
@@ -26,6 +26,11 @@ enum class BriefingSlot(val label: String, val defaultMinute: Int) {
 
     companion object {
         private fun prefs(ctx: Context) = ctx.getSharedPreferences("briefing", Context.MODE_PRIVATE)
+
+        /** 주말(토·일)에는 자동 브리핑 쉬기 */
+        fun skipWeekend(ctx: Context) = prefs(ctx).getBoolean("skip_weekend", false)
+        fun setSkipWeekend(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("skip_weekend", on).apply()
+        fun isWeekendNow() = Calendar.getInstance().get(Calendar.DAY_OF_WEEK).let { it == Calendar.SATURDAY || it == Calendar.SUNDAY }
     }
 }
 
@@ -89,9 +94,11 @@ class BriefingReceiver : BroadcastReceiver() {
                 val slot = runCatching { BriefingSlot.valueOf(intent.getStringExtra(BriefingScheduler.EXTRA_SLOT)!!) }
                     .getOrNull() ?: return
                 BriefingScheduler.schedule(ctx, slot)        // 내일 같은 시각
-                if (slot.isEnabled(ctx)) BriefingScheduler.startNow(ctx, slot.label)
+                val restDay = BriefingSlot.skipWeekend(ctx) && BriefingSlot.isWeekendNow()   // 주말엔 쉬기
+                if (slot.isEnabled(ctx) && !restDay)
+                    BriefingScheduler.startNow(ctx, if (slot == BriefingSlot.MORNING) "아침 브리핑" else "저녁 브리핑")
             }
-            else -> BriefingScheduler.scheduleAll(ctx)      // BOOT_COMPLETED, 시간/시간대 변경, 앱 업데이트
+            else -> { BriefingScheduler.scheduleAll(ctx); QuietMode.tick(ctx) }   // BOOT_COMPLETED, 시간/시간대 변경, 앱 업데이트
         }
     }
 }

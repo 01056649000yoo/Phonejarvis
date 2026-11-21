@@ -92,33 +92,59 @@ object Briefings {
     data class Outcome(val title: String, val body: String)
 
 
-    /** 하루 단위: 오늘 0시 이후, 지난 브리핑 다음에 온 알림만 요약해 저장 (어제 이전 알림은 넣지 않음). */
-    suspend fun runSinceLast(ctx: Context, label: String, onStatus: (String) -> Unit): Outcome {
-        val db = NotificationDb.get(ctx)
-        val from = maxOf(db.lastBriefing()?.time ?: 0L, NotificationDb.startOfToday())
-        return run(ctx, label, from, onStatus)
-    }
+    /**
+     * 아직 요약하지 않은 알림의 시작 시각: 오늘 0시와 지난 요약이 덮은 시각 다음 중 늦은 쪽.
+     * 한 번 요약한 알림은 다음 요약(자동·수동 모두)에 다시 들어가지 않음.
+     */
+    fun pendingFrom(db: NotificationDb): Long =
+        maxOf((db.lastBriefing()?.time ?: -1L) + 1, NotificationDb.startOfToday())
+
+    /** 자동 브리핑·"지금 정리하기" 공용: 지난 요약 이후 새로 온 오늘 알림만 요약해 저장. */
+    suspend fun runSinceLast(ctx: Context, label: String, onStatus: (String) -> Unit): Outcome =
+        run(ctx, label, pendingFrom(NotificationDb.get(ctx)), onStatus)
 
     suspend fun run(ctx: Context, label: String, from: Long, onStatus: (String) -> Unit): Outcome {
         val db = NotificationDb.get(ctx)
         val summarizer = Summarizer.get(ctx)
         if (!summarizer.hasModel()) return Outcome("$label 건너뜀", "AI 모델이 없어요. 쌤톡스 앱에서 모델 파일을 선택하세요.")
 
+        // 이 시각까지 온 알림을 이번 요약이 맡음. 요약하는 몇 분 사이에 온 알림은 다음 요약으로 넘어감.
+        val cutoff = System.currentTimeMillis()
         // 설정에서 뺀 앱·방은 요약에서도 제외 (뺀 방이라도 중요 키워드가 있으면 포함)
         val rules = AppFilter.rules(ctx)
-        val items = db.since(from).filter { rules.allows(it) }
-        if (items.isEmpty()) return Outcome(label, "새로 온 알림이 없어요.")
+        val items = db.since(from).filter { it.time <= cutoff && rules.allows(it) }
+        if (items.isEmpty()) return Outcome(label, "지난 요약 이후 새로 온 알림이 없어요.")
 
         val start = System.currentTimeMillis()
         // ⭐ 키워드 알림: AI 없이 규칙으로 찾아 맨 위에 (놓치지 않게)
         val keywordPart = keywordSection(items, rules.keywords)
         // 👪 학부모 연락: 지정한 학부모 방의 연락을 분류해 맨 위에 (규칙, 즉시)
-        val parentPart = parentSection(ParentAdvisor.contacts(items, ParentAdvisor.parentRooms(ctx)))
-        val text = parentPart + keywordPart + summarizer.summarize(items, onStatus)
+        val parentPart = parentSection(ParentAdvisor.contacts(items, ParentAdvisor.parentRooms(ctx), Students.names(ctx)))
+        // 📌 오늘·내일 마감 (할 일 목록에서, 끝내지 않은 것)
+        items.forEach { runCatching { TaskExtractor.save(ctx, it) } }
+        val taskPart = taskSection(db.tasks())
+        val text = taskPart + parentPart + keywordPart + summarizer.summarize(items, onStatus)
         val now = System.currentTimeMillis()
-        db.insertBriefing(Briefing(time = now, fromTime = from, label = label, count = items.size, text = text))
+        // time = 이번 요약이 덮은 마지막 시각 (다음 요약은 이 다음부터)
+        db.insertBriefing(Briefing(time = cutoff, fromTime = from, label = label, count = items.size, text = text))
         onStatus("완료 (${(now - start) / 1000}초)")
         return Outcome("$label · 알림 ${items.size}건", text)
+    }
+
+    /** 오늘·내일 마감인 할 일 (지난 것 포함). 없으면 빈 문자열. */
+    fun taskSection(tasks: List<Task>): String {
+        val now = System.currentTimeMillis()
+        val soon = tasks.filter { !it.done && TaskExtractor.daysBetween(now, it.due) <= 1 }
+        if (soon.isEmpty()) return ""
+        val fmt = java.text.SimpleDateFormat("HH:mm", java.util.Locale.KOREA)
+        return buildString {
+            append("📌 오늘·내일 마감 (${soon.size}건)\n")
+            soon.take(8).forEach { t ->
+                val time = if (t.hasTime) " ${fmt.format(t.due)}" else ""
+                append("- [${t.dLabel(now)}$time] ${t.title} (${t.room})\n")
+            }
+            append("\n")
+        }
     }
 
     /** 학부모 연락 요약 (방마다 한 줄). 없으면 빈 문자열. */
@@ -130,7 +156,8 @@ object Briefings {
             append("👪 학부모 연락 (${contacts.size}건, 답장 필요 ${need})\n")
             contacts.take(10).forEach { c ->
                 val mark = if (c.category.needsReply) " · 답장 필요" else ""
-                append("- ${fmt.format(c.last.time)} ${c.room} [${c.category.label}$mark] ${c.last.text.replace('\n', ' ').take(70)}\n")
+                val who = if (c.students.isNotEmpty()) " (${c.students.joinToString(", ")})" else ""
+                append("- ${fmt.format(c.last.time)} ${c.room}$who [${c.category.label}$mark] ${c.last.text.replace('\n', ' ').take(70)}\n")
             }
             append("\n")
         }
@@ -160,6 +187,7 @@ object Notifications {
     private const val CH_BRIEFING = "briefing"
     const val ID_PROGRESS = 1
     const val ID_RESULT = 2
+    const val ID_QUIET = 3
 
     fun ensureChannels(ctx: Context) {
         val nm = ctx.getSystemService(NotificationManager::class.java)

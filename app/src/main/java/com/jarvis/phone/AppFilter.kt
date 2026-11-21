@@ -71,7 +71,8 @@ object AppFilter {
         }
         fun allows(n: NotiItem) = allows(n.pkg, n.room, n.title, n.text)
     }
-    fun rules(ctx: Context) = Rules(excluded(ctx), excludedRooms(ctx), keywords(ctx))
+    // 학생 이름(성 뺀 이름 포함)도 중요 키워드처럼: 끈 방에서 와도 모으고 ⭐에 모임
+    fun rules(ctx: Context) = Rules(excluded(ctx), excludedRooms(ctx), keywords(ctx) + Students.allTerms(Students.names(ctx)))
 }
 
 /**
@@ -232,6 +233,8 @@ data class ParentContact(
     val room: String,
     val messages: List<NotiItem>,
     val category: ParentAdvisor.Category,
+    /** 메시지·방 이름에 나온 우리 반 학생 */
+    val students: List<String> = emptyList(),
 ) {
     val last: NotiItem get() = messages.last()
     /** 답장함 표시에 쓰는 키: 마지막 메시지가 바뀌면 다시 '답장 필요' */
@@ -297,10 +300,11 @@ object ParentAdvisor {
     }
 
     /** 오늘 알림에서 학부모 연락 묶기 (최근 연락 먼저). */
-    fun contacts(items: List<NotiItem>, parentRooms: Set<String>): List<ParentContact> =
+    fun contacts(items: List<NotiItem>, parentRooms: Set<String>, studentNames: List<String> = emptyList()): List<ParentContact> =
         items.filter { isParent(parentRooms, it.pkg, it.roomOrTitle) }
             .groupBy { it.pkg to it.roomOrTitle }
-            .map { (k, list) -> ParentContact(k.first, list.first().app, k.second, list, classify(list)) }
+            .map { (k, list) -> ParentContact(k.first, list.first().app, k.second, list, classify(list),
+                list.flatMap { Students.find(studentNames, it) }.distinct()) }
             .sortedByDescending { it.last.time }
 
     // ── 답장 추천 ──
@@ -324,7 +328,15 @@ object ParentAdvisor {
         }
     }
 
+    /** 퇴근 후(주말)에 온 연락이면 "근무시간 이후" 답장을 맨 앞에 */
     suspend fun drafts(ctx: Context, c: ParentContact): List<String> {
+        val base = aiDrafts(ctx, c)
+        return if (QuietMode.isAfterWork(ctx, c.last.time))
+            (listOf("네 ${c.honorific}, 메시지 잘 받았습니다. 근무시간 이후라 내일 오전에 확인하고 다시 연락드리겠습니다.") + base).take(3)
+        else base
+    }
+
+    private suspend fun aiDrafts(ctx: Context, c: ParentContact): List<String> {
         val summarizer = Summarizer.get(ctx)
         if (!summarizer.hasModel()) return templates(c)
         val conv = c.messages.takeLast(6).joinToString("\n") { "${it.title}: ${it.text.replace('\n', ' ').take(150)}" }

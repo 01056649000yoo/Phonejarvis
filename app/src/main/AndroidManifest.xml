@@ -14,6 +14,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 수업 중·퇴근 모드에서 소리까지 끄기 (방해 금지, 선생님이 설정에서 허용할 때만) -->
+    <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
 
     <!-- 다운로드 폴더에 이미 받아 둔 모델 파일을 자동으로 찾기 (사용자가 켤 때만). 인터넷 권한이 없어 파일은 밖으로 나가지 않음 -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
@@ -71,6 +73,9 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="On-device LLM summarization of collected notifications at a user-scheduled time" />
         </service>
+
+        <!-- 수업 시작·끝, 출근·퇴근 시각에 깨어나 수업 중·퇴근 모드 반영 -->
+        <receiver android:name=".QuietReceiver" android:exported="false" />
 
         <receiver
             android:name=".BriefingReceiver"

@@ -29,14 +29,25 @@ class NotificationCollectorService : NotificationListenerService() {
         // 설정에서 뺀 방은 모으지 않음 (단, 중요 키워드가 있으면 모음)
         if (!AppFilter.rules(this).allows(sbn.packageName, room, title, text)) return
 
+        val app = appLabel(sbn.packageName)
         NotificationDb.get(this).insert(
             pkg = sbn.packageName,
-            app = appLabel(sbn.packageName),
+            app = app,
             title = title.take(200),
             text = text.take(1000),
             time = sbn.postTime,
             room = room,
         )
+        val item = NotiItem(0, sbn.packageName, app, title.take(200), text.take(1000), sbn.postTime, room)
+        runCatching {
+            Students.log(this, Students.names(this), item)   // 🧒 학생 이름이 나오면 학생별 기록에
+            TaskExtractor.save(this, item)                   // 📌 마감·할 일이 있으면 할 일 목록에
+        }
+
+        // 🏫 수업 중 · 🌙 퇴근 후: 모은 알림을 상태바에서 숨김 (나중에 브리핑으로 한 번에)
+        if (QuietMode.hideInShade(this) && QuietMode.state(this) != QuietMode.State.NONE) {
+            runCatching { cancelNotification(sbn.key) }
+        }
     }
 
     private fun appLabel(pkg: String): String = try {

@@ -30,7 +30,7 @@ data class Briefing(
 
 /** 수집한 알림을 휴대폰 안에만 저장하는 SQLite DB (7일 보관). */
 class NotificationDb private constructor(ctx: Context) :
-    SQLiteOpenHelper(ctx, "jarvis.db", null, 3) {
+    SQLiteOpenHelper(ctx, "jarvis.db", null, 4) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -46,13 +46,80 @@ class NotificationDb private constructor(ctx: Context) :
         )
         db.execSQL("CREATE INDEX idx_noti_time ON noti(time)")
         createBriefingTable(db)
+        createTeacherTables(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldV: Int, newV: Int) {
         if (oldV < 2) createBriefingTable(db)
         // v3: 단톡방 이름 (방 고르기)
         if (oldV < 3) db.execSQL("ALTER TABLE noti ADD COLUMN room TEXT NOT NULL DEFAULT ''")
+        // v4: 학생별 기록, 할 일·마감
+        if (oldV < 4) createTeacherTables(db)
     }
+
+    /** v4: 학생별 기록(1년 보관)과 할 일·마감. 원래 알림(7일)이 지워져도 남음. */
+    private fun createTeacherTables(db: SQLiteDatabase) {
+        db.execSQL(
+            """CREATE TABLE IF NOT EXISTS student_log(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                student TEXT NOT NULL,
+                time INTEGER NOT NULL,
+                app TEXT NOT NULL,
+                room TEXT NOT NULL,
+                sender TEXT NOT NULL,
+                text TEXT NOT NULL,
+                UNIQUE(student, time, text))"""
+        )
+        db.execSQL(
+            """CREATE TABLE IF NOT EXISTS task(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                room TEXT NOT NULL,
+                due INTEGER NOT NULL,
+                has_time INTEGER NOT NULL,
+                source_time INTEGER NOT NULL,
+                done INTEGER NOT NULL DEFAULT 0,
+                dedupe TEXT NOT NULL UNIQUE)"""
+        )
+    }
+
+    // ── 학생별 기록 ──
+    fun logStudent(student: String, n: NotiItem) {
+        val v = ContentValues().apply {
+            put("student", student); put("time", n.time); put("app", n.app)
+            put("room", n.roomOrTitle); put("sender", n.title); put("text", n.text.take(500))
+        }
+        writableDatabase.insertWithOnConflict("student_log", null, v, SQLiteDatabase.CONFLICT_IGNORE)
+    }
+    fun studentLog(student: String): List<StudentEntry> =
+        readableDatabase.rawQuery(
+            "SELECT time,app,room,sender,text FROM student_log WHERE student=? ORDER BY time DESC LIMIT 200", arrayOf(student)
+        ).use { c -> buildList { while (c.moveToNext()) add(StudentEntry(student, c.getLong(0), c.getString(1), c.getString(2), c.getString(3), c.getString(4))) } }
+    fun studentCounts(): Map<String, Int> =
+        readableDatabase.rawQuery("SELECT student, COUNT(*) FROM student_log GROUP BY student", null)
+            .use { c -> buildMap { while (c.moveToNext()) put(c.getString(0), c.getInt(1)) } }
+
+    // ── 할 일·마감 ──
+    fun insertTask(t: Task) {
+        val v = ContentValues().apply {
+            put("title", t.title); put("room", t.room); put("due", t.due); put("has_time", if (t.hasTime) 1 else 0)
+            put("source_time", t.sourceTime); put("done", if (t.done) 1 else 0); put("dedupe", t.dedupe)
+        }
+        writableDatabase.insertWithOnConflict("task", null, v, SQLiteDatabase.CONFLICT_IGNORE)
+    }
+    /** 안 끝낸 할 일 + 최근 3일 안에 끝낸 할 일 (마감 빠른 순) */
+    fun tasks(): List<Task> {
+        val recent = (System.currentTimeMillis() - 3 * 24L * 3600 * 1000).toString()
+        return readableDatabase.rawQuery(
+            "SELECT id,title,room,due,has_time,source_time,done,dedupe FROM task WHERE done=0 OR due>=? ORDER BY done ASC, due ASC LIMIT 100",
+            arrayOf(recent)
+        ).use { c -> buildList { while (c.moveToNext()) add(Task(c.getLong(0), c.getString(1), c.getString(2), c.getLong(3),
+            c.getInt(4) == 1, c.getLong(5), c.getInt(6) == 1, c.getString(7))) } }
+    }
+    fun setTaskDone(id: Long, done: Boolean) {
+        writableDatabase.update("task", ContentValues().apply { put("done", if (done) 1 else 0) }, "id=?", arrayOf(id.toString()))
+    }
+    fun deleteTask(id: Long) { writableDatabase.delete("task", "id=?", arrayOf(id.toString())) }
 
     /** v2: 자동·수동 브리핑 결과 기록. */
     private fun createBriefingTable(db: SQLiteDatabase) {
@@ -142,6 +209,11 @@ class NotificationDb private constructor(ctx: Context) :
         val cutoff = System.currentTimeMillis() - days * 24L * 3600 * 1000
         writableDatabase.delete("noti", "time<?", arrayOf(cutoff.toString()))
         writableDatabase.delete("briefing", "time<?", arrayOf(cutoff.toString()))
+        // 학생별 기록은 1년, 끝낸 할 일은 30일 보관
+        val year = System.currentTimeMillis() - 365L * 24 * 3600 * 1000
+        writableDatabase.delete("student_log", "time<?", arrayOf(year.toString()))
+        val month = System.currentTimeMillis() - 30L * 24 * 3600 * 1000
+        writableDatabase.delete("task", "done=1 AND due<?", arrayOf(month.toString()))
     }
 
     companion object {

@@ -53,6 +53,13 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         return BriefingSlot.entries.map { SlotState(it, it.isEnabled(ctx), it.minute(ctx)) }
     }
 
+    /** 주말(토·일)에는 자동 브리핑 쉬기 */
+    var skipWeekend by mutableStateOf(BriefingSlot.skipWeekend(app))
+        private set
+    fun updateSkipWeekend(on: Boolean) {
+        BriefingSlot.setSkipWeekend(getApplication<Application>(), on); skipWeekend = on
+    }
+
     fun setSlot(slot: BriefingSlot, on: Boolean, minute: Int) {
         slot.save(getApplication<Application>(), on, minute)
         slots = readSlots()
@@ -223,6 +230,90 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         AppFilter.setKeywords(getApplication<Application>(), keywords + w)
         keywords = AppFilter.keywords(getApplication<Application>())
     }
+    /** 지난 요약 이후 새로 온(아직 요약 안 한) 오늘 알림 수 */
+    var pendingCount by mutableIntStateOf(0)
+        private set
+
+    // ── 설정 탭 칸: 한 번에 한 칸만 보여 줌 ──
+    enum class Section(val label: String) {
+        APPS("🌱 알림 앱"), STUDENTS("🧒 우리 반"), KEYWORDS("⭐ 키워드"), QUIET("🏫 수업·퇴근"), TIMES("⏰ 브리핑 시각"), BASIC("🔧 기본 설정")
+    }
+    var section by mutableStateOf(Section.APPS)
+    fun openSettings(s: Section) { section = s; tab = Tab.SETTINGS }
+
+    // ── 🧒 우리 반 명부 + 학생별 기록 ──
+    var students by mutableStateOf<List<String>>(emptyList())
+        private set
+    var studentCounts by mutableStateOf<Map<String, Int>>(emptyMap())
+        private set
+    /** 학생별 기록 창: (이름, 기록들). null이면 닫힘 */
+    var studentView by mutableStateOf<Pair<String, List<StudentEntry>>?>(null)
+        private set
+
+    fun addStudents(raw: String) {
+        val ctx = getApplication<Application>()
+        val added = Students.add(ctx, raw)
+        students = Students.names(ctx)
+        status = if (added.isNotEmpty()) "${added.size}명을 명부에 넣었어요. 최근 알림에서 기록을 찾는 중이에요." else status
+        // 최근 7일 알림에서 바로 기록 채우기
+        viewModelScope.launch(Dispatchers.IO) {
+            val names = Students.names(ctx)
+            db.since(System.currentTimeMillis() - 7 * 24L * 3600 * 1000).forEach { Students.log(ctx, names, it) }
+            val counts = db.studentCounts()
+            withContext(Dispatchers.Main) { studentCounts = counts }
+        }
+    }
+    fun removeStudent(name: String) {
+        Students.remove(getApplication<Application>(), name)
+        students = Students.names(getApplication<Application>())
+    }
+    fun openStudent(name: String) {
+        viewModelScope.launch { studentView = name to withContext(Dispatchers.IO) { db.studentLog(name) } }
+    }
+    fun closeStudent() { studentView = null }
+
+    // ── 📌 마감·할 일 ──
+    var tasks by mutableStateOf<List<Task>>(emptyList())
+        private set
+    private fun reloadTasks() { viewModelScope.launch { tasks = withContext(Dispatchers.IO) { db.tasks() } } }
+    fun setTaskDone(t: Task, done: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) { db.setTaskDone(t.id, done) }.invokeOnCompletion { reloadTasks() }
+    }
+    fun deleteTask(t: Task) {
+        viewModelScope.launch(Dispatchers.IO) { db.deleteTask(t.id) }.invokeOnCompletion { reloadTasks() }
+    }
+    /** 직접 추가: 오늘/내일/모레 (0/1/2일 뒤) */
+    fun addTask(title: String, daysLater: Int) {
+        if (title.isBlank()) return
+        val due = java.util.Calendar.getInstance().apply {
+            add(java.util.Calendar.DAY_OF_YEAR, daysLater)
+            set(java.util.Calendar.HOUR_OF_DAY, 23); set(java.util.Calendar.MINUTE, 59)
+        }.timeInMillis
+        val now = System.currentTimeMillis()
+        val t = Task(title = title.trim().take(60), room = "직접 추가", due = due, hasTime = false, sourceTime = now, dedupe = "manual|$now")
+        viewModelScope.launch(Dispatchers.IO) { db.insertTask(t) }.invokeOnCompletion { reloadTasks() }
+    }
+
+    // ── 🏫 수업 중 · 🌙 퇴근 모드 ──
+    /** 설정이 바뀔 때마다 올려서 화면을 다시 그림 (값은 QuietMode가 저장) */
+    var quietRev by mutableIntStateOf(0)
+        private set
+    fun quiet(block: android.content.SharedPreferences.Editor.() -> Unit) {
+        QuietMode.update(getApplication<Application>(), block); quietRev++
+    }
+    fun setPeriod(index: Int, minute: Int) {
+        val ctx = getApplication<Application>()
+        val list = QuietMode.periods(ctx).toMutableList()
+        if (index in list.indices) list[index] = minute else list.add(minute)
+        QuietMode.setPeriods(ctx, list); quietRev++
+    }
+    fun removePeriod(index: Int) {
+        val ctx = getApplication<Application>()
+        QuietMode.setPeriods(ctx, QuietMode.periods(ctx).filterIndexed { i, _ -> i != index }); quietRev++
+    }
+    fun dndGranted(): Boolean =
+        getApplication<Application>().getSystemService(android.app.NotificationManager::class.java).isNotificationPolicyAccessGranted
+
     // ── 👪 학부모 연락 ──
     var parentRooms by mutableStateOf(ParentAdvisor.parentRooms(app))
         private set
@@ -324,9 +415,20 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
             db.purgeOld()
             val rules = AppFilter.rules(ctx)
             val items = db.today().filter { rules.allows(it) }
-            val parents = ParentAdvisor.contacts(items, ParentAdvisor.parentRooms(ctx))
+            val names = Students.names(ctx)
+            val parents = ParentAdvisor.contacts(items, ParentAdvisor.parentRooms(ctx), names)
+            // 오늘 알림에서 할 일 뽑기 (이미 있는 건 건너뜀) + 학생별 기록 채우기
+            items.forEach { runCatching { TaskExtractor.save(ctx, it); Students.log(ctx, names, it) } }
+            val taskList = db.tasks()
+            val counts = db.studentCounts()
             val done = ParentAdvisor.handled(ctx)
-            withContext(Dispatchers.Main) { parentContacts = parents; handledKeys = done }
+            // 아직 요약하지 않은 새 알림 수 ("지금 정리하기" 버튼)
+            val from = Briefings.pendingFrom(db)
+            val pending = items.count { it.time >= from }
+            withContext(Dispatchers.Main) {
+                parentContacts = parents; handledKeys = done; pendingCount = pending
+                tasks = taskList; students = names; studentCounts = counts
+            }
             val last = db.lastBriefing()
             withContext(Dispatchers.Main) { todayItems = items; lastBriefing = last }
         }
@@ -424,11 +526,13 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         busy = true; summary = ""
         viewModelScope.launch {
             try {
-                val out = Briefings.run(getApplication<Application>(), "오늘 요약", NotificationDb.startOfToday()) { s ->
+                // 지난 요약 이후 새로 온 알림만 (한 번 요약한 건 다시 넣지 않음)
+                val out = Briefings.runSinceLast(getApplication<Application>(), "지금 정리") { s ->
                     viewModelScope.launch { status = s }
                 }
                 summary = out.body
                 lastBriefing = withContext(Dispatchers.IO) { db.lastBriefing() }
+                refresh()
             } catch (s: Summarizer.StoppedException) {
                 status = s.message ?: "중지했어요."
             } catch (t: Throwable) {
@@ -458,6 +562,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()   // 상태바까지 앱 배경색, 다크 모드에 맞춰 아이콘 색 자동
         Notifications.ensureChannels(this)
         BriefingScheduler.scheduleAll(this)   // 강제 종료 등으로 알람이 지워졌을 때를 대비해 다시 등록
+        QuietMode.tick(this)                  // 수업 중·퇴근 모드 상태 반영과 다음 경계 예약
         setContent {
             SsamTheme {
                 Surface(color = MaterialTheme.colorScheme.background) {
