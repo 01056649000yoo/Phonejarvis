@@ -277,7 +277,7 @@
       <p class="sub">요약은 서버가 아니라 선생님 폰 안에서 해요.</p>
       <div class="safe">
         <div class="safe-row"><span aria-hidden="true">🔒</span><div><b>인터넷 권한이 없는 앱</b><span>알림 내용이 어디로도 보내지지 않아요.</span></div></div>
-        <div class="safe-row"><span aria-hidden="true">🤖</span><div><b>폰 안의 AI가 요약</b><span>구글이 공개한 Gemma 4 모델을 폰에 받아서 써요.</span></div></div>
+        <div class="safe-row"><span aria-hidden="true">🤖</span><div><b>폰 안의 AI가 요약</b><span>구글이 공개한 Gemma 4 E4B(기본)·E2B 모델을 폰에 받아서 써요.</span></div></div>
         <div class="safe-row"><span aria-hidden="true">🧹</span><div><b>오래된 알림은 저절로 지워요</b><span>모은 알림은 기본 7일 뒤 사라져요.</span></div></div>
       </div>
     </section>
@@ -303,9 +303,10 @@
       <p class="sub">설치하면 앱이 폰을 진단해 알맞은 모델을 골라 줘요.</p>
       <dl class="spec">
         <div><dt>운영체제</dt><dd>안드로이드 12 이상 (아이폰은 아직 안 돼요)</dd></div>
-        <div><dt>메모리</dt><dd>8GB 이상이면 더 똑똑한 E4B(기본) · 6GB면 가벼운 E2B</dd></div>
-        <div><dt>저장공간</dt><dd>E2B 약 6GB, E4B 약 8GB 여유</dd></div>
-        <div><dt>인터넷</dt><dd>처음 모델을 받을 때만 (와이파이 권장)</dd></div>
+        <div><dt>AI 모델</dt><dd><b>Gemma 4 E4B</b> 3.7GB (기본, 더 꼼꼼) · <b>Gemma 4 E2B</b> 2.6GB (가볍고 빠름)</dd></div>
+        <div><dt>메모리</dt><dd>램 8GB 이상이면 E4B · 6GB면 E2B (앱이 폰을 진단해 골라 줘요)</dd></div>
+        <div><dt>저장공간</dt><dd>받는 동안 잠깐 두 벌이 생겨서 E4B 약 7.8GB, E2B 약 5.7GB 여유</dd></div>
+        <div><dt>인터넷</dt><dd>처음 모델을 브라우저로 받을 때만 (와이파이 권장). 앱 자체는 인터넷을 쓰지 않아요</dd></div>
       </dl>
     </section>
 
@@ -321,7 +322,7 @@
       <details><summary>'소리도 끄기'를 켜니 권한 화면이 나와요.</summary>
         <p>메시지 소리를 끄려면 폰의 '방해 금지 접근' 권한이 한 번 필요해요. 목록에서 쌤톡스를 허용하고 돌아오면 돼요. 폰 설정의 모드 목록에 '쌤톡스 모아 두기'가 생기고, 모으는 동안만 켜져요. 선생님이 직접 켠 방해 금지는 건드리지 않아요.</p></details>
       <details><summary>모델 다운로드에 데이터 요금이 나오나요?</summary>
-        <p>모델이 2.6~3.7GB라서 모바일 데이터로 받으면 요금이 나올 수 있어요. 와이파이에서 받아 주세요.</p></details>
+        <p>E4B는 3.7GB, E2B는 2.6GB라서 모바일 데이터로 받으면 요금이 나올 수 있어요. 와이파이에서 받아 주세요. 이미 받아 둔 파일이 다운로드 폴더에 있으면 앱이 찾아서 가져와요.</p></details>
       <details><summary>왜 Play 스토어가 아니라 APK로 설치하나요?</summary>
         <p>아직 개발 중인 무료 앱이라 직접 배포하고 있어요. 그래서 설치할 때 "출처를 알 수 없는 앱" 허용이 한 번 필요해요.</p></details>
       <details><summary>알림이 모이지 않아요.</summary>
@@ -335,7 +336,7 @@
 
   <footer>
     <span class="jua" style="font-size:17px;color:var(--fg)">쌤톡스</span><br>
-    선생님을 위한 알림 요약 · AI 모델: Google Gemma 4 (Apache 2.0)<br>
+    선생님을 위한 알림 요약 · AI 모델: Google Gemma 4 E4B·E2B (Apache 2.0)<br>
     문의 <a href="mailto:yshgg@naver.com" style="color:inherit">yshgg@naver.com</a>
   </footer>
 </div>
