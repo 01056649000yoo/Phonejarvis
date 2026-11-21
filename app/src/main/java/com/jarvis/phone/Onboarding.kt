@@ -280,7 +280,7 @@ private fun DiagnoseStep(vm: JarvisViewModel) {
             }
         }
     }
-    Text("나중에 메인 화면에서 언제든 바꿀 수 있어요.", style = MaterialTheme.typography.bodySmall,
+    Text("나중에 설정 → 🤖 AI 모델·권한 → 바꾸기에서 언제든 바꿀 수 있어요.", style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant)
     PrimaryButton("${vm.selectedModel.title}(으)로 진행") { vm.onboardingStep = 2 }
 }
