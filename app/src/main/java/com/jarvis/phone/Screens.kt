@@ -30,10 +30,11 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** 이번 버전에서 바뀐 점 한 줄 (버전 올릴 때 같이 고치기). */
-private const val WHATS_NEW = "요약이 또렷해졌어요 — 🙋 답장할 연락 · 💬 대화방마다 한 줄 · 📦 앱 알림은 건수만"
+private const val WHATS_NEW = "👥 사람 묶음을 내 맘대로 — 고정 학생·학부모 묶음 없이 만들고 꾸미고 지워요"
 
 /** 업데이트 내역 큰 창 (버전 올릴 때 같이 고치기) */
 private val WHATS_NEW_DETAIL = listOf(
+    "👥 사람 묶음을 내 맘대로" to "학생·학부모 묶음이 고정으로 있지 않아요. 설정 → 👥 사람 묶음에서 교직원·가족·학부모·동학년처럼 필요한 목록만 만들고, 이모지 24가지와 이름으로 꾸미세요. 어떤 묶음이든 지울 수 있어요(넣어 둔 이름도 같이 지워지고 모은 알림은 남아요). 예전 학생·학부모 묶음은 비어 있으면 저절로 없어지고, 이름이 들어 있으면 남아 있어요.",
     "🙋 답장할 연락을 맨 위에" to "학부모·동료가 묻거나 부탁한 것은 🙋 답장할 연락에 따로 모아요. 누가 무엇을 원하는지 한 줄로 보여 줘요.",
     "💬 대화방마다 한 줄씩" to "예전에는 알림을 한꺼번에 줄였다가 한 번 더 줄여서 내용이 뭉개졌어요. 이제 대화방마다 따로 '요점·요청·답장'을 정리해요. 날짜·시간·장소는 메시지에 있는 그대로 써요.",
     "🤖 기본 모델은 E4B" to "램 8GB 이상인 요즘 폰은 더 꼼꼼한 Gemma 4 E4B를 추천해요. 쓰던 모델을 바꾸려면 설정 → 🤖 AI 모델·권한 → 바꾸기.",
@@ -531,7 +532,7 @@ private fun PeoplePage(vm: JarvisViewModel) {
     vm.studentView?.let { (name, entries) -> StudentDialog(vm, name, entries) }
     var making by rememberSaveable { mutableStateOf(false) }
     val shown = vm.groups.filterNot { it.hidden }
-    Text("교직원·가족·학부모처럼 묶음을 만들고 이름만 쭉 넣으세요. 그 이름이 보낸 알림이나 이름이 나온 알림을 묶음별로 모아요.",
+    Text("교직원·가족·학부모처럼 내 맘대로 목록을 만들고 이모지·이름으로 꾸미세요. 이름만 쭉 넣으면 그 사람이 보낸 알림이나 이름이 나온 알림을 목록별로 모아요. 안 만들어도 요약은 그대로 돼요.",
         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     if (shown.isNotEmpty()) MenuGroup(shown.map { g ->
         val n = when (g.kind) {
@@ -598,7 +599,7 @@ private fun GroupPage(vm: JarvisViewModel) {
     var removing by remember { mutableStateOf(false) }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedButton(onClick = { renaming = true }) { Text("✏️ 이름 바꾸기") }
-        OutlinedButton(onClick = { removing = true }) { Text(if (g.kind == "custom") "🗑 묶음 지우기" else "🙈 숨기기") }
+        OutlinedButton(onClick = { removing = true }) { Text("🗑 묶음 지우기") }
     }
     when (g.kind) {
         "students" -> { vm.studentView?.let { (name, entries) -> StudentDialog(vm, name, entries) }; StudentsCard(vm) }
@@ -609,10 +610,13 @@ private fun GroupPage(vm: JarvisViewModel) {
         onDone = { e, n -> renaming = false; vm.renameGroup(g.id, e, n) }, onDismiss = { renaming = false })
     if (removing) AlertDialog(
         onDismissRequest = { removing = false },
-        title = { Text(if (g.kind == "custom") "${g.title} 묶음을 지울까요?" else "${g.title} 묶음을 숨길까요?") },
-        text = { Text(if (g.kind == "custom") "넣어 둔 이름 ${vm.groupMembers[g.id]?.size ?: 0}개도 같이 지워져요. 모은 알림은 그대로 남아요."
-                      else "요약 탭에서 안 보여요. 넣어 둔 이름은 남아 있어서, 설정 → 👥 사람 묶음 아래 '다시 보기'로 언제든 되돌릴 수 있어요.") },
-        confirmButton = { Button(onClick = { removing = false; vm.removeGroup(g.id) }) { Text(if (g.kind == "custom") "지우기" else "숨기기") } },
+        title = { Text("${g.title} 묶음을 지울까요?") },
+        text = { Text(when (g.kind) {
+            "students" -> "넣어 둔 학생 이름 ${vm.students.size}명도 같이 지워져요. 학생별 기록과 모은 알림은 그대로 남아요."
+            "parents" -> "연결해 둔 학부모도 같이 지워져요. 모은 알림은 그대로 남아요."
+            else -> "넣어 둔 이름 ${vm.groupMembers[g.id]?.size ?: 0}개도 같이 지워져요. 모은 알림은 그대로 남아요."
+        }) },
+        confirmButton = { Button(onClick = { removing = false; vm.removeGroup(g.id) }) { Text("지우기") } },
         dismissButton = { TextButton(onClick = { removing = false }) { Text("취소") } },
     )
 }

@@ -3,9 +3,10 @@ package com.jarvis.phone
 import android.content.Context
 
 /**
- * 👥 사람들: 쓰는 사람이 직접 만드는 묶음 (예: 🧒 우리 반 학생, 👪 학부모, 👔 교직원, 🏠 가족).
- * kind: "students"(우리 반 명부와 연결) · "parents"(학부모 명부와 연결) · "custom"(이름만 넣는 묶음)
- * 기본 두 묶음(학생·학부모)도 이름을 바꾸거나 숨길 수 있어서 교사가 아니어도 쓸 수 있음.
+ * 👥 사람 묶음: 쓰는 사람이 직접 만드는 목록 (예: 👔 교직원, 🏠 가족, 👪 학부모).
+ * kind: "custom"(이름만 넣는 묶음) · 예전 판에 있던 "students"(우리 반 명부)·"parents"(학부모 명부)
+ * 2026-11-21 선생님: 학생·학부모를 고정으로 두지 않는다 — 처음엔 빈 목록, 내 맘대로 만들고 꾸미고 지운다.
+ * 예전 판의 학생·학부모 묶음은 이름이 들어 있으면 남겨 두고(지우기 가능), 비어 있으면 저절로 없앤다.
  */
 data class PeopleGroup(val id: String, val emoji: String, val name: String, val kind: String, val hidden: Boolean = false) {
     val title: String get() = "$emoji $name"
@@ -15,13 +16,11 @@ object People {
     private const val SEP = "\u0001"
     private fun p(ctx: Context) = ctx.getSharedPreferences("people", Context.MODE_PRIVATE)
 
-    private val DEFAULTS = listOf(
-        PeopleGroup("students", "🧒", "우리 반 학생", "students"),
-        PeopleGroup("parents", "👪", "학부모", "parents"),
-    )
+    private val DEFAULTS = emptyList<PeopleGroup>()
     /** 묶음 만들기 추천 */
-    val SUGGESTIONS = listOf("👔" to "교직원", "🏠" to "가족", "🤝" to "친구", "🏫" to "학교 행정", "💼" to "업무 거래처", "⛪" to "모임")
-    val EMOJIS = listOf("👔", "🏠", "🤝", "🏫", "💼", "⛪", "⚽", "🎵", "📚", "🩺", "⭐", "👥")
+    val SUGGESTIONS = listOf("👔" to "교직원", "👪" to "학부모", "🏠" to "가족", "🤝" to "친구", "🏫" to "학교 행정", "📚" to "동학년", "💼" to "업무 거래처", "⛪" to "모임")
+    val EMOJIS = listOf("👔", "👪", "🏠", "🤝", "🏫", "📚", "💼", "⛪", "🧒", "👩‍🏫", "🍎", "✏️",
+        "⚽", "🏀", "🎵", "🎨", "🩺", "🍽️", "✈️", "🐶", "🌱", "⭐", "❤️", "👥")
 
     /** 모든 묶음 (숨긴 것 포함, 순서대로) */
     fun groups(ctx: Context): List<PeopleGroup> {
@@ -51,13 +50,25 @@ object People {
         if (n.isEmpty()) return
         save(ctx, groups(ctx).map { if (it.id == id) it.copy(emoji = emoji.ifBlank { it.emoji }, name = n) else it })
     }
-    /** 직접 만든 묶음은 지우고, 기본 묶음(학생·학부모)은 숨김 (이름 기록은 남음) */
+    /** 묶음 지우기 — 어떤 묶음이든 넣어 둔 이름까지 지운다(학생 묶음은 학생 이름, 학부모 묶음은 연결해 둔 학부모). 모은 알림은 남음 */
     fun remove(ctx: Context, id: String) {
         val g = groups(ctx).firstOrNull { it.id == id } ?: return
-        if (g.kind == "custom") {
-            save(ctx, groups(ctx).filterNot { it.id == id })
-            p(ctx).edit().remove("m_$id").apply()
-        } else save(ctx, groups(ctx).map { if (it.id == id) it.copy(hidden = true) else it })
+        save(ctx, groups(ctx).filterNot { it.id == id })
+        p(ctx).edit().remove("m_$id").apply()
+        val apps = ctx.getSharedPreferences("apps", Context.MODE_PRIVATE).edit()
+        when (g.kind) {
+            "students" -> apps.remove("students").apply()
+            "parents" -> apps.remove("parent_links").apply()
+        }
+    }
+
+    /** 예전 판의 학생·학부모 묶음이 비어 있으면 없앤다(앱을 켤 때). 이름이 들어 있으면 그대로 둔다 */
+    fun dropEmptyBuiltIns(ctx: Context) {
+        val list = groups(ctx)
+        val keep = list.filterNot { g ->
+            (g.kind == "students" && Students.names(ctx).isEmpty()) || (g.kind == "parents" && ParentBook.links(ctx).isEmpty())
+        }
+        if (keep.size != list.size) save(ctx, keep)
     }
     fun unhide(ctx: Context, id: String) = save(ctx, groups(ctx).map { if (it.id == id) it.copy(hidden = false) else it })
 

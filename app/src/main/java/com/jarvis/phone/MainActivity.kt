@@ -99,6 +99,8 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         private set
 
     init {
+        // 예전 판의 학생·학부모 묶음이 비어 있으면 없앤다(2026-11-21 고정 묶음 없앰)
+        People.dropEmptyBuiltIns(app)
         // 이미 모델이 설치된 폰(예전 버전에서 업데이트)은 설치 안내를 건너뛰고 바로 메인 화면으로.
         // 앱을 켤 때 한 번만 확인 — 메인의 "바꾸기"로 안내를 다시 연 경우에는 건너뛰지 않음.
         // 단, 마지막 권한 단계(3) 중이었다면 그 단계에서 이어서 보여줌.
