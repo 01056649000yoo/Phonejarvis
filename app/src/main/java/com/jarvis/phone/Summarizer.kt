@@ -18,13 +18,15 @@ import java.util.Locale
  * 1차: 규칙으로 알림을 거르고 묶는다 (광고 제거, 앱·대화방별 그룹화)
  * 2차: Gemma가 묶음별 요약 → 최종 브리핑 (map-reduce)
  */
-class Summarizer(private val ctx: Context) {
+class Summarizer private constructor(private val ctx: Context) {
 
     val modelFile: File get() = File(ctx.filesDir, MODEL_NAME)
     fun hasModel() = modelFile.exists() && modelFile.length() > 100_000_000
 
     private var engine: Engine? = null
     private val lock = Mutex()
+    /** 화면의 수동 요약과 예약 브리핑이 동시에 모델을 쓰지 않도록 요약 전체를 한 줄로 세움. */
+    private val runLock = Mutex()
 
     /** 모델 로드는 수 초 걸리므로 한 번만 하고 재사용. GPU 실패 시 CPU로. */
     private suspend fun engine(onStatus: (String) -> Unit): Engine {
@@ -56,7 +58,10 @@ class Summarizer(private val ctx: Context) {
         }
     }
 
-    suspend fun summarize(items: List<NotiItem>, onStatus: (String) -> Unit): String {
+    suspend fun summarize(items: List<NotiItem>, onStatus: (String) -> Unit): String =
+        runLock.withLock { summarizeLocked(items, onStatus) }
+
+    private suspend fun summarizeLocked(items: List<NotiItem>, onStatus: (String) -> Unit): String {
         val groups = preprocess(items)
         if (groups.isEmpty()) return "요약할 알림이 없어요."
 
@@ -97,9 +102,20 @@ class Summarizer(private val ctx: Context) {
             }
     }
 
+    /** 모델 파일 교체 직전처럼 엔진을 바로 내려야 할 때. */
     fun close() { engine?.close(); engine = null }
 
+    /** 진행 중인 요약이 끝난 뒤 엔진을 내려 메모리(수 GB)를 돌려준다. 백그라운드 브리핑 후 호출. */
+    suspend fun release() = runLock.withLock { lock.withLock { close() } }
+
     companion object {
+        @Volatile private var inst: Summarizer? = null
+        /** 화면과 백그라운드 브리핑이 같은 엔진을 공유 (모델을 두 번 올리면 메모리 부족). */
+        fun get(ctx: Context): Summarizer =
+            inst ?: synchronized(this) {
+                inst ?: Summarizer(ctx.applicationContext).also { inst = it }
+            }
+
         const val MODEL_NAME = "model.litertlm"
         // 기본 컨텍스트가 2048토큰일 수 있어 보수적으로 설정. "token" 관련 오류가 나면 줄이세요.
         private const val CHUNK_CHARS = 1500

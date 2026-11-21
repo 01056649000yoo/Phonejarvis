@@ -1,8 +1,11 @@
 package com.jarvis.phone
 
+import android.Manifest
 import android.app.Application
+import android.app.TimePickerDialog
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
@@ -15,6 +18,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -29,10 +33,34 @@ import java.util.Locale
 
 class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     private val db = NotificationDb.get(app)
-    val summarizer = Summarizer(app)
+    val summarizer = Summarizer.get(app)
 
     var listenerEnabled by mutableStateOf(false)
         private set
+    var notiPermission by mutableStateOf(true)
+        private set
+    var lastBriefing by mutableStateOf<Briefing?>(null)
+        private set
+    var slots by mutableStateOf(readSlots())
+        private set
+
+    data class SlotState(val slot: BriefingSlot, val on: Boolean, val minute: Int)
+
+    private fun readSlots(): List<SlotState> {
+        val ctx = getApplication<Application>()
+        return BriefingSlot.entries.map { SlotState(it, it.isEnabled(ctx), it.minute(ctx)) }
+    }
+
+    fun setSlot(slot: BriefingSlot, on: Boolean, minute: Int) {
+        slot.save(getApplication<Application>(), on, minute)
+        slots = readSlots()
+    }
+
+    /** "지금 브리핑 받아보기": 예약 브리핑과 똑같은 경로(포그라운드 서비스)로 바로 실행. */
+    fun briefNow() {
+        BriefingScheduler.startNow(getApplication<Application>(), "지금 브리핑")
+        status = "브리핑을 시작했어요. 진행 상황은 알림창에서 볼 수 있어요."
+    }
     var hasModel by mutableStateOf(false)
         private set
     var todayItems by mutableStateOf<List<NotiItem>>(emptyList())
@@ -49,10 +77,13 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         listenerEnabled = NotificationManagerCompat.getEnabledListenerPackages(ctx)
             .contains(ctx.packageName)
         hasModel = summarizer.hasModel()
+        notiPermission = NotificationManagerCompat.from(ctx).areNotificationsEnabled()
+        slots = readSlots()
         viewModelScope.launch(Dispatchers.IO) {
             db.purgeOld()
             val items = db.today()
-            withContext(Dispatchers.Main) { todayItems = items }
+            val last = db.lastBriefing()
+            withContext(Dispatchers.Main) { todayItems = items; lastBriefing = last }
         }
     }
 
@@ -117,7 +148,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
                     error("복사가 중간에 끊겼어요 (${copied / 1_000_000}/${total / 1_000_000}MB). 다시 시도하세요.")
 
                 // 4) 기존 모델 교체
-                summarizer.close()
+                summarizer.release()   // 예약 브리핑이 모델을 쓰는 중이면 끝날 때까지 기다림
                 java.nio.file.Files.move(tmp.toPath(), summarizer.modelFile.toPath(),
                     java.nio.file.StandardCopyOption.REPLACE_EXISTING)
                 ui { status = "모델 준비 완료 (${copied / 1_000_000}MB)" }
@@ -142,17 +173,19 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         busy = true; summary = ""
         viewModelScope.launch {
             try {
-                val items = withContext(Dispatchers.IO) { db.today() }
-                val start = System.currentTimeMillis()
-                summary = summarizer.summarize(items) { s -> viewModelScope.launch { status = s } }
-                status = "완료 (${(System.currentTimeMillis() - start) / 1000}초)"
+                val out = Briefings.run(getApplication<Application>(), "오늘 요약", NotificationDb.startOfToday()) { s ->
+                    viewModelScope.launch { status = s }
+                }
+                summary = out.body
+                lastBriefing = withContext(Dispatchers.IO) { db.lastBriefing() }
             } catch (t: Throwable) {
                 status = "요약 실패: ${t.message}"
             } finally { busy = false }
         }
     }
 
-    override fun onCleared() { summarizer.close() }
+    // 엔진은 예약 브리핑과 공유하므로 화면이 닫힐 때 메모리만 돌려줌
+    override fun onCleared() { AppScope.io.launch { summarizer.release() } }
 }
 
 class MainActivity : ComponentActivity() {
@@ -160,6 +193,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Notifications.ensureChannels(this)
+        BriefingScheduler.scheduleAll(this)   // 강제 종료 등으로 알람이 지워졌을 때를 대비해 다시 등록
         setContent { MaterialTheme(colorScheme = darkColorScheme()) { Surface { JarvisScreen(vm) } } }
     }
 
@@ -173,6 +208,7 @@ fun JarvisScreen(vm: JarvisViewModel) {
         if (uri != null) vm.importModel(uri)
     }
     val timeFmt = remember { SimpleDateFormat("HH:mm", Locale.KOREA) }
+    val dayTimeFmt = remember { SimpleDateFormat("M/d HH:mm", Locale.KOREA) }
 
     Column(
         Modifier.fillMaxSize().safeDrawingPadding().padding(16.dp)
@@ -199,7 +235,46 @@ fun JarvisScreen(vm: JarvisViewModel) {
             enabled = !vm.busy,
         ) { picker.launch(arrayOf("*/*")) }
 
-        // 3. 요약
+        // 3. 자동 브리핑 결과를 알림으로 받기 위한 권한 (Android 13+)
+        val notiPermLauncher = rememberLauncherForActivityResult(
+            ActivityResultContracts.RequestPermission()) { vm.refresh() }
+        SetupCard(
+            done = vm.notiPermission,
+            title = "③ 알림 표시 권한",
+            desc = if (vm.notiPermission) "허용됨" else "자동 브리핑 결과를 알림으로 받으려면 필요해요",
+            button = "허용하기",
+            enabled = !vm.notiPermission,
+        ) {
+            if (Build.VERSION.SDK_INT >= 33) notiPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            else ctx.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                .putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName))
+        }
+
+        // 4. 자동 브리핑 시간
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("⏰ 자동 브리핑", fontWeight = FontWeight.Bold)
+                Text("정한 시각에 지난 브리핑 이후(최대 24시간) 알림을 요약해 알림으로 보내줘요.",
+                    style = MaterialTheme.typography.bodySmall)
+                vm.slots.forEach { s ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(s.slot.label, Modifier.weight(1f))
+                        TextButton(onClick = {
+                            TimePickerDialog(ctx, { _, h, m -> vm.setSlot(s.slot, true, h * 60 + m) },
+                                s.minute / 60, s.minute % 60, true).show()
+                        }) { Text("%02d:%02d".format(s.minute / 60, s.minute % 60)) }
+                        Switch(checked = s.on, onCheckedChange = { vm.setSlot(s.slot, it, s.minute) })
+                    }
+                }
+                OutlinedButton(
+                    onClick = { vm.briefNow() },
+                    enabled = vm.hasModel && !vm.busy,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("지금 브리핑 받아보기 (테스트)") }
+            }
+        }
+
+        // 5. 요약
         Button(
             onClick = { vm.summarizeToday() },
             enabled = vm.hasModel && !vm.busy && vm.todayItems.isNotEmpty(),
@@ -212,6 +287,16 @@ fun JarvisScreen(vm: JarvisViewModel) {
         if (vm.summary.isNotEmpty()) {
             Card(Modifier.fillMaxWidth()) {
                 Text(vm.summary, Modifier.padding(16.dp), style = MaterialTheme.typography.bodyLarge)
+            }
+        } else vm.lastBriefing?.let { b ->
+            // 마지막 브리핑 (예약 브리핑 포함)
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("${b.label} · ${dayTimeFmt.format(b.time)} · 알림 ${b.count}건",
+                        style = MaterialTheme.typography.labelMedium)
+                    Spacer(Modifier.height(8.dp))
+                    Text(b.text, style = MaterialTheme.typography.bodyLarge)
+                }
             }
         }
 

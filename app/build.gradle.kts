@@ -12,8 +12,8 @@ android {
         applicationId = "com.jarvis.phone"
         minSdk = 31          // Galaxy Z Fold4 (Android 14+) 기준
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.1.1"
+        versionCode = 4
+        versionName = "0.2.0"
     }
 
     // 개인용 고정 서명 키: 빌드마다 같은 서명 → 앱을 지우지 않고 업데이트 설치 가능
