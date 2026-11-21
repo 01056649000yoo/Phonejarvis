@@ -142,3 +142,37 @@ object Backup {
         return j.optString("summary").ifEmpty { summary(ctx) }
     }
 }
+
+/** 📤 다른 폰으로 보내기 / 받은 백업 파일 열기 */
+object BackupShare {
+    /** 백업 파일을 만들어 공유 창(카톡 나에게·드라이브·메일 등)으로 보내는 Intent */
+    fun shareIntent(ctx: Context): android.content.Intent {
+        val dir = File(ctx.cacheDir, "share").apply { mkdirs() }
+        val f = File(dir, "쌤톡스_백업.json").apply { writeText(Backup.toJson(ctx)) }
+        val uri = androidx.core.content.FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", f)
+        val send = android.content.Intent(android.content.Intent.ACTION_SEND)
+            .setType("application/json")
+            .putExtra(android.content.Intent.EXTRA_STREAM, uri)
+            .putExtra(android.content.Intent.EXTRA_SUBJECT, "쌤톡스 설정 백업")
+            .putExtra(android.content.Intent.EXTRA_TEXT, "쌤톡스 설정 백업 파일이에요. 새 폰에서 이 파일을 열고 '쌤톡스'를 고르면 설정을 불러와요.")
+            .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        return android.content.Intent.createChooser(send, "다른 폰으로 보내기")
+    }
+
+    /** 받은 파일이 쌤톡스 백업인지 보고 (저장 시각, 요약)을 돌려줌 */
+    fun peek(ctx: Context, uri: Uri): Result<Pair<Long, String>> = runCatching {
+        val text = ctx.contentResolver.openInputStream(uri)!!.use { it.readBytes().toString(Charsets.UTF_8) }
+        val j = JSONObject(text)
+        require(j.optString("format") == "ssamtox-backup") { "쌤톡스 백업 파일이 아니에요." }
+        j.optLong("created") to j.optString("summary")
+    }
+
+    /** 다른 앱에서 연 파일 Intent에서 uri 꺼내기 (열기·공유받기) */
+    fun uriFrom(intent: android.content.Intent?): Uri? = when (intent?.action) {
+        android.content.Intent.ACTION_VIEW -> intent.data
+        android.content.Intent.ACTION_SEND ->
+            if (android.os.Build.VERSION.SDK_INT >= 33) intent.getParcelableExtra(android.content.Intent.EXTRA_STREAM, Uri::class.java)
+            else @Suppress("DEPRECATION") intent.getParcelableExtra<Uri>(android.content.Intent.EXTRA_STREAM)
+        else -> null
+    }
+}

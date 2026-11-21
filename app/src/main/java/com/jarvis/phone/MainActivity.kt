@@ -266,6 +266,20 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
             status = if (ok) "💾 백업 파일을 저장했어요." else "백업 파일을 저장하지 못했어요."
         }
     }
+    /** 📥 받은 백업 파일: (uri, (저장 시각, 요약)). null이면 창 닫힘 */
+    var incomingBackup by mutableStateOf<Pair<Uri, Pair<Long, String>>?>(null)
+        private set
+    fun offerRestore(uri: Uri) {
+        val ctx = getApplication<Application>()
+        viewModelScope.launch {
+            val r = withContext(Dispatchers.IO) { BackupShare.peek(ctx, uri) }
+            r.onSuccess { incomingBackup = uri to it }
+                .onFailure { status = "불러오지 못했어요: ${it.message}" }
+        }
+    }
+    fun acceptIncoming() { incomingBackup?.let { restoreBackup(it.first) }; incomingBackup = null }
+    fun dismissIncoming() { incomingBackup = null }
+
     /** uri가 null이면 다운로드/쌤톡스에서 찾은 백업을 불러옴 */
     fun restoreBackup(uri: Uri?) {
         val ctx = getApplication<Application>()
@@ -675,16 +689,37 @@ class MainActivity : ComponentActivity() {
         Notifications.ensureChannels(this)
         BriefingScheduler.scheduleAll(this)   // 강제 종료 등으로 알람이 지워졌을 때를 대비해 다시 등록
         QuietMode.tick(this)                  // 수업 중·퇴근 모드 상태 반영과 다음 경계 예약
+        BackupShare.uriFrom(intent)?.let { vm.offerRestore(it) }   // 📥 받은 백업 파일로 열렸으면 불러오기 제안
         setContent {
             SsamTheme {
                 Surface(color = MaterialTheme.colorScheme.background) {
                     // 첫 실행이면 설치 안내(폰 진단 → 모델 받기 → 권한), 끝났으면 메인 화면
-                    if (vm.onboardingDone) JarvisScreen(vm) else OnboardingScreen(vm)
+                    // 🎬 설치 안내 ↔ 메인 화면: 부드럽게 겹쳐 바뀜
+                    androidx.compose.animation.Crossfade(targetState = vm.onboardingDone, label = "main") { done ->
+                        if (done) JarvisScreen(vm) else OnboardingScreen(vm)
+                    }
+                    // 📥 받은 백업 파일 → 불러오기 확인 (설치 안내 중이어도)
+                    vm.incomingBackup?.let { (_, info) ->
+                        val fmt = remember { SimpleDateFormat("M/d(E) HH:mm", Locale.KOREA) }
+                        AlertDialog(
+                            onDismissRequest = { vm.dismissIncoming() },
+                            title = { Text("💾 백업 파일을 받았어요") },
+                            text = { Text("${fmt.format(info.first)} 저장 · ${info.second}\n\n이 설정으로 바꿀까요? 지금 설정은 이 파일 내용으로 덮어써져요.") },
+                            confirmButton = { Button(onClick = { vm.acceptIncoming() }) { Text("불러오기") } },
+                            dismissButton = { TextButton(onClick = { vm.dismissIncoming() }) { Text("취소") } },
+                        )
+                    }
                 }
             }
         }
     }
 
     override fun onResume() { super.onResume(); vm.refresh() }
+
+    // 📥 카톡·드라이브에서 받은 백업 파일로 열렸을 때 (앱이 이미 떠 있으면 onNewIntent)
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        BackupShare.uriFrom(intent)?.let { vm.offerRestore(it) }
+    }
 }
 

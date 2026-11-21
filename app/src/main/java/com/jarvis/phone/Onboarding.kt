@@ -10,6 +10,8 @@ import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -91,11 +93,24 @@ fun OnboardingScreen(vm: JarvisViewModel) {
             Modifier.weight(1f).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            when (vm.onboardingStep) {
-                0 -> WelcomeStep(vm)
-                1 -> DiagnoseStep(vm)
-                2 -> DownloadStep(vm)
-                else -> PermissionStep(vm)
+            // 🎬 단계 이동: 앞으로는 오른쪽에서, 뒤로는 왼쪽에서 넘어옴
+            AnimatedContent(
+                targetState = vm.onboardingStep,
+                transitionSpec = {
+                    val dir = if (targetState > initialState) 1 else -1
+                    (slideInHorizontally(tween(280)) { it * dir / 3 } + fadeIn(tween(280))) togetherWith
+                        (slideOutHorizontally(tween(220)) { -it * dir / 3 } + fadeOut(tween(180)))
+                },
+                label = "step",
+            ) { step ->
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    when (step) {
+                        0 -> WelcomeStep(vm)
+                        1 -> DiagnoseStep(vm)
+                        2 -> DownloadStep(vm)
+                        else -> PermissionStep(vm)
+                    }
+                }
             }
         }
     }

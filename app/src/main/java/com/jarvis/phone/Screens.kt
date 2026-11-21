@@ -7,6 +7,8 @@ import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
@@ -24,7 +26,7 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** 이번 버전에서 바뀐 점 한 줄 (버전 올릴 때 같이 고치기). */
-private const val WHATS_NEW = "💾 백업·복원: 하루 한 번 자동 백업, 앱을 다시 깔아도 첫 화면에서 설정 그대로 불러오기"
+private const val WHATS_NEW = "📤 다른 폰으로 설정 보내기(카톡 나에게·드라이브) · 🎬 부드러운 화면 전환 · 💾 백업·복원"
 
 /** 메인: 아래 탭 두 개 — 브리핑(결과만 보기) / 설정(내 방식대로). */
 @Composable
@@ -52,9 +54,22 @@ fun JarvisScreen(vm: JarvisViewModel) {
         ) {
             Spacer(Modifier.height(4.dp))
             Header(vm)
-            when (vm.tab) {
-                JarvisViewModel.Tab.BRIEFING -> BriefingTab(vm)
-                JarvisViewModel.Tab.SETTINGS -> SettingsTab(vm)
+            // 🎬 탭 전환: 옆으로 살짝 밀리며 부드럽게 (브리핑 → 설정은 오른쪽에서, 반대는 왼쪽에서)
+            AnimatedContent(
+                targetState = vm.tab,
+                transitionSpec = {
+                    val dir = if (targetState.ordinal > initialState.ordinal) 1 else -1
+                    (slideInHorizontally(tween(260)) { it * dir / 5 } + fadeIn(tween(260))) togetherWith
+                        (slideOutHorizontally(tween(200)) { -it * dir / 5 } + fadeOut(tween(160)))
+                },
+                label = "tab",
+            ) { tab ->
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    when (tab) {
+                        JarvisViewModel.Tab.BRIEFING -> BriefingTab(vm)
+                        JarvisViewModel.Tab.SETTINGS -> SettingsTab(vm)
+                    }
+                }
             }
             Spacer(Modifier.height(8.dp))
         }
@@ -156,9 +171,14 @@ private fun BriefingTab(vm: JarvisViewModel) {
                     }
                     TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "접기" else "원본 보기") }
                 }
-                if (expanded) vm.todayItems.takeLast(30).reversed().forEach {
-                    Text("${timeFmt.format(it.time)} [${it.app}] ${it.title}: ${it.text}",
-                        style = MaterialTheme.typography.bodySmall, maxLines = 2)
+                AnimatedVisibility(visible = expanded, enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        vm.todayItems.takeLast(30).reversed().forEach {
+                            Text("${timeFmt.format(it.time)} [${it.app}] ${it.title}: ${it.text}",
+                                style = MaterialTheme.typography.bodySmall, maxLines = 2)
+                        }
+                    }
                 }
             }
         }
@@ -173,16 +193,24 @@ private fun BriefingTab(vm: JarvisViewModel) {
                     Text("📚 브리핑 모음 · ${vm.briefings.size}개", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                     TextButton(onClick = { open = !open }) { Text(if (open) "접기" else "펼치기") }
                 }
-                if (open) vm.briefings.forEach { b ->
-                    var show by rememberSaveable(b.time) { mutableStateOf(false) }
-                    HorizontalDivider()
-                    Row(Modifier.fillMaxWidth().clickable { show = !show }.padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically) {
-                        Text("${briefingIcon(b)} ${b.label} · ${dayTimeFmt.format(b.time)} · ${b.count}건",
-                            Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                        Text(if (show) "▾" else "▸")
+                AnimatedVisibility(visible = open, enter = expandVertically(tween(260)) + fadeIn(),
+                    exit = shrinkVertically(tween(220)) + fadeOut()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        vm.briefings.forEach { b ->
+                            var show by rememberSaveable(b.time) { mutableStateOf(false) }
+                            HorizontalDivider()
+                            Row(Modifier.fillMaxWidth().clickable { show = !show }.padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically) {
+                                Text("${briefingIcon(b)} ${b.label} · ${dayTimeFmt.format(b.time)} · ${b.count}건",
+                                    Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                                Text(if (show) "▾" else "▸")
+                            }
+                            AnimatedVisibility(visible = show, enter = expandVertically() + fadeIn(),
+                                exit = shrinkVertically() + fadeOut()) {
+                                Text(b.text, style = MaterialTheme.typography.bodyMedium)
+                            }
+                        }
                     }
-                    if (show) Text(b.text, style = MaterialTheme.typography.bodyMedium)
                 }
             }
         }
@@ -214,14 +242,18 @@ private fun BriefingCard(vm: JarvisViewModel, b: Briefing, primary: Boolean, onH
                 }
                 Text(if (collapsed) "▸ 펼치기" else "▾ 접기", style = MaterialTheme.typography.labelLarge)
             }
-            if (!collapsed) {
-                Spacer(Modifier.height(8.dp))
-                Text(b.text, style = MaterialTheme.typography.bodyLarge)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = { vm.toggleBriefing(b) }) {
-                        Text("다 봤어요 · 접기", color = MaterialTheme.colorScheme.onPrimaryContainer)
+            // 🎬 접기·펼치기: 아래로 스르륵
+            AnimatedVisibility(visible = !collapsed, enter = expandVertically(tween(260)) + fadeIn(tween(260)),
+                exit = shrinkVertically(tween(220)) + fadeOut(tween(160))) {
+                Column {
+                    Spacer(Modifier.height(8.dp))
+                    Text(b.text, style = MaterialTheme.typography.bodyLarge)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        TextButton(onClick = { vm.toggleBriefing(b) }) {
+                            Text("다 봤어요 · 접기", color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        }
+                        TextButton(onClick = onHide) { Text("숨기기", color = MaterialTheme.colorScheme.onPrimaryContainer) }
                     }
-                    TextButton(onClick = onHide) { Text("숨기기", color = MaterialTheme.colorScheme.onPrimaryContainer) }
                 }
             }
         }
@@ -242,13 +274,24 @@ private fun SettingsTab(vm: JarvisViewModel) {
             FilterChip(selected = vm.section == s, onClick = { vm.section = s }, label = { Text(s.label) })
         }
     }
-    when (vm.section) {
-        JarvisViewModel.Section.APPS -> AppCleanupCard(vm)
-        JarvisViewModel.Section.STUDENTS -> StudentsCard(vm)
-        JarvisViewModel.Section.KEYWORDS -> KeywordCard(vm)
-        JarvisViewModel.Section.QUIET -> QuietCard(vm)
-        JarvisViewModel.Section.TIMES -> TimesCard(vm)
-        JarvisViewModel.Section.BASIC -> BasicSettings(vm)
+    // 🎬 칸 전환: 살짝 떠오르며 바뀜
+    AnimatedContent(
+        targetState = vm.section,
+        transitionSpec = {
+            (fadeIn(tween(220)) + slideInVertically(tween(220)) { it / 12 }) togetherWith fadeOut(tween(120))
+        },
+        label = "section",
+    ) { section ->
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            when (section) {
+                JarvisViewModel.Section.APPS -> AppCleanupCard(vm)
+                JarvisViewModel.Section.STUDENTS -> StudentsCard(vm)
+                JarvisViewModel.Section.KEYWORDS -> KeywordCard(vm)
+                JarvisViewModel.Section.QUIET -> QuietCard(vm)
+                JarvisViewModel.Section.TIMES -> TimesCard(vm)
+                JarvisViewModel.Section.BASIC -> BasicSettings(vm)
+            }
+        }
     }
 }
 
@@ -353,7 +396,7 @@ private fun AppCleanupCard(vm: JarvisViewModel) {
     Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(
         containerColor = MaterialTheme.colorScheme.primaryContainer,
         contentColor = MaterialTheme.colorScheme.onPrimaryContainer)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(Modifier.animateContentSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("🌱 알림 앱 정리", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text(
                 when {
@@ -489,7 +532,7 @@ private fun ParentCard(vm: JarvisViewModel) {
     val open = vm.parentContacts.filter { it.key !in vm.handledKeys }
     val needReply = open.count { it.category.needsReply }
     Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(Modifier.animateContentSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(if (open.isEmpty()) "👪 학부모 연락 · 오늘 처리할 연락이 없어요"
                  else "👪 학부모 연락 ${open.size}건 · 답장 필요 $needReply",
                 fontWeight = FontWeight.Bold)
@@ -548,7 +591,7 @@ private fun TasksCard(vm: JarvisViewModel) {
     var input by rememberSaveable { mutableStateOf("") }
     val open = vm.tasks.filter { !it.done }
     Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.animateContentSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 val today = open.count { it.dLabel() == "오늘" || it.dLabel() == "지남" }
                 Text(if (open.isEmpty()) "📌 할 일·마감 · 없어요" else "📌 할 일·마감 ${open.size}건" + if (today > 0) " · 오늘 $today" else "",
@@ -781,6 +824,14 @@ private fun BackupCard(vm: JarvisViewModel) {
                 else "아직 백업이 없어요. '모든 파일 접근'이 켜져 있으면 하루 한 번 자동으로 저장해요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
             )
+            // 📤 다른 폰으로 보내기: 카톡 나에게·드라이브·메일 등으로 백업 파일 보내기
+            val ctx = LocalContext.current
+            Button(onClick = { ctx.startActivity(BackupShare.shareIntent(ctx)) }, modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = Ssam.Board, contentColor = Ssam.Chalk)) {
+                Text("📤 다른 폰으로 보내기", fontWeight = FontWeight.Bold)
+            }
+            Text("새 폰에서 받은 '쌤톡스_백업.json'을 열고 쌤톡스를 고르면 바로 불러와요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { vm.backupNow() }) { Text("지금 백업") }
                 OutlinedButton(onClick = { export.launch("쌤톡스_백업.json") }) { Text("파일로 내보내기") }
