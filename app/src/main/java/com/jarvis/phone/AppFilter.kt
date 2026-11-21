@@ -71,7 +71,7 @@ object AppFilter {
         /** 광고로 걸러야 하는지: 학부모 방·키워드·학생 이름이 있으면 광고처럼 보여도 거르지 않음 */
         fun isBlockedAd(pkg: String, room: String, title: String, text: String): Boolean =
             adFilter && AdFilter.isAd(title, text) &&
-                !isLinkedParent(pkg, room, title) &&
+                !isLinkedParent(pkg, room, title, text) &&
                 !ParentAdvisor.isParent(parentRooms, pkg, room.ifEmpty { title }) &&
                 !hasKeyword(keywords, title, text, room)
 
@@ -79,13 +79,13 @@ object AppFilter {
             if (pkg in apps) return false
             if (isBlockedAd(pkg, room, title, text)) return false             // 🚫 광고
             if (isRoomExcluded(rooms, pkg, room.ifEmpty { title }))
-                return hasKeyword(keywords, title, text, room) || isLinkedParent(pkg, room, title)   // 명부의 학부모는 끈 방이라도 모음
+                return hasKeyword(keywords, title, text, room) || isLinkedParent(pkg, room, title, text)   // 명부의 학부모는 끈 방이라도 모음
             return true
         }
         fun allows(n: NotiItem) = allows(n.pkg, n.room, n.title, n.text)
-        /** 학부모 명부에 연결된 사람이 보낸 알림인지 */
-        fun isLinkedParent(pkg: String, room: String, title: String) =
-            parentLinks.isNotEmpty() && ParentBook.find(parentLinks, NotiItem(0, pkg, "", title, "", 0, room)) != null
+        /** 학부모 명부의 이름·번호가 보낸 사람·방·내용에 들어 있는 알림인지 */
+        fun isLinkedParent(pkg: String, room: String, title: String, text: String = "") =
+            parentLinks.isNotEmpty() && ParentBook.find(parentLinks, NotiItem(0, pkg, "", title, text, 0, room)) != null
     }
     // 학생 이름(성 뺀 이름 포함)도 중요 키워드처럼: 끈 방에서 와도 모으고 ⭐에 모임
     fun rules(ctx: Context) = Rules(
@@ -332,18 +332,27 @@ object ParentAdvisor {
     fun contacts(
         items: List<NotiItem>, parentRooms: Set<String>, studentNames: List<String> = emptyList(),
         links: List<ParentLink> = emptyList(),
-    ): List<ParentContact> =
-        items.filter {
-            isParent(parentRooms, it.pkg, it.roomOrTitle) || ParentBook.find(links, it) != null ||
-                ParentBook.looksParentInSchoolApp(it, studentNames)
+    ): List<ParentContact> {
+        // ① 명부의 학부모: 앱이 달라도 사람(학생+관계) 단위로 한 카드에
+        val pairs = items.mapNotNull { n -> ParentBook.find(links, n)?.let { it to n } }
+        val linked = pairs.map { it.second }.toHashSet()
+        val byPerson = pairs.groupBy { (l, _) -> l.student to l.relation }.map { (_, ps) ->
+            val list = ps.map { it.second }.sortedBy { it.time }
+            val link = ps.first().first
+            val last = list.last()
+            ParentContact(last.pkg, last.app, link.label, list, classify(list), listOf(link.student), link)
+        }
+        // ② 명부에 없지만 학부모 같은 연락: 예전에 지정한 학부모 방, 학급 소통 앱의 학부모 호칭·학생 이름
+        val others = items.filter {
+            it !in linked && (isParent(parentRooms, it.pkg, it.roomOrTitle) || ParentBook.looksParentInSchoolApp(it, studentNames))
         }
             .groupBy { it.pkg to it.roomOrTitle }
             .map { (k, list) ->
-                val link = list.firstNotNullOfOrNull { ParentBook.find(links, it) }
-                val students = (listOfNotNull(link?.student) + list.flatMap { Students.find(studentNames, it) }).distinct()
-                ParentContact(k.first, list.first().app, k.second, list, classify(list), students, link)
+                val students = list.flatMap { Students.find(studentNames, it) }.distinct()
+                ParentContact(k.first, list.first().app, k.second, list, classify(list), students, null)
             }
-            .sortedByDescending { it.last.time }
+        return (byPerson + others).sortedByDescending { it.last.time }
+    }
 
     fun contacts(ctx: Context, items: List<NotiItem>): List<ParentContact> =
         contacts(items, parentRooms(ctx), Students.names(ctx), ParentBook.links(ctx))

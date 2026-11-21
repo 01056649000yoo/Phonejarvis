@@ -49,6 +49,7 @@ class BriefingService : Service() {
         )
         if (running) return START_NOT_STICKY     // 이미 도는 중이면 겹쳐 실행하지 않음
         running = true
+        active = true
         preparing = prepareSlot
         showWhenDone = false
 
@@ -84,6 +85,7 @@ class BriefingService : Service() {
                 runCatching { Backup.autoBackup(this@BriefingService) }   // 💾 하루 한 번 자동 백업
                 if (wake.isHeld) wake.release()
                 running = false
+                active = false
                 preparing = null
                 ServiceCompat.stopForeground(this@BriefingService, ServiceCompat.STOP_FOREGROUND_REMOVE)
                 stopSelf()
@@ -99,6 +101,9 @@ class BriefingService : Service() {
         const val EXTRA_PREPARE = "prepare"
         const val ACTION_STOP = "com.jarvis.phone.STOP_BRIEFING"
 
+        /** 백그라운드 정리가 도는 중인지 (화면에서 "정리 중" 표시용) */
+        @Volatile var active = false
+            private set
         /** 지금 미리 준비 중인 브리핑 (없으면 null) */
         @Volatile var preparing: BriefingSlot? = null
             private set

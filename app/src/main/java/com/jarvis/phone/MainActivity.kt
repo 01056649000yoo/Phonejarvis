@@ -28,6 +28,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -255,7 +256,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     enum class Page(val title: String, val tab: Tab) {
         APPS("🌱 알림 앱 정리", Tab.SETTINGS), TIMES("⏰ 브리핑 시각", Tab.SETTINGS), QUIET("🏫 수업·퇴근 모드", Tab.SETTINGS),
         SYSTEM("🤖 AI 모델·권한", Tab.SETTINGS), BACKUP("💾 백업·복원", Tab.SETTINGS),
-        PARENTS("👪 학부모 방·연결", Tab.CLASS), KEYWORDS("⭐ 중요 키워드", Tab.CLASS),
+        PARENTS("👪 학부모 명부", Tab.CLASS), KEYWORDS("⭐ 중요 키워드", Tab.CLASS),
         TODAY_ALL("🗂 오늘 받은 알림 전체", Tab.BRIEFING),
     }
     /** 지금 열린 세부 화면 (null이면 탭의 첫 화면) */
@@ -451,17 +452,37 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     /** "최근 연락에서 고르기": 문자·1:1 대화의 최근 보낸 사람 */
     var recentSenders by mutableStateOf<List<String>>(emptyList())
         private set
+    /** 학부모 명부 화면을 열 때: 최근 7일 보낸 사람(아직 등록 안 한) 불러오기 */
+    fun loadRecentSenders() {
+        viewModelScope.launch {
+            val ctx = getApplication<Application>()
+            recentSenders = withContext(Dispatchers.IO) {
+                ParentBook.recentSenders(db.since(System.currentTimeMillis() - 7 * 24L * 3600 * 1000), ParentBook.links(ctx))
+            }
+            parentLinks = ParentBook.links(ctx)
+        }
+    }
     fun addParentLink(student: String, relation: String, match: String) {
         val ctx = getApplication<Application>()
-        ParentBook.add(ctx, ParentLink(student, relation, match.trim()))
+        val s = student.trim(); val mm = match.trim()
+        if (s.length < 2 || mm.length < 2) return
+        // 명부에 없는 학생이면 함께 추가
+        if (s !in Students.names(ctx)) { Students.add(ctx, s); students = Students.names(ctx) }
+        ParentBook.add(ctx, ParentLink(s, relation, mm))
         parentLinks = ParentBook.links(ctx)
         recentSenders = recentSenders - match
+        status = "👪 $s $relation(${mm}) 등록! 이제 어떤 앱이든 이 이름·번호가 보이면 자동으로 모아요."
         // 최근 7일 알림에서 이 학부모 연락을 학생 기록에 바로 채움
         viewModelScope.launch(Dispatchers.IO) {
             val names = Students.names(ctx)
             db.since(System.currentTimeMillis() - 7 * 24L * 3600 * 1000).forEach { Students.log(ctx, names, it) }
-            val log = db.studentLog(student)
-            withContext(Dispatchers.Main) { if (studentView?.first == student) studentView = student to log }
+            val log = db.studentLog(s)
+            val counts = db.studentCounts()
+            withContext(Dispatchers.Main) {
+                studentCounts = counts
+                if (studentView?.first == s) studentView = s to log
+                refresh()
+            }
         }
     }
     fun removeParentLink(l: ParentLink) {
@@ -618,6 +639,8 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         hasModel = summarizer.hasModel()
         notiPermission = NotificationManagerCompat.from(ctx).areNotificationsEnabled()
         adCount = AdFilter.countToday(ctx)
+        // 앱을 닫았다 다시 열었을 때 백그라운드 정리가 아직 돌고 있으면 "정리 중" 표시
+        if (BriefingService.active && !bgRunning) { bgRunning = true; watchBackground() }
         // 백업 찾기를 누르고 권한을 켜러 갔다가 돌아왔으면 바로 찾기
         if (backupNeedsAccess && ModelFinder.hasAccess()) findBackups()
         lastBackup = Backup.lastBackupTime(ctx)
@@ -739,7 +762,37 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** 새 알림이 이만큼 넘으면 오래 걸리니 백그라운드(포그라운드 서비스)에서 정리하고 끝나면 알림 */
+    private val BACKGROUND_FROM = 30
+    /** 백그라운드에서 정리 중인지 */
+    var bgRunning by mutableStateOf(false)
+        private set
+    private var watching = false
+
+    private fun startBackgroundSummary() {
+        BriefingScheduler.startNow(getApplication<Application>(), "정리 완료")
+        bgRunning = true; stopping = false
+        status = "🔔 새 알림 ${pendingCount}건이라 조금 걸려요. 백그라운드에서 정리하고 다 되면 알림으로 알려 드릴게요. 앱을 닫아도 돼요."
+        watchBackground()
+    }
+    /** 서비스가 끝날 때까지 지켜보다가 끝나면 화면 새로고침 */
+    private fun watchBackground() {
+        if (watching) return
+        watching = true
+        viewModelScope.launch {
+            var waited = 0
+            while (!BriefingService.active && waited < 8000) { delay(250); waited += 250 }   // 서비스가 뜰 때까지
+            while (BriefingService.active) delay(2000)
+            watching = false
+            if (bgRunning) status = "✅ 정리가 끝났어요. 알림창과 아래 📚 브리핑 모음에서 볼 수 있어요."
+            bgRunning = false; stopping = false
+            lastBriefing = withContext(Dispatchers.IO) { db.lastBriefing() }
+            refresh()
+        }
+    }
+
     fun summarizeToday() {
+        if (pendingCount >= BACKGROUND_FROM) { startBackgroundSummary(); return }
         busy = true; summary = ""
         viewModelScope.launch {
             try {
@@ -762,6 +815,10 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     var stopping by mutableStateOf(false)
         private set
     fun stopSummary() {
+        if (bgRunning) {
+            val ctx = getApplication<Application>()
+            runCatching { ctx.startService(Intent(ctx, BriefingService::class.java).setAction(BriefingService.ACTION_STOP)) }
+        }
         summarizer.requestStop()
         stopping = true
         status = "멈추는 중… 지금 하던 부분이 끝나면 멈춰요 (최대 1분)"

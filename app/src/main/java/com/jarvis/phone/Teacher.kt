@@ -402,9 +402,18 @@ object ParentBook {
     }
 
     /** 이 알림을 보낸 사람(제목)·방이 연결된 학부모인지 */
+    /**
+     * 이 알림이 명부의 어느 학부모 것인지 (어떤 앱이든).
+     * ① 보낸 사람·방 이름에 이름·번호가 있으면 (2글자 이상) ② 없으면 내용에 들어 있는지 (3글자 이상, 번호는 뒤 8자리)
+     */
     fun find(links: List<ParentLink>, n: NotiItem): ParentLink? {
+        if (links.isEmpty()) return null
         val who = listOf(n.title, n.room).filter { it.isNotBlank() }.map(::norm)
-        return links.firstOrNull { l -> val m = norm(l.match); m.length >= 2 && who.any { it == m || (m.length >= 3 && m in it) } }
+        links.firstOrNull { l -> val m = norm(l.match); m.length >= 2 && who.any { it == m || (m.length >= 3 && m in it) } }
+            ?.let { return it }
+        if (n.text.isBlank()) return null
+        val body = n.text.filterNot { it.isWhitespace() || it in "()[]<>-" }
+        return links.firstOrNull { l -> val m = norm(l.match); m.length >= 3 && m in body }
     }
 
     // 학급 소통 앱: 여기서 온 연락에 학부모 호칭이나 우리 반 학생 이름이 있으면 학부모 연락으로 봄

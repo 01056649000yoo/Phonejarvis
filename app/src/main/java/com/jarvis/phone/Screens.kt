@@ -30,14 +30,15 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** 이번 버전에서 바뀐 점 한 줄 (버전 올릴 때 같이 고치기). */
-private const val WHATS_NEW = "정리한 알림은 사라지고, 오늘 받은 알림 전체는 맨 아래에서 · 학부모 방 바로 고르기"
+private const val WHATS_NEW = "👪 학부모 명부: 이름·번호만 등록하면 자동으로 · 30건 넘으면 백그라운드 정리"
 
 /** 업데이트 내역 큰 창 (버전 올릴 때 같이 고치기) */
 private val WHATS_NEW_DETAIL = listOf(
-    "📋 오늘 탭이 더 깔끔해졌어요" to "정리(요약)한 알림은 카드에서 사라지고, 아직 정리 안 한 알림만 남아요. 오늘 받은 알림 전체는 맨 아래 '🗂 오늘 받은 알림 전체'에서 볼 수 있어요.",
-    "👪 학부모 방을 바로 지정해요" to "우리 반 → 👪 학부모 방·연결에서 카카오톡·문자 등 앱별 '방 고르기'를 바로 열어 👪를 누르면 돼요.",
-    "🌱 알림 앱 목록이 항상 보여요" to "설정 → 🌱 알림 앱 정리에 들어가면 앱 목록이 펼쳐져 있어요. 앱마다 스위치로 모으기·빼기를 바꿔요.",
-    "🆕 업데이트 내역" to "업데이트 뒤 처음 한 번만 잠깐 보이고 저절로 닫혀요. 눌러서 이렇게 자세히 볼 수 있어요.",
+    "👪 학부모 방 고르기 대신 학부모 명부" to "우리 반 → 👪 학부모 명부에서 학생·관계(어머님/아버님)·이름이나 번호만 등록하세요. 문자·카톡·밴드·하이클래스 등 어떤 앱이든 보낸 사람·방 이름·내용에 그 이름·번호가 보이면 자동으로 \"민준 어머님\" 연락으로 모아 답장까지 추천해요.",
+    "🙋 한 사람으로 모아요" to "같은 학부모가 문자와 카톡으로 따로 연락해도 오늘 탭 👪 학부모 연락에 한 사람으로 묶여요. 이름·번호·카톡 별명을 여러 개 등록해도 돼요.",
+    "🔔 30건 넘으면 백그라운드로" to "새 알림이 30건 넘을 때 지금 정리하기를 누르면 백그라운드에서 정리하고, 다 되면 알림으로 알려 드려요. 기다리지 말고 앱을 닫아도 돼요.",
+    "🧒 명부도 자동으로" to "학부모를 등록할 때 명부에 없는 학생이면 우리 반 명부에 같이 추가돼요.",
+    "📋 지난 변화 (v1.0.2)" to "정리(요약)한 알림은 카드에서 사라지고, 오늘 받은 알림 전체는 맨 아래 '🗂 오늘 받은 알림 전체'에서 봐요.",
     "🧭 지난 큰 변화 (v1.0)" to "아래 탭이 📋 오늘 · 🧒 우리 반 · ⚙️ 설정 세 개로 바뀌었고, 설정은 목록에서 세부 화면으로 들어가요.",
 )
 
@@ -228,13 +229,18 @@ private fun BriefingTab(vm: JarvisViewModel) {
 
     Button(
         onClick = { vm.summarizeToday() },
-        enabled = vm.hasModel && !vm.busy && vm.pendingCount > 0,
+        enabled = vm.hasModel && !vm.busy && !vm.bgRunning && vm.pendingCount > 0,
         modifier = Modifier.fillMaxWidth().height(56.dp),
     ) {
-        Text(if (vm.pendingCount > 0) "지금 정리하기 (새 알림 ${vm.pendingCount}건)" else "새 알림이 없어요 · 모두 정리됨",
-            fontWeight = FontWeight.Bold)
+        Text(when {
+            vm.bgRunning -> "백그라운드에서 정리 중… 다 되면 알림"
+            vm.pendingCount > 0 -> "지금 정리하기 (새 알림 ${vm.pendingCount}건)"
+            else -> "새 알림이 없어요 · 모두 정리됨"
+        }, fontWeight = FontWeight.Bold)
     }
-    if (vm.busy) {
+    if (!vm.bgRunning && vm.pendingCount >= 30) Text("🔔 30건이 넘으면 백그라운드에서 정리하고, 다 되면 알림으로 알려 드려요. 앱을 닫아도 돼요.",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    if (vm.busy || vm.bgRunning) {
         LinearProgressIndicator(Modifier.fillMaxWidth())
         OutlinedButton(onClick = { vm.stopSummary() }, enabled = !vm.stopping, modifier = Modifier.fillMaxWidth()) {
             Text(if (vm.stopping) "멈추는 중…" else "중지 (지금까지 정리한 것만 보기)")
@@ -431,56 +437,80 @@ private fun ClassTab(vm: JarvisViewModel) {
     StudentsCard(vm)
     val linked = vm.parentLinks.size
     MenuGroup(listOf(
-        Triple("👪 학부모 방·연결", "방 ${vm.parentRooms.size}곳 · 연결 ${linked}명") { vm.open(JarvisViewModel.Page.PARENTS) },
+        Triple("👪 학부모 명부", if (linked == 0) "이름·번호만 등록하면 자동으로 모아요" else "등록 ${vm.parentLinks.map { it.student to it.relation }.distinct().size}명") { vm.open(JarvisViewModel.Page.PARENTS) },
         Triple("⭐ 중요 키워드",
             if (vm.keywords.isEmpty()) "아직 없음" else vm.keywords.take(2).joinToString(", ") + if (vm.keywords.size > 2) " 외 ${vm.keywords.size - 2}개" else "") {
             vm.open(JarvisViewModel.Page.KEYWORDS) },
     ))
 }
 
-/** 👪 학부모 방·연결 한곳에서 보기: 지정한 방, 학생별로 연결한 학부모. 추가하는 곳도 안내 */
+/**
+ * 👪 학부모 명부: 학생·관계·이름(별명·번호)만 등록하면,
+ * 어떤 앱이든 보낸 사람·방 이름·내용에 그 이름·번호가 들어간 알림을 자동으로 그 학부모 연락으로 정리.
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ParentsPage(vm: JarvisViewModel) {
-    Card(Modifier.fillMaxWidth()) {
+    LaunchedEffect(Unit) { vm.loadRecentSenders() }
+    var student by rememberSaveable { mutableStateOf("") }
+    var relation by rememberSaveable { mutableStateOf("어머님") }
+    var match by rememberSaveable { mutableStateOf("") }
+
+    Text("학부모 이름이나 번호를 한 번만 등록하면, 문자·카톡·밴드·하이클래스 등 어떤 앱이든 그 이름·번호가 들어간 알림을 " +
+         "자동으로 \"민준 어머님\" 연락으로 모아 답장까지 추천해요.",
+        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+    // ＋ 등록
+    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(
+        containerColor = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer)) {
         Column(Modifier.animateContentSize(Motion.size).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("👪 학부모 방", fontWeight = FontWeight.Bold)
-            Text("지정한 방의 연락은 학부모 연락으로 따로 모아 답장까지 추천해요.", style = MaterialTheme.typography.bodySmall)
-            if (vm.parentRooms.isEmpty()) Text("아직 없어요.", style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            vm.parentRooms.sorted().forEach { key ->
-                val (pkg, room) = key.split("|", limit = 2).let { it[0] to it.getOrElse(1) { "" } }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(room, Modifier.weight(1f), maxLines = 1)
-                    TextButton(onClick = { vm.setParentRoom(pkg, room, false) }) { Text("빼기") }
+            Text("＋ 학부모 등록", fontWeight = FontWeight.Bold)
+            Text("① 학생", style = MaterialTheme.typography.labelLarge)
+            if (vm.students.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                vm.students.forEach { s -> FilterChip(selected = student == s, onClick = { student = s }, label = { Text(s) }) }
+            }
+            OutlinedTextField(value = student, onValueChange = { student = it.trim() }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("학생 이름 (명부에 없으면 새로 추가돼요)") })
+            Text("② 관계", style = MaterialTheme.typography.labelLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("어머님", "아버님", "보호자").forEach { r -> FilterChip(selected = relation == r, onClick = { relation = r }, label = { Text(r) }) }
+            }
+            Text("③ 학부모 이름·별명·번호", style = MaterialTheme.typography.labelLarge)
+            OutlinedTextField(value = match, onValueChange = { match = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("예: 민준맘, 김영희, 010-1234-5678") })
+            if (vm.recentSenders.isNotEmpty()) {
+                Text("최근 연락한 사람에서 고르기", style = MaterialTheme.typography.labelMedium)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    vm.recentSenders.forEach { s -> AssistChip(onClick = { match = s }, label = { Text(s) }) }
                 }
             }
-            // ＋ 지정하기: 메시지 앱을 고르면 방 목록이 바로 열림 → 👪 누르기
-            val msgApps = vm.appRecs.map { it.stat }.filter { AppAdvisor.isMessaging(it) && it.pkg !in vm.excludedApps }
-            Text("＋ 방 고르기 (앱을 누르고 학부모 방에 👪를 눌러요)", style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
-            if (msgApps.isEmpty()) Text("아직 알림이 온 메시지 앱이 없어요. 카톡·문자 알림이 모이면 여기에 떠요.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                msgApps.forEach { a ->
-                    OutlinedButton(onClick = { vm.openRooms(a.pkg, a.app) }) { Text("💬 ${a.app}") }
-                }
-            }
+            Button(
+                onClick = { vm.addParentLink(student, relation, match); match = "" },
+                enabled = student.length >= 2 && match.trim().length >= 2,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = Ssam.Sprout, contentColor = Ssam.Ink),
+            ) { Text(if (student.length >= 2) "${if (student.length == 3) student.substring(1) else student} $relation 으로 등록" else "등록", fontWeight = FontWeight.Bold) }
+            Text("이름·번호 하나만 넣어도 되고, 같은 학부모를 여러 번(이름, 번호, 카톡 별명) 등록해도 한 사람으로 모여요.",
+                style = MaterialTheme.typography.bodySmall)
         }
     }
+
+    // 등록된 학부모 (학생별)
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.animateContentSize(Motion.size).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("🔗 학생별 학부모 연결", fontWeight = FontWeight.Bold)
-            Text("연결하면 문자·카톡·밴드·하이클래스 어디서 온 연락이든 그 학생 학부모 연락으로 정리돼요.",
-                style = MaterialTheme.typography.bodySmall)
-            if (vm.parentLinks.isEmpty()) Text("아직 없어요. 우리 반 탭에서 학생을 눌러 연결해요.", style = MaterialTheme.typography.bodySmall,
+            Text("👪 등록된 학부모 ${vm.parentLinks.map { it.student to it.relation }.distinct().size}명", fontWeight = FontWeight.Bold)
+            if (vm.parentLinks.isEmpty()) Text("아직 없어요. 위에서 등록해 주세요.", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-            vm.parentLinks.groupBy { it.student }.forEach { (student, links) ->
-                Row(Modifier.fillMaxWidth().clickable { vm.openStudent(student) }.padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Text("🧒 $student", fontWeight = FontWeight.Medium, modifier = Modifier.width(96.dp))
-                    Text(links.joinToString(", ") { "${it.relation} ${it.match}" }, Modifier.weight(1f),
-                        style = MaterialTheme.typography.bodySmall, maxLines = 2)
-                    Text(" ›")
+            vm.parentLinks.groupBy { it.student to it.relation }.forEach { (k, links) ->
+                HorizontalDivider()
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f).clickable { vm.openStudent(k.first) }) {
+                        Text("🧒 ${k.first} · ${k.second}", fontWeight = FontWeight.Medium)
+                        Text("학생 기록 보기 ›", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    links.forEach { l -> InputChip(selected = true, onClick = { vm.removeParentLink(l) }, label = { Text("${l.match}  ✕") }) }
                 }
             }
         }
@@ -611,7 +641,7 @@ private fun AppCleanupCard(vm: JarvisViewModel) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("🚫 광고 자동 거르기", fontWeight = FontWeight.Bold)
-                    Text(if (vm.adFilterOn) "오늘 광고 ${vm.adCount}건을 걸렀어요 · (광고)·수신거부·할인·쿠폰 등. 학부모 방·키워드는 거르지 않아요"
+                    Text(if (vm.adFilterOn) "오늘 광고 ${vm.adCount}건을 걸렀어요 · (광고)·수신거부·할인·쿠폰 등. 등록한 학부모·키워드는 거르지 않아요"
                          else "꺼짐 · 광고성 문자·카톡도 모아요", style = MaterialTheme.typography.bodySmall)
                 }
                 Switch(checked = vm.adFilterOn, onCheckedChange = { vm.setAdFilter(it) },
@@ -722,12 +752,12 @@ private fun ParentCard(vm: JarvisViewModel) {
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     val timeFmt = remember { SimpleDateFormat("HH:mm", Locale.KOREA) }
 
-    if (vm.parentRooms.isEmpty()) {
+    if (vm.parentLinks.isEmpty() && vm.parentContacts.isEmpty()) {
         Card(Modifier.fillMaxWidth()) {
             Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("👪 학부모 방을 지정하면 학부모 연락만 따로 모아 답장까지 추천해 드려요.",
+                Text("👪 학부모 이름·번호를 등록하면 어떤 앱으로 와도 학부모 연락만 따로 모아 답장까지 추천해 드려요.",
                     Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                TextButton(onClick = { vm.open(JarvisViewModel.Page.PARENTS) }) { Text("지정하기") }
+                TextButton(onClick = { vm.open(JarvisViewModel.Page.PARENTS) }) { Text("등록하기") }
             }
         }
         return
@@ -1104,34 +1134,24 @@ private fun RoomPickerDialog(vm: JarvisViewModel, pkg: String, name: String) {
         text = {
             Column(Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("끈 방은 모으지도, 요약하지도 않아요. 단, 중요 키워드가 들어간 알림은 모아요.",
+                Text("방을 누르거나 스위치로 켜고 꺼요. 끈 방은 모으지도, 요약하지도 않아요. 단, 중요 키워드가 들어간 알림은 모아요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (vm.rooms.isEmpty()) Text("최근 7일 동안 알림이 온 방이 없어요.", Modifier.padding(vertical = 12.dp))
                 else Row {
                     TextButton(onClick = { vm.setAllRooms(pkg, true) }) { Text("모두 켜기") }
                     TextButton(onClick = { vm.setAllRooms(pkg, false) }) { Text("모두 끄기") }
                 }
-                // 학부모 방 추천: 이름에 어머님·아버님·학부모 등이 있는 방
-                val suggested = vm.suggestedParentRooms(pkg)
-                if (suggested.isNotEmpty()) {
-                    Button(onClick = { vm.setAllSuggestedParents(pkg) }, modifier = Modifier.fillMaxWidth()) {
-                        Text("👪 학부모 방 추천 모두 지정 (${suggested.size})")
-                    }
-                }
-                Text("👪를 눌러 학부모 방으로 지정하면, 그 연락을 따로 모아 답장까지 추천해 드려요.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 vm.rooms.forEach { (room, count) ->
-                    val parent = vm.isParentRoom(pkg, room)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    val on = vm.isRoomOn(pkg, room)
+                    // 방 줄을 눌러도 모으기 켜기·끄기
+                    Row(Modifier.fillMaxWidth().clickable { vm.setRoom(pkg, room, !on) }, verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(room, maxLines = 1, fontWeight = FontWeight.Medium)
-                            Text("최근 7일 ${count}건" + if (!parent && ParentAdvisor.looksParent(room)) " · 학부모 추천" else "",
+                            Text("최근 7일 ${count}건",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        FilterChip(selected = parent, onClick = { vm.setParentRoom(pkg, room, !parent) },
-                            label = { Text("👪") }, modifier = Modifier.padding(end = 6.dp))
-                        Switch(checked = vm.isRoomOn(pkg, room), onCheckedChange = { vm.setRoom(pkg, room, it) })
+                        Switch(checked = on, onCheckedChange = { vm.setRoom(pkg, room, it) })
                     }
                 }
             }
