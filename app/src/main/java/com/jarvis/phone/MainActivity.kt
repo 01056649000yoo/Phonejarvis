@@ -177,16 +177,30 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         val ctx = getApplication<Application>()
         AppFilter.setKeep(ctx, pkg, keep)
         excludedApps = AppFilter.excluded(ctx)
+        reviewedApps = AppFilter.reviewed(ctx)
         refresh()
     }
 
     /** "추천대로 적용": 한 번에 반영하고 브리핑 탭으로. */
+    /** 이미 살펴본(적용했거나 직접 켜고 끈) 앱. 여기 없는 앱만 다시 추천해 물어봄 */
+    var reviewedApps by mutableStateOf(AppFilter.reviewed(app))
+        private set
+    /** 추천을 한 번이라도 적용했는지 */
+    var appsApplied by mutableStateOf(prefs.getBoolean("apps_setup_done", false))
+        private set
+    /** 아직 묻지 않은 새 앱의 추천 */
+    val newAppRecs: List<AppRec> get() = appRecs.filter { it.stat.pkg !in reviewedApps }
+
     fun applyAppRecs() {
         val ctx = getApplication<Application>()
-        AppFilter.apply(ctx, appRecs)
+        // 처음엔 전체, 그다음부터는 새로 생긴 앱만 (직접 바꾼 앱은 건드리지 않음)
+        val target = if (appsApplied) newAppRecs else appRecs
+        AppFilter.apply(ctx, target)
         excludedApps = AppFilter.excluded(ctx)
+        reviewedApps = AppFilter.reviewed(ctx)
         prefs.edit().putBoolean("apps_setup_done", true).apply()
-        val dropped = appRecs.count { !it.keep }
+        appsApplied = true
+        val dropped = target.count { !it.keep }
         status = if (dropped > 0) "앱 ${dropped}개를 뺐어요. 이제 학교·연락 알림만 모아요." else "추천대로 적용했어요."
         tab = Tab.BRIEFING
         refresh()
@@ -281,13 +295,40 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     fun dismissIncoming() { incomingBackup = null }
 
     /** uri가 null이면 다운로드/쌤톡스에서 찾은 백업을 불러옴 */
-    fun restoreBackup(uri: Uri?) {
+    fun restoreBackup(uri: Uri?, pin: String? = null) {
         val ctx = getApplication<Application>()
         viewModelScope.launch {
-            val r = withContext(Dispatchers.IO) { if (uri == null) Backup.restoreFromDownloads(ctx) else Backup.restoreFrom(ctx, uri) }
-            status = r.fold({ "💾 설정을 불러왔어요 · $it" }, { "불러오지 못했어요: ${it.message}" })
-            if (r.isSuccess) reloadAll()
+            val r = withContext(Dispatchers.IO) {
+                if (uri == null) Backup.restoreFromDownloads(ctx, pin) else Backup.restoreFrom(ctx, uri, pin)
+            }
+            val err = r.exceptionOrNull()
+            when {
+                // 🔒 암호화된 백업: 비밀번호 창 띄우기 (틀리면 다시)
+                err is Backup.NeedPin -> { pinAsk = PinAsk(uri); pinError = "" }
+                err is IllegalArgumentException && pin != null -> { pinAsk = PinAsk(uri); pinError = err.message ?: "" }
+                else -> {
+                    pinAsk = null
+                    status = r.fold({ "💾 설정을 불러왔어요 · $it" }, { "불러오지 못했어요: ${it.message}" })
+                    if (r.isSuccess) { hasBackupPin = BackupCrypto.hasPin(ctx); reloadAll() }
+                }
+            }
         }
+    }
+
+    // ── 🔒 백업 비밀번호 ──
+    /** 불러오기에 비밀번호가 필요할 때 (uri가 null이면 다운로드/쌤톡스의 백업) */
+    data class PinAsk(val uri: Uri?)
+    var pinAsk by mutableStateOf<PinAsk?>(null)
+        private set
+    var pinError by mutableStateOf("")
+        private set
+    fun cancelPin() { pinAsk = null; pinError = "" }
+    var hasBackupPin by mutableStateOf(BackupCrypto.hasPin(app))
+        private set
+    fun setBackupPin(pin: String) {
+        if (pin.length !in 4..12) { status = "백업 비밀번호는 4~12자로 정해 주세요."; return }
+        BackupCrypto.setPin(getApplication<Application>(), pin); hasBackupPin = true
+        status = "💾 백업 비밀번호를 정했어요. 새 폰에서 불러올 때 이 비밀번호가 필요해요."
     }
     /** 복원 뒤 화면 상태를 저장된 설정으로 다시 읽기 */
     private fun reloadAll() {
@@ -423,15 +464,28 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     fun quiet(block: android.content.SharedPreferences.Editor.() -> Unit) {
         QuietMode.update(getApplication<Application>(), block); quietRev++
     }
-    fun setPeriod(index: Int, minute: Int) {
-        val ctx = getApplication<Application>()
-        val list = QuietMode.periods(ctx).toMutableList()
-        if (index in list.indices) list[index] = minute else list.add(minute)
-        QuietMode.setPeriods(ctx, list); quietRev++
+    /** 교시 시작·끝 바꾸기. 시작을 바꾸면 수업 길이는 그대로 유지(끝도 같이 이동) */
+    fun setPeriodStart(index: Int, start: Int) = editRanges { list ->
+        val (s, e) = list[index]; list[index] = start to (start + (e - s))
     }
-    fun removePeriod(index: Int) {
+    fun setPeriodEnd(index: Int, end: Int) = editRanges { list ->
+        val (s, _) = list[index]; if (end > s) list[index] = s to end
+    }
+    /** 마지막 교시 뒤에 같은 길이로 하나 더 (쉬는 시간 10분) */
+    fun addPeriod() = editRanges { list ->
+        val last = list.lastOrNull() ?: (9 * 60 - 50 to 9 * 60 - 10)
+        val len = last.second - last.first
+        list.add(last.second + 10 to last.second + 10 + len)
+    }
+    fun removePeriod(index: Int) = editRanges { it.removeAt(index) }
+    fun applyPeriodPreset(list: List<Pair<Int, Int>>) {
+        QuietMode.setRanges(getApplication<Application>(), list); quietRev++
+    }
+    private fun editRanges(block: (MutableList<Pair<Int, Int>>) -> Unit) {
         val ctx = getApplication<Application>()
-        QuietMode.setPeriods(ctx, QuietMode.periods(ctx).filterIndexed { i, _ -> i != index }); quietRev++
+        val list = QuietMode.ranges(ctx).toMutableList()
+        runCatching { block(list) }
+        QuietMode.setRanges(ctx, list); quietRev++
     }
     fun dndGranted(): Boolean =
         getApplication<Application>().getSystemService(android.app.NotificationManager::class.java).isNotificationPolicyAccessGranted
@@ -697,6 +751,27 @@ class MainActivity : ComponentActivity() {
                     // 🎬 설치 안내 ↔ 메인 화면: 부드럽게 겹쳐 바뀜
                     androidx.compose.animation.Crossfade(targetState = vm.onboardingDone, label = "main") { done ->
                         if (done) JarvisScreen(vm) else OnboardingScreen(vm)
+                    }
+                    // 🔒 암호화된 백업 불러오기: 비밀번호 입력
+                    vm.pinAsk?.let { ask ->
+                        var pin by remember { mutableStateOf("") }
+                        AlertDialog(
+                            onDismissRequest = { vm.cancelPin() },
+                            title = { Text("🔒 백업 비밀번호") },
+                            text = {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text("이 백업은 비밀번호로 잠겨 있어요. 백업할 때 정한 비밀번호를 입력해 주세요.")
+                                    OutlinedTextField(value = pin, onValueChange = { pin = it }, singleLine = true,
+                                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                                            keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword),
+                                        isError = vm.pinError.isNotEmpty(),
+                                        supportingText = { if (vm.pinError.isNotEmpty()) Text(vm.pinError) })
+                                }
+                            },
+                            confirmButton = { Button(onClick = { vm.restoreBackup(ask.uri, pin) }, enabled = pin.isNotEmpty()) { Text("불러오기") } },
+                            dismissButton = { TextButton(onClick = { vm.cancelPin() }) { Text("취소") } },
+                        )
                     }
                     // 📥 받은 백업 파일 → 불러오기 확인 (설치 안내 중이어도)
                     vm.incomingBackup?.let { (_, info) ->

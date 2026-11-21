@@ -212,13 +212,29 @@ object QuietMode {
     }
     fun setPeriods(ctx: Context, list: List<Int>) = update(ctx) { putString("periods", list.sorted().joinToString(",")) }
 
+    /** 교시마다 (시작, 끝) 분. 예전 설정(시작 + 공통 길이)도 읽음 */
+    fun ranges(ctx: Context): List<Pair<Int, Int>> =
+        prefs(ctx).getString("ranges", null)?.split(",")?.mapNotNull { r ->
+            r.split("-").takeIf { it.size == 2 }?.let { (a, b) -> a.toIntOrNull()?.let { s -> b.toIntOrNull()?.let { e -> s to e } } }
+        }?.takeIf { it.isNotEmpty() } ?: periods(ctx).map { it to it + periodLen(ctx) }
+    fun setRanges(ctx: Context, list: List<Pair<Int, Int>>) =
+        update(ctx) { putString("ranges", list.filter { it.second > it.first }.sortedBy { it.first }.joinToString(",") { "${it.first}-${it.second}" }) }
+
+    /** 시간표 버튼: 초등 40분·중학교 45분·고등 50분 (점심시간 빼고) */
+    private fun hm(h: Int, m: Int) = h * 60 + m
+    val PRESETS: List<Pair<String, List<Pair<Int, Int>>>> = listOf(
+        "초등 40분" to listOf(hm(9, 0) to hm(9, 40), hm(9, 50) to hm(10, 30), hm(10, 40) to hm(11, 20), hm(11, 30) to hm(12, 10), hm(13, 0) to hm(13, 40), hm(13, 50) to hm(14, 30)),
+        "중학교 45분" to listOf(hm(8, 50) to hm(9, 35), hm(9, 45) to hm(10, 30), hm(10, 40) to hm(11, 25), hm(11, 35) to hm(12, 20), hm(13, 10) to hm(13, 55), hm(14, 5) to hm(14, 50), hm(15, 0) to hm(15, 45)),
+        "고등 50분" to listOf(hm(8, 40) to hm(9, 30), hm(9, 40) to hm(10, 30), hm(10, 40) to hm(11, 30), hm(11, 40) to hm(12, 30), hm(13, 20) to hm(14, 10), hm(14, 20) to hm(15, 10), hm(15, 20) to hm(16, 10)),
+    )
+
     private fun isWeekend(c: Calendar) = c.get(Calendar.DAY_OF_WEEK).let { it == Calendar.SATURDAY || it == Calendar.SUNDAY }
     private fun minuteOf(c: Calendar) = c.get(Calendar.HOUR_OF_DAY) * 60 + c.get(Calendar.MINUTE)
 
     fun state(ctx: Context, now: Long = System.currentTimeMillis()): State {
         val c = Calendar.getInstance().apply { timeInMillis = now }
         val m = minuteOf(c)
-        if (classOn(ctx) && !isWeekend(c) && periods(ctx).any { m >= it && m < it + periodLen(ctx) }) return State.CLASS
+        if (classOn(ctx) && !isWeekend(c) && ranges(ctx).any { (s, e) -> m >= s && m < e }) return State.CLASS
         if (afterWorkOn(ctx) && (isWeekend(c) && weekendQuiet(ctx) || (!isWeekend(c) && (m < workStart(ctx) || m >= workEnd(ctx)))))
             return State.AFTER_WORK
         return State.NONE
@@ -235,7 +251,7 @@ object QuietMode {
     /** 다음 경계 시각(수업 시작·끝, 출근·퇴근, 자정) */
     private fun nextBoundary(ctx: Context, now: Long): Long? {
         val marks = buildList {
-            if (classOn(ctx)) periods(ctx).forEach { add(it); add(it + periodLen(ctx)) }
+            if (classOn(ctx)) ranges(ctx).forEach { (s, e) -> add(s); add(e) }
             if (afterWorkOn(ctx)) { add(workStart(ctx)); add(workEnd(ctx)); add(0) }
         }.distinct()
         if (marks.isEmpty()) return null

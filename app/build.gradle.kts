@@ -12,33 +12,41 @@ android {
         applicationId = "com.jarvis.phone"
         minSdk = 31          // Galaxy Z Fold4 (Android 14+) 기준
         targetSdk = 36
-        versionCode = 22
-        versionName = "0.8.3"
+        versionCode = 23
+        versionName = "0.9.0"
     }
 
-    // 개인용 고정 서명 키: 빌드마다 같은 서명 → 앱을 지우지 않고 업데이트 설치 가능
+    // 🔐 배포용 서명 키: 저장소에 두지 않고 GitHub Secrets → 빌드할 때만 환경 변수로 받음
+    //   SSAMTOX_KEYSTORE(파일 경로), SSAMTOX_STORE_PASSWORD, SSAMTOX_KEY_ALIAS
+    val keystorePath = System.getenv("SSAMTOX_KEYSTORE")
     signingConfigs {
-        create("personal") {
-            storeFile = file("jarvis.keystore")
-            storePassword = "jarvis1234"
-            keyAlias = "jarvis"
-            keyPassword = "jarvis1234"
+        if (keystorePath != null) create("release") {
+            storeFile = file(keystorePath)
+            storeType = "pkcs12"
+            storePassword = System.getenv("SSAMTOX_STORE_PASSWORD")
+            keyAlias = System.getenv("SSAMTOX_KEY_ALIAS") ?: "ssamtox"
+            keyPassword = System.getenv("SSAMTOX_STORE_PASSWORD")
         }
     }
 
     buildTypes {
-        debug {
-            signingConfig = signingConfigs.getByName("personal")
-        }
         release {
+            // 배포용: 디버깅 불가(다른 PC에 연결해도 앱 데이터를 꺼낼 수 없음)
+            isDebuggable = false
+            // 난독화(R8)는 온디바이스 AI 런타임(JNI)과의 호환을 확인한 뒤 켜기
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("personal")
+            if (keystorePath != null) signingConfig = signingConfigs.getByName("release")
         }
     }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+    // 배포 빌드 때 lint 경고로 빌드가 멈추지 않게 (검사는 따로)
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
     }
     buildFeatures {
         compose = true

@@ -48,9 +48,19 @@ class NotificationCollectorService : NotificationListenerService() {
         }
 
         // 🏫 수업 중 · 🌙 퇴근 후: 모은 알림을 상태바에서 숨김 (나중에 브리핑으로 한 번에)
-        if (QuietMode.hideInShade(this) && QuietMode.state(this) != QuietMode.State.NONE) {
+        //    단, 전화·알람·재난문자·인증번호는 절대 숨기지 않음
+        if (QuietMode.hideInShade(this) && QuietMode.state(this) != QuietMode.State.NONE && !mustNeverHide(sbn, title, text)) {
             runCatching { cancelNotification(sbn.key) }
         }
+    }
+
+    /** 수업 중·퇴근 모드에서도 숨기면 안 되는 알림: 전화, 알람·타이머, 재난·긴급 문자, 인증번호(OTP) */
+    private fun mustNeverHide(sbn: StatusBarNotification, title: String, text: String): Boolean {
+        val cat = sbn.notification.category
+        if (cat in NEVER_HIDE_CATEGORIES) return true
+        if (NEVER_HIDE_PACKAGES.any { sbn.packageName.startsWith(it) }) return true
+        val t = "$title $text"
+        return NEVER_HIDE_WORDS.any { it in t } || OTP.containsMatchIn(t)
     }
 
     private fun appLabel(pkg: String): String = try {
@@ -60,6 +70,20 @@ class NotificationCollectorService : NotificationListenerService() {
     } catch (_: Exception) { pkg }
 
     companion object {
+        private val NEVER_HIDE_CATEGORIES = setOf(
+            Notification.CATEGORY_CALL, Notification.CATEGORY_ALARM, Notification.CATEGORY_REMINDER,
+            Notification.CATEGORY_STOPWATCH, Notification.CATEGORY_NAVIGATION, "missed_call",
+        )
+        /** 전화 앱, 재난문자(긴급 재난), 시계 */
+        private val NEVER_HIDE_PACKAGES = listOf(
+            "com.android.cellbroadcast", "com.google.android.cellbroadcast", "com.samsung.android.cellbroadcast",
+            "com.android.server.telecom", "com.samsung.android.dialer", "com.google.android.dialer", "com.android.dialer",
+            "com.sec.android.app.clockpackage", "com.google.android.deskclock",
+        )
+        private val NEVER_HIDE_WORDS = listOf("인증번호", "인증 번호", "인증코드", "승인번호", "OTP", "재난", "긴급", "경보", "부재중")
+        /** "[Web발신] … 123456" 같은 6자리 안팎 인증번호 */
+        private val OTP = Regex("""(인증|확인|본인)[^\n]{0,12}\d{4,8}""")
+
         /** 시스템 잡음성 알림. 필요하면 추가하세요. */
         val IGNORED_PACKAGES = setOf(
             "android",

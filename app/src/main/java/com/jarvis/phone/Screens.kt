@@ -8,7 +8,11 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
@@ -26,7 +30,7 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** 이번 버전에서 바뀐 점 한 줄 (버전 올릴 때 같이 고치기). */
-private const val WHATS_NEW = "📤 다른 폰으로 설정 보내기(카톡 나에게·드라이브) · 🎬 부드러운 화면 전환 · 💾 백업·복원"
+private const val WHATS_NEW = "🔐 보안 강화(새 서명·잠금화면 숨김·백업 암호화·긴급 알림은 안 숨김) · 시간표 버튼 · 🍎 부드러운 스프링 애니메이션"
 
 /** 메인: 아래 탭 두 개 — 브리핑(결과만 보기) / 설정(내 방식대로). */
 @Composable
@@ -59,8 +63,8 @@ fun JarvisScreen(vm: JarvisViewModel) {
                 targetState = vm.tab,
                 transitionSpec = {
                     val dir = if (targetState.ordinal > initialState.ordinal) 1 else -1
-                    (slideInHorizontally(tween(260)) { it * dir / 5 } + fadeIn(tween(260))) togetherWith
-                        (slideOutHorizontally(tween(200)) { -it * dir / 5 } + fadeOut(tween(160)))
+                    (slideInHorizontally(Motion.offset) { it * dir / 8 } + fadeIn(Motion.fade) + scaleIn(Motion.fade, initialScale = 0.985f)) togetherWith
+                        (slideOutHorizontally(Motion.offset) { -it * dir / 12 } + fadeOut(Motion.fadeFast))
                 },
                 label = "tab",
             ) { tab ->
@@ -171,8 +175,8 @@ private fun BriefingTab(vm: JarvisViewModel) {
                     }
                     TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "접기" else "원본 보기") }
                 }
-                AnimatedVisibility(visible = expanded, enter = expandVertically() + fadeIn(),
-                    exit = shrinkVertically() + fadeOut()) {
+                AnimatedVisibility(visible = expanded, enter = expandVertically(Motion.size) + fadeIn(Motion.fade),
+                    exit = shrinkVertically(Motion.size) + fadeOut(Motion.fadeFast)) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         vm.todayItems.takeLast(30).reversed().forEach {
                             Text("${timeFmt.format(it.time)} [${it.app}] ${it.title}: ${it.text}",
@@ -193,8 +197,8 @@ private fun BriefingTab(vm: JarvisViewModel) {
                     Text("📚 브리핑 모음 · ${vm.briefings.size}개", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                     TextButton(onClick = { open = !open }) { Text(if (open) "접기" else "펼치기") }
                 }
-                AnimatedVisibility(visible = open, enter = expandVertically(tween(260)) + fadeIn(),
-                    exit = shrinkVertically(tween(220)) + fadeOut()) {
+                AnimatedVisibility(visible = open, enter = expandVertically(Motion.size) + fadeIn(Motion.fade),
+                    exit = shrinkVertically(Motion.size) + fadeOut(Motion.fadeFast)) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         vm.briefings.forEach { b ->
                             var show by rememberSaveable(b.time) { mutableStateOf(false) }
@@ -205,8 +209,8 @@ private fun BriefingTab(vm: JarvisViewModel) {
                                     Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                                 Text(if (show) "▾" else "▸")
                             }
-                            AnimatedVisibility(visible = show, enter = expandVertically() + fadeIn(),
-                                exit = shrinkVertically() + fadeOut()) {
+                            AnimatedVisibility(visible = show, enter = expandVertically(Motion.size) + fadeIn(Motion.fade),
+                                exit = shrinkVertically(Motion.size) + fadeOut(Motion.fadeFast)) {
                                 Text(b.text, style = MaterialTheme.typography.bodyMedium)
                             }
                         }
@@ -243,8 +247,8 @@ private fun BriefingCard(vm: JarvisViewModel, b: Briefing, primary: Boolean, onH
                 Text(if (collapsed) "▸ 펼치기" else "▾ 접기", style = MaterialTheme.typography.labelLarge)
             }
             // 🎬 접기·펼치기: 아래로 스르륵
-            AnimatedVisibility(visible = !collapsed, enter = expandVertically(tween(260)) + fadeIn(tween(260)),
-                exit = shrinkVertically(tween(220)) + fadeOut(tween(160))) {
+            AnimatedVisibility(visible = !collapsed, enter = expandVertically(Motion.size) + fadeIn(Motion.fade),
+                exit = shrinkVertically(Motion.size) + fadeOut(Motion.fadeFast)) {
                 Column {
                     Spacer(Modifier.height(8.dp))
                     Text(b.text, style = MaterialTheme.typography.bodyLarge)
@@ -278,7 +282,7 @@ private fun SettingsTab(vm: JarvisViewModel) {
     AnimatedContent(
         targetState = vm.section,
         transitionSpec = {
-            (fadeIn(tween(220)) + slideInVertically(tween(220)) { it / 12 }) togetherWith fadeOut(tween(120))
+            (fadeIn(Motion.fade) + scaleIn(Motion.fade, initialScale = 0.985f)) togetherWith fadeOut(Motion.fadeFast)
         },
         label = "section",
     ) { section ->
@@ -396,7 +400,7 @@ private fun AppCleanupCard(vm: JarvisViewModel) {
     Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(
         containerColor = MaterialTheme.colorScheme.primaryContainer,
         contentColor = MaterialTheme.colorScheme.onPrimaryContainer)) {
-        Column(Modifier.animateContentSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(Modifier.animateContentSize(Motion.size).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("🌱 알림 앱 정리", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text(
                 when {
@@ -452,8 +456,13 @@ private fun AppCleanupCard(vm: JarvisViewModel) {
                     style = MaterialTheme.typography.bodySmall, color = Ssam.Blush)
             }
 
-            if (recs.isNotEmpty()) {
-                val drop = recs.count { !it.keep }
+            // 한 번 적용한 뒤에는 새로 알림을 보낸 앱이 생길 때만 다시 물어봄
+            var showList by rememberSaveable { mutableStateOf(false) }
+            val pending = if (vm.appsApplied) vm.newAppRecs else recs
+            if (recs.isNotEmpty() && pending.isNotEmpty()) {
+                val drop = pending.count { !it.keep }
+                if (vm.appsApplied) Text("🆕 새로 알림을 보낸 앱 ${pending.size}개: " + pending.take(3).joinToString(", ") { it.stat.app },
+                    fontWeight = FontWeight.Medium)
                 Button(
                     onClick = { vm.applyAppRecs() },
                     modifier = Modifier.fillMaxWidth().height(52.dp),
@@ -461,6 +470,17 @@ private fun AppCleanupCard(vm: JarvisViewModel) {
                 ) { Text(if (drop > 0) "추천대로 적용 (앱 ${drop}개 빼기)" else "추천대로 적용", fontWeight = FontWeight.Bold) }
                 Text("또는 아래에서 앱마다 켜고 끄세요. 끈 앱은 모으지도, 요약하지도 않아요.",
                     style = MaterialTheme.typography.bodySmall)
+            } else if (recs.isNotEmpty()) {
+                // ✅ 이미 정리 완료: 한 줄 요약만, 목록은 필요할 때 펼침
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("✅ 정리 완료 · 뺀 앱 ${vm.excludedApps.size}개 · 새 앱이 생기면 다시 알려 드려요",
+                        Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    TextButton(onClick = { showList = !showList }) {
+                        Text(if (showList) "접기" else "앱 목록", color = Ssam.Chalk)
+                    }
+                }
+            }
+            if (recs.isNotEmpty() && (pending.isNotEmpty() || showList)) {
 
                 // 그 밖의 앱은 접어 둠 (목록이 길어지지 않게). 눌러서 펼치기
                 var showOthers by rememberSaveable { mutableStateOf(false) }
@@ -502,7 +522,8 @@ private fun AppCleanupCard(vm: JarvisViewModel) {
                         )
                     }
                 }
-            } else {
+            }
+            if (recs.isEmpty()) {
                 OutlinedButton(onClick = { vm.skipAppSetup() }) { Text("나중에 할게요", color = Ssam.Chalk) }
             }
         }
@@ -532,7 +553,7 @@ private fun ParentCard(vm: JarvisViewModel) {
     val open = vm.parentContacts.filter { it.key !in vm.handledKeys }
     val needReply = open.count { it.category.needsReply }
     Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.animateContentSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(Modifier.animateContentSize(Motion.size).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(if (open.isEmpty()) "👪 학부모 연락 · 오늘 처리할 연락이 없어요"
                  else "👪 학부모 연락 ${open.size}건 · 답장 필요 $needReply",
                 fontWeight = FontWeight.Bold)
@@ -591,7 +612,7 @@ private fun TasksCard(vm: JarvisViewModel) {
     var input by rememberSaveable { mutableStateOf("") }
     val open = vm.tasks.filter { !it.done }
     Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.animateContentSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.animateContentSize(Motion.size).padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 val today = open.count { it.dLabel() == "오늘" || it.dLabel() == "지남" }
                 Text(if (open.isEmpty()) "📌 할 일·마감 · 없어요" else "📌 할 일·마감 ${open.size}건" + if (today > 0) " · 오늘 $today" else "",
@@ -743,22 +764,31 @@ private fun QuietCard(vm: JarvisViewModel) {
                     Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
                 Switch(checked = QuietMode.classOn(ctx), onCheckedChange = { on -> vm.quiet { putBoolean("class_on", on) } })
             }
-            if (QuietMode.classOn(ctx)) {
-                val len = QuietMode.periodLen(ctx)
-                QuietMode.periods(ctx).forEachIndexed { i, start ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("${i + 1}교시", Modifier.width(52.dp))
-                        TextButton(onClick = { pick(start) { vm.setPeriod(i, it) } }) { Text("${hm(start)} ~ ${hm(start + len)}") }
-                        Spacer(Modifier.weight(1f))
-                        TextButton(onClick = { vm.removePeriod(i) }) { Text("빼기") }
+            AnimatedVisibility(visible = QuietMode.classOn(ctx), enter = expandVertically(Motion.size) + fadeIn(Motion.fade), exit = shrinkVertically(Motion.size) + fadeOut(Motion.fadeFast)) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val ranges = QuietMode.ranges(ctx)
+                    // ① 시간표 한 번에: 학교급 버튼
+                    Text("시간표 한 번에 넣기", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        QuietMode.PRESETS.forEach { (name, list) ->
+                            FilterChip(selected = ranges == list, onClick = { vm.applyPeriodPreset(list) }, label = { Text(name) })
+                        }
                     }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedButton(onClick = { pick(QuietMode.periods(ctx).maxOrNull()?.plus(len + 10) ?: 540) { vm.setPeriod(99, it) } }) { Text("＋ 교시 추가") }
-                    Text("수업 길이", style = MaterialTheme.typography.bodySmall)
-                    listOf(40, 45, 50).forEach { l ->
-                        FilterChip(selected = len == l, onClick = { vm.quiet { putInt("period_len", l) } }, label = { Text("${l}분") })
+                    // ② 교시마다 시작·끝을 따로 눌러 바꾸기
+                    Text("교시마다 시각을 눌러 바꿔요 (시작을 바꾸면 끝도 같이 움직여요)",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    ranges.forEachIndexed { i, (s, e) ->
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("${i + 1}교시", Modifier.width(48.dp), fontWeight = FontWeight.Medium)
+                            AssistChip(onClick = { pick(s) { vm.setPeriodStart(i, it) } }, label = { Text(hm(s)) })
+                            Text("~")
+                            AssistChip(onClick = { pick(e) { vm.setPeriodEnd(i, it) } }, label = { Text(hm(e)) })
+                            Text("${e - s}분", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(Modifier.weight(1f))
+                            IconButton(onClick = { vm.removePeriod(i) }) { Text("✕") }
+                        }
                     }
+                    OutlinedButton(onClick = { vm.addPeriod() }) { Text("＋ 교시 추가 (같은 길이, 쉬는 시간 10분 뒤)") }
                 }
             }
         }
@@ -773,16 +803,15 @@ private fun QuietCard(vm: JarvisViewModel) {
                     Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
                 Switch(checked = QuietMode.afterWorkOn(ctx), onCheckedChange = { on -> vm.quiet { putBoolean("after_on", on) } })
             }
-            if (QuietMode.afterWorkOn(ctx)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("출근", Modifier.width(52.dp))
-                    TextButton(onClick = { pick(QuietMode.workStart(ctx)) { m -> vm.quiet { putInt("work_start", m) } } }) { Text(hm(QuietMode.workStart(ctx))) }
-                    Text("퇴근", Modifier.padding(start = 12.dp).width(40.dp))
-                    TextButton(onClick = { pick(QuietMode.workEnd(ctx)) { m -> vm.quiet { putInt("work_end", m) } } }) { Text(hm(QuietMode.workEnd(ctx))) }
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("주말에도 하루 종일", Modifier.weight(1f))
-                    Switch(checked = QuietMode.weekendQuiet(ctx), onCheckedChange = { on -> vm.quiet { putBoolean("weekend", on) } })
+            AnimatedVisibility(visible = QuietMode.afterWorkOn(ctx), enter = expandVertically(Motion.size) + fadeIn(Motion.fade), exit = shrinkVertically(Motion.size) + fadeOut(Motion.fadeFast)) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // 출근·퇴근: 자주 쓰는 시각 버튼 + ⌚ 직접 (브리핑 시각과 같은 방식)
+                    QuietTimeRow(vm, "🌅 출근", QuietMode.workStart(ctx), listOf(7 * 60 + 30, 8 * 60, 8 * 60 + 20, 8 * 60 + 30), "work_start")
+                    QuietTimeRow(vm, "🏠 퇴근", QuietMode.workEnd(ctx), listOf(16 * 60 + 30, 16 * 60 + 40, 17 * 60, 18 * 60), "work_end")
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("주말에도 하루 종일", Modifier.weight(1f))
+                        Switch(checked = QuietMode.weekendQuiet(ctx), onCheckedChange = { on -> vm.quiet { putBoolean("weekend", on) } })
+                    }
                 }
             }
         }
@@ -824,22 +853,62 @@ private fun BackupCard(vm: JarvisViewModel) {
                 else "아직 백업이 없어요. '모든 파일 접근'이 켜져 있으면 하루 한 번 자동으로 저장해요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
             )
+            // 🔒 백업 비밀번호: 백업 파일을 이 비밀번호로 암호화 (학생·학부모 이름·번호 보호)
+            var pinInput by rememberSaveable { mutableStateOf("") }
+            var changing by rememberSaveable { mutableStateOf(false) }
+            if (!vm.hasBackupPin || changing) {
+                Text(if (vm.hasBackupPin) "🔒 새 백업 비밀번호" else "🔒 먼저 백업 비밀번호를 정해 주세요 (숫자 4~12자리)",
+                    fontWeight = FontWeight.Medium, color = Ssam.Blush)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(value = pinInput, onValueChange = { pinInput = it.filter { c -> c.isDigit() }.take(12) },
+                        singleLine = true, placeholder = { Text("예: 4자리 이상") }, modifier = Modifier.weight(1f),
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword))
+                    Button(onClick = { vm.setBackupPin(pinInput); pinInput = ""; changing = false },
+                        enabled = pinInput.length >= 4) { Text("정하기") }
+                }
+                Text("새 폰에서 불러올 때 이 비밀번호가 필요해요. 꼭 기억해 두세요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("🔒 백업 비밀번호 설정됨 · 백업 파일은 암호화돼요", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = { changing = true }) { Text("바꾸기") }
+            }
+
             // 📤 다른 폰으로 보내기: 카톡 나에게·드라이브·메일 등으로 백업 파일 보내기
             val ctx = LocalContext.current
             Button(onClick = { ctx.startActivity(BackupShare.shareIntent(ctx)) }, modifier = Modifier.fillMaxWidth(),
+                enabled = vm.hasBackupPin,
                 colors = ButtonDefaults.buttonColors(containerColor = Ssam.Board, contentColor = Ssam.Chalk)) {
                 Text("📤 다른 폰으로 보내기", fontWeight = FontWeight.Bold)
             }
             Text("새 폰에서 받은 '쌤톡스_백업.json'을 열고 쌤톡스를 고르면 바로 불러와요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { vm.backupNow() }) { Text("지금 백업") }
-                OutlinedButton(onClick = { export.launch("쌤톡스_백업.json") }) { Text("파일로 내보내기") }
+                Button(onClick = { vm.backupNow() }, enabled = vm.hasBackupPin) { Text("지금 백업") }
+                OutlinedButton(onClick = { export.launch("쌤톡스_백업.json") }, enabled = vm.hasBackupPin) { Text("파일로 내보내기") }
                 OutlinedButton(onClick = { importer.launch(arrayOf("application/json", "*/*")) }) { Text("파일에서 불러오기") }
             }
             if (vm.status.startsWith("💾") || vm.status.startsWith("불러오지") || vm.status.startsWith("백업"))
                 Text(vm.status, style = MaterialTheme.typography.bodySmall)
         }
+    }
+}
+
+/** 출근·퇴근 시각 한 줄: 자주 쓰는 시각 버튼 + ⌚ 직접 */
+@Composable
+private fun QuietTimeRow(vm: JarvisViewModel, label: String, value: Int, presets: List<Int>, key: String) {
+    val ctx = LocalContext.current
+    val hm = { m: Int -> "%02d:%02d".format(m / 60, m % 60) }
+    Text(label, fontWeight = FontWeight.Medium)
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        presets.forEach { p ->
+            FilterChip(selected = value == p, onClick = { vm.quiet { putInt(key, p) } }, label = { Text(hm(p)) })
+        }
+        val custom = value !in presets
+        FilterChip(selected = custom, onClick = {
+            TimePickerDialog(ctx, { _, h, m -> vm.quiet { putInt(key, h * 60 + m) } }, value / 60, value % 60, true).show()
+        }, label = { Text(if (custom) "⌚ ${hm(value)}" else "⌚ 직접") })
     }
 }
 
@@ -945,4 +1014,15 @@ private fun SetupCard(
             OutlinedButton(onClick = onClick, enabled = enabled) { Text(button) }
         }
     }
+}
+
+/**
+ * 🍎 애플 앱 같은 움직임: 시간 고정(tween) 대신 튕기지 않는 스프링.
+ * 손을 떼는 순간처럼 빠르게 시작해 자연스럽게 멈춤. 크기·위치·투명도 모두 같은 느낌으로.
+ */
+internal object Motion {
+    val fade = spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)
+    val fadeFast = spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium)
+    val size = spring<IntSize>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)
+    val offset = spring<IntOffset>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)
 }

@@ -98,8 +98,8 @@ fun OnboardingScreen(vm: JarvisViewModel) {
                 targetState = vm.onboardingStep,
                 transitionSpec = {
                     val dir = if (targetState > initialState) 1 else -1
-                    (slideInHorizontally(tween(280)) { it * dir / 3 } + fadeIn(tween(280))) togetherWith
-                        (slideOutHorizontally(tween(220)) { -it * dir / 3 } + fadeOut(tween(180)))
+                    (slideInHorizontally(Motion.offset) { it * dir } + fadeIn(Motion.fade)) togetherWith
+                        (slideOutHorizontally(Motion.offset) { -it * dir / 3 } + fadeOut(Motion.fadeFast))
                 },
                 label = "step",
             ) { step ->

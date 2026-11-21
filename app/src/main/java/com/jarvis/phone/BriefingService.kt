@@ -251,6 +251,16 @@ object Notifications {
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setContentIntent(openApp(ctx))
             .setAutoCancel(true)
+            // 🔒 잠금화면에서는 내용(학부모·학생 이름)을 숨기고 "새 브리핑"만 보여 줌
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(
+                NotificationCompat.Builder(ctx, CH_BRIEFING)
+                    .setSmallIcon(R.drawable.ic_stat_ssamtox)
+                    .setColor(0xFF2E4A3D.toInt())
+                    .setContentTitle("쌤톡스")
+                    .setContentText("새 브리핑이 있어요 · 잠금을 풀면 볼 수 있어요")
+                    .build()
+            )
             .build()
 
     @android.annotation.SuppressLint("MissingPermission")

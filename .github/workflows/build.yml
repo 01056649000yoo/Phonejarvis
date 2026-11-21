@@ -21,16 +21,30 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: Build APK
+      # 🔐 서명 키는 저장소가 아니라 GitHub Secrets에서만 꺼내 씀 (빌드가 끝나면 러너와 함께 사라짐)
+      - name: Prepare signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.SIGNING_KEYSTORE_B64 }}
+        run: |
+          test -n "$KEYSTORE_B64" || { echo "SIGNING_KEYSTORE_B64 secret이 없어요"; exit 1; }
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/ssamtox-release.p12"
+          echo "SSAMTOX_KEYSTORE=$RUNNER_TEMP/ssamtox-release.p12" >> "$GITHUB_ENV"
+
+      - name: Build APK (release)
+        env:
+          SSAMTOX_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SSAMTOX_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --stacktrace
+          ./gradlew assembleRelease --stacktrace
+          rm -f "$SSAMTOX_KEYSTORE"
 
       - name: Rename APK
         run: |
-          cp app/build/outputs/apk/debug/app-debug.apk SsamTox-${{ github.run_number }}.apk
+          cp app/build/outputs/apk/release/app-release.apk SsamTox-${{ github.run_number }}.apk
           # 이름이 항상 같은 사본: releases/latest/download/SsamTox.apk 링크 하나로 늘 최신본을 받게
-          cp app/build/outputs/apk/debug/app-debug.apk SsamTox.apk
+          cp app/build/outputs/apk/release/app-release.apk SsamTox.apk
+          sha256sum SsamTox.apk | tee SsamTox.apk.sha256
 
       - uses: actions/upload-artifact@v4
         with:
@@ -46,3 +60,4 @@ jobs:
           files: |
             SsamTox-${{ github.run_number }}.apk
             SsamTox.apk
+            SsamTox.apk.sha256

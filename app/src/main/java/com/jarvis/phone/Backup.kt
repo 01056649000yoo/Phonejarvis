@@ -75,11 +75,12 @@ object Backup {
     // ── 저장 ──
     /** 다운로드/쌤톡스 폴더에 저장. 권한이 없으면 false */
     fun saveToDownloads(ctx: Context): Boolean {
+        if (!BackupCrypto.hasPin(ctx)) return false   // 🔒 비밀번호를 정해야 백업(암호화)
         if (!ModelFinder.hasAccess()) return false
         return runCatching {
             dir().mkdirs()
             val tmp = File(dir(), "쌤톡스_백업.tmp")
-            tmp.writeText(toJson(ctx))
+            tmp.writeText(fileText(ctx))
             if (!tmp.renameTo(file())) { file().delete(); tmp.renameTo(file()) }
             meta(ctx).edit().putLong("last", System.currentTimeMillis()).apply()
         }.isSuccess
@@ -93,7 +94,7 @@ object Backup {
 
     /** 선생님이 고른 위치로 내보내기 (권한 필요 없음) */
     fun exportTo(ctx: Context, uri: Uri): Boolean = runCatching {
-        ctx.contentResolver.openOutputStream(uri, "wt")!!.use { it.write(toJson(ctx).toByteArray()) }
+        ctx.contentResolver.openOutputStream(uri, "wt")!!.use { it.write(fileText(ctx).toByteArray()) }
         meta(ctx).edit().putLong("last", System.currentTimeMillis()).apply()
     }.isSuccess
 
@@ -107,16 +108,29 @@ object Backup {
         }.getOrNull()
     }
 
-    fun restoreFromDownloads(ctx: Context): Result<String> = runCatching { restore(ctx, file().readText()) }
+    fun restoreFromDownloads(ctx: Context, pin: String? = null): Result<String> = runCatching { restore(ctx, file().readText(), pin) }
 
-    fun restoreFrom(ctx: Context, uri: Uri): Result<String> = runCatching {
+    fun restoreFrom(ctx: Context, uri: Uri, pin: String? = null): Result<String> = runCatching {
         val text = ctx.contentResolver.openInputStream(uri)!!.use { it.readBytes().toString(Charsets.UTF_8) }
-        restore(ctx, text)
+        restore(ctx, text, pin)
     }
 
     /** 백업 내용을 설정에 덮어쓰고 알람을 다시 예약. 돌려주는 값은 요약 한 줄. */
-    private fun restore(ctx: Context, text: String): String {
-        val j = JSONObject(text)
+    /** 암호화된 백업인데 비밀번호를 아직 안 받았을 때 */
+    class NeedPin : Exception("백업 비밀번호를 입력해 주세요.")
+
+    /** 파일에 쓸 내용: 백업 비밀번호로 암호화 (비밀번호가 없으면 만들지 않음) */
+    fun fileText(ctx: Context): String {
+        val pin = BackupCrypto.pin(ctx)
+        require(!pin.isNullOrEmpty()) { "백업 비밀번호를 먼저 정해 주세요." }
+        return BackupCrypto.encrypt(toJson(ctx), pin)
+    }
+
+    private fun restore(ctx: Context, text: String, pin: String?): String {
+        val plain = if (BackupCrypto.isEncrypted(text)) BackupCrypto.decrypt(text, pin ?: throw NeedPin()) else text
+        // 새 폰에서 처음 불러올 때 쓴 비밀번호를 이 폰의 백업 비밀번호로도 씀
+        if (pin != null && !BackupCrypto.hasPin(ctx)) BackupCrypto.setPin(ctx, pin)
+        val j = JSONObject(plain)
         require(j.optString("format") == FORMAT) { "쌤톡스 백업 파일이 아니에요." }
         val prefs = j.getJSONObject("prefs")
         prefs.keys().forEach { name ->
@@ -148,7 +162,7 @@ object BackupShare {
     /** 백업 파일을 만들어 공유 창(카톡 나에게·드라이브·메일 등)으로 보내는 Intent */
     fun shareIntent(ctx: Context): android.content.Intent {
         val dir = File(ctx.cacheDir, "share").apply { mkdirs() }
-        val f = File(dir, "쌤톡스_백업.json").apply { writeText(Backup.toJson(ctx)) }
+        val f = File(dir, "쌤톡스_백업.json").apply { writeText(Backup.fileText(ctx)) }
         val uri = androidx.core.content.FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", f)
         val send = android.content.Intent(android.content.Intent.ACTION_SEND)
             .setType("application/json")
@@ -174,5 +188,55 @@ object BackupShare {
             if (android.os.Build.VERSION.SDK_INT >= 33) intent.getParcelableExtra(android.content.Intent.EXTRA_STREAM, Uri::class.java)
             else @Suppress("DEPRECATION") intent.getParcelableExtra<Uri>(android.content.Intent.EXTRA_STREAM)
         else -> null
+    }
+}
+
+/**
+ * 🔒 백업 암호화: 선생님이 정한 백업 비밀번호(PIN)로 AES-256-GCM 암호화.
+ * 비밀번호는 이 폰 안에만 저장(백업 파일에는 안 들어감). 새 폰에서 불러올 때 한 번 입력.
+ * 파일 겉에는 저장 시각과 요약(학생 수 등 숫자)만 보임 — 이름·번호는 암호 안에.
+ */
+object BackupCrypto {
+    private const val ITER = 120_000
+    private fun meta(ctx: Context) = ctx.getSharedPreferences("backup_meta", Context.MODE_PRIVATE)
+
+    fun pin(ctx: Context): String? = meta(ctx).getString("pin", null)
+    fun hasPin(ctx: Context) = !pin(ctx).isNullOrEmpty()
+    fun setPin(ctx: Context, pin: String) = meta(ctx).edit().putString("pin", pin).apply()
+
+    private fun key(pin: String, salt: ByteArray): javax.crypto.spec.SecretKeySpec {
+        val f = javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+        val k = f.generateSecret(javax.crypto.spec.PBEKeySpec(pin.toCharArray(), salt, ITER, 256)).encoded
+        return javax.crypto.spec.SecretKeySpec(k, "AES")
+    }
+    private fun b64(b: ByteArray) = android.util.Base64.encodeToString(b, android.util.Base64.NO_WRAP)
+    private fun unb64(s: String) = android.util.Base64.decode(s, android.util.Base64.NO_WRAP)
+
+    /** 평문 백업 JSON → 암호화된 백업 JSON */
+    fun encrypt(plain: String, pin: String): String {
+        val p = JSONObject(plain)
+        val rnd = java.security.SecureRandom()
+        val salt = ByteArray(16).also { rnd.nextBytes(it) }
+        val iv = ByteArray(12).also { rnd.nextBytes(it) }
+        val c = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")
+        c.init(javax.crypto.Cipher.ENCRYPT_MODE, key(pin, salt), javax.crypto.spec.GCMParameterSpec(128, iv))
+        val data = c.doFinal(plain.toByteArray(Charsets.UTF_8))
+        return JSONObject()
+            .put("format", "ssamtox-backup").put("version", 2).put("enc", true)
+            .put("created", p.optLong("created")).put("summary", p.optString("summary"))
+            .put("salt", b64(salt)).put("iv", b64(iv)).put("data", b64(data))
+            .toString(2)
+    }
+
+    fun isEncrypted(text: String) = runCatching { JSONObject(text).optBoolean("enc") }.getOrDefault(false)
+
+    /** 암호화된 백업 → 평문 JSON. 비밀번호가 틀리면 예외 */
+    fun decrypt(text: String, pin: String): String {
+        val j = JSONObject(text)
+        val c = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")
+        c.init(javax.crypto.Cipher.DECRYPT_MODE, key(pin, unb64(j.getString("salt"))),
+            javax.crypto.spec.GCMParameterSpec(128, unb64(j.getString("iv"))))
+        return try { String(c.doFinal(unb64(j.getString("data"))), Charsets.UTF_8) }
+        catch (e: javax.crypto.AEADBadTagException) { throw IllegalArgumentException("백업 비밀번호가 달라요.") }
     }
 }
