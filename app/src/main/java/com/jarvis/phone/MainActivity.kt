@@ -241,6 +241,35 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     var section by mutableStateOf(Section.APPS)
     fun openSettings(s: Section) { section = s; tab = Tab.SETTINGS }
 
+    // ── 📋 브리핑 카드 접기·숨기기, 📚 브리핑 모음 ──
+    var briefings by mutableStateOf<List<Briefing>>(emptyList())
+        private set
+    /** 접어 둔 브리핑(시각 키). 한 번 접으면 다시 열어도 접힌 채로 */
+    var collapsedBriefings by mutableStateOf(prefs.getStringSet("collapsed_briefings", emptySet())!!.toSet())
+        private set
+    /** 맨 위에서 숨긴 브리핑(시각 키). 모음에는 그대로 남음 */
+    var hiddenBriefings by mutableStateOf(prefs.getStringSet("hidden_briefings", emptySet())!!.toSet())
+        private set
+    private fun saveSet(key: String, s: Set<String>) =
+        prefs.edit().putStringSet(key, s.toList().takeLast(100).toSet()).apply()
+    fun toggleBriefing(b: Briefing) {
+        val k = b.time.toString()
+        collapsedBriefings = if (k in collapsedBriefings) collapsedBriefings - k else collapsedBriefings + k
+        saveSet("collapsed_briefings", collapsedBriefings)
+    }
+    fun hideBriefing(b: Briefing) {
+        hiddenBriefings = hiddenBriefings + b.time.toString(); saveSet("hidden_briefings", hiddenBriefings)
+    }
+
+    // ── 🚫 광고 자동 거르기 ──
+    var adFilterOn by mutableStateOf(AdFilter.enabled(app))
+        private set
+    var adCount by mutableIntStateOf(AdFilter.countToday(app))
+        private set
+    fun setAdFilter(on: Boolean) {
+        AdFilter.setEnabled(getApplication<Application>(), on); adFilterOn = on; refresh()
+    }
+
     // ── 🧒 우리 반 명부 + 학생별 기록 ──
     var students by mutableStateOf<List<String>>(emptyList())
         private set
@@ -268,9 +297,42 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         students = Students.names(getApplication<Application>())
     }
     fun openStudent(name: String) {
-        viewModelScope.launch { studentView = name to withContext(Dispatchers.IO) { db.studentLog(name) } }
+        viewModelScope.launch {
+            val ctx = getApplication<Application>()
+            val (log, senders) = withContext(Dispatchers.IO) {
+                db.studentLog(name) to ParentBook.recentSenders(
+                    db.since(System.currentTimeMillis() - 7 * 24L * 3600 * 1000), ParentBook.links(ctx))
+            }
+            parentLinks = ParentBook.links(ctx)
+            recentSenders = senders
+            studentView = name to log
+        }
     }
-    fun closeStudent() { studentView = null }
+    fun closeStudent() { studentView = null; refresh() }
+
+    // ── 👪 학부모 명부 (학생 ↔ 학부모 이름·번호) ──
+    var parentLinks by mutableStateOf(ParentBook.links(app))
+        private set
+    /** "최근 연락에서 고르기": 문자·1:1 대화의 최근 보낸 사람 */
+    var recentSenders by mutableStateOf<List<String>>(emptyList())
+        private set
+    fun addParentLink(student: String, relation: String, match: String) {
+        val ctx = getApplication<Application>()
+        ParentBook.add(ctx, ParentLink(student, relation, match.trim()))
+        parentLinks = ParentBook.links(ctx)
+        recentSenders = recentSenders - match
+        // 최근 7일 알림에서 이 학부모 연락을 학생 기록에 바로 채움
+        viewModelScope.launch(Dispatchers.IO) {
+            val names = Students.names(ctx)
+            db.since(System.currentTimeMillis() - 7 * 24L * 3600 * 1000).forEach { Students.log(ctx, names, it) }
+            val log = db.studentLog(student)
+            withContext(Dispatchers.Main) { if (studentView?.first == student) studentView = student to log }
+        }
+    }
+    fun removeParentLink(l: ParentLink) {
+        ParentBook.remove(getApplication<Application>(), l)
+        parentLinks = ParentBook.links(getApplication<Application>())
+    }
 
     // ── 📌 마감·할 일 ──
     var tasks by mutableStateOf<List<Task>>(emptyList())
@@ -407,6 +469,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
             .contains(ctx.packageName)
         hasModel = summarizer.hasModel()
         notiPermission = NotificationManagerCompat.from(ctx).areNotificationsEnabled()
+        adCount = AdFilter.countToday(ctx)
         slots = readSlots()
         // 모델 받기 단계에 있으면(권한 설정에서 돌아온 경우 포함) 다운로드 폴더를 다시 찾아봄
         if (!onboardingDone && onboardingStep == 2) scanDownloads()
@@ -416,7 +479,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
             val rules = AppFilter.rules(ctx)
             val items = db.today().filter { rules.allows(it) }
             val names = Students.names(ctx)
-            val parents = ParentAdvisor.contacts(items, ParentAdvisor.parentRooms(ctx), names)
+            val parents = ParentAdvisor.contacts(ctx, items)
             // 오늘 알림에서 할 일 뽑기 (이미 있는 건 건너뜀) + 학생별 기록 채우기
             items.forEach { runCatching { TaskExtractor.save(ctx, it); Students.log(ctx, names, it) } }
             val taskList = db.tasks()
@@ -430,7 +493,8 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
                 tasks = taskList; students = names; studentCounts = counts
             }
             val last = db.lastBriefing()
-            withContext(Dispatchers.Main) { todayItems = items; lastBriefing = last }
+            val all = db.briefings()
+            withContext(Dispatchers.Main) { todayItems = items; lastBriefing = last; briefings = all }
         }
     }
 

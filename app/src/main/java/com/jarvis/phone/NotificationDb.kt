@@ -83,6 +83,12 @@ class NotificationDb private constructor(ctx: Context) :
         )
     }
 
+    /** 브리핑 모음: 최근 브리핑들 (새것부터, 7일 보관) */
+    fun briefings(limit: Int = 30): List<Briefing> =
+        readableDatabase.rawQuery(
+            "SELECT time,from_time,label,count,text FROM briefing ORDER BY time DESC LIMIT $limit", null
+        ).use { c -> buildList { while (c.moveToNext()) add(Briefing(c.getLong(0), c.getLong(1), c.getString(2), c.getInt(3), c.getString(4))) } }
+
     // ── 학생별 기록 ──
     fun logStudent(student: String, n: NotiItem) {
         val v = ContentValues().apply {

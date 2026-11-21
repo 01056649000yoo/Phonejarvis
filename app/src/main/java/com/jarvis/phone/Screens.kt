@@ -24,7 +24,7 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** 이번 버전에서 바뀐 점 한 줄 (버전 올릴 때 같이 고치기). */
-private const val WHATS_NEW = "자동 브리핑 시각을 버튼으로 쉽게 고르기(직접도 가능)·주말 쉬기 · 🧒 우리 반 · 📌 마감 · 🏫 수업·퇴근 모드"
+private const val WHATS_NEW = "👪 학부모 명부로 문자·카톡·밴드 연락 자동 정리 · 브리핑 접기·숨기기, 맨 아래 📚 브리핑 모음 · 📦 미리 준비 · 🚫 광고 거르기"
 
 /** 메인: 아래 탭 두 개 — 브리핑(결과만 보기) / 설정(내 방식대로). */
 @Composable
@@ -94,29 +94,16 @@ private fun BriefingTab(vm: JarvisViewModel) {
         }
     }
 
-    // 브리핑 카드: 칠판 그린 바탕
-    val briefingColors = CardDefaults.cardColors(
-        containerColor = MaterialTheme.colorScheme.primaryContainer,
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer)
+    // 최신 브리핑 카드: 접으면 "언제·몇 건"만, 숨기면 맨 위에서 빠짐 (맨 아래 📚 모음에는 남음)
+    val latest = vm.briefings.firstOrNull()
     when {
-        vm.summary.isNotEmpty() -> Card(Modifier.fillMaxWidth(), colors = briefingColors) {
-            Text(vm.summary, Modifier.padding(16.dp), style = MaterialTheme.typography.bodyLarge)
-        }
-        vm.lastBriefing != null -> {
-            val b = vm.lastBriefing!!
-            Card(Modifier.fillMaxWidth(), colors = briefingColors) {
-                Column(Modifier.padding(16.dp)) {
-                    Text("${b.label} · ${dayTimeFmt.format(b.time)} · 알림 ${b.count}건",
-                        style = MaterialTheme.typography.labelMedium)
-                    Spacer(Modifier.height(8.dp))
-                    Text(b.text, style = MaterialTheme.typography.bodyLarge)
-                }
-            }
-        }
-        else -> Card(Modifier.fillMaxWidth()) {
+        latest != null && latest.time.toString() !in vm.hiddenBriefings ->
+            BriefingCard(vm, latest, primary = true, onHide = { vm.hideBriefing(latest) })
+        latest == null -> Card(Modifier.fillMaxWidth()) {
             Text("아직 브리핑이 없어요. 아래 버튼을 누르거나, 설정에서 정한 시각을 기다리세요.",
                 Modifier.padding(16.dp), style = MaterialTheme.typography.bodyMedium)
         }
+        else -> {}
     }
 
     TasksCard(vm)
@@ -176,6 +163,69 @@ private fun BriefingTab(vm: JarvisViewModel) {
             }
         }
     }
+
+    // 📚 브리핑 모음: 맨 아래, 지난 브리핑을 한 줄씩. 누르면 펼쳐 보기 (최근 7일)
+    if (vm.briefings.isNotEmpty()) {
+        var open by rememberSaveable { mutableStateOf(false) }
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("📚 브리핑 모음 · ${vm.briefings.size}개", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { open = !open }) { Text(if (open) "접기" else "펼치기") }
+                }
+                if (open) vm.briefings.forEach { b ->
+                    var show by rememberSaveable(b.time) { mutableStateOf(false) }
+                    HorizontalDivider()
+                    Row(Modifier.fillMaxWidth().clickable { show = !show }.padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Text("${briefingIcon(b)} ${b.label} · ${dayTimeFmt.format(b.time)} · ${b.count}건",
+                            Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                        Text(if (show) "▾" else "▸")
+                    }
+                    if (show) Text(b.text, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
+    }
+}
+
+private fun briefingIcon(b: Briefing) = when {
+    "아침" in b.label -> "🌅"
+    "저녁" in b.label -> "🌙"
+    else -> "📋"
+}
+
+/**
+ * 브리핑 카드: 제목 줄(언제·몇 건)만 보이게 접을 수 있고, 숨기면 맨 위에서 빠짐.
+ * 한 번 접으면 다시 열어도 접힌 채로 (보고 나면 접어 두기).
+ */
+@Composable
+private fun BriefingCard(vm: JarvisViewModel, b: Briefing, primary: Boolean, onHide: () -> Unit) {
+    val fmt = remember { SimpleDateFormat("M/d(E) HH:mm", Locale.KOREA) }
+    val collapsed = b.time.toString() in vm.collapsedBriefings
+    Card(Modifier.fillMaxWidth(), colors = if (primary) CardDefaults.cardColors(
+        containerColor = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer) else CardDefaults.cardColors()) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+            Row(Modifier.fillMaxWidth().clickable { vm.toggleBriefing(b) }, verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("${briefingIcon(b)} ${b.label}", fontWeight = FontWeight.Bold)
+                    Text("${fmt.format(b.time)} · 알림 ${b.count}건", style = MaterialTheme.typography.labelMedium)
+                }
+                Text(if (collapsed) "▸ 펼치기" else "▾ 접기", style = MaterialTheme.typography.labelLarge)
+            }
+            if (!collapsed) {
+                Spacer(Modifier.height(8.dp))
+                Text(b.text, style = MaterialTheme.typography.bodyLarge)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = { vm.toggleBriefing(b) }) {
+                        Text("다 봤어요 · 접기", color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    }
+                    TextButton(onClick = onHide) { Text("숨기기", color = MaterialTheme.colorScheme.onPrimaryContainer) }
+                }
+            }
+        }
+    }
 }
 
 // ───────────────────────── 설정 탭: 내 방식대로 ─────────────────────────
@@ -216,7 +266,8 @@ private fun TimesCard(vm: JarvisViewModel) {
             Text("⏰ 자동 브리핑", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text(
                 if (on.isEmpty()) "아직 꺼져 있어요. 아래에서 아침·저녁 시각을 눌러 켜 보세요."
-                else (if (vm.skipWeekend) "평일 " else "매일 ") + on.joinToString(", ") { hm(it.minute) } + "에 새 알림을 정리해 알림으로 보내 드려요.",
+                else (if (vm.skipWeekend) "평일 " else "매일 ") + on.joinToString(", ") { hm(it.minute) } + "에 새 알림을 정리해 알림으로 보내 드려요.\n" +
+                    "📦 정한 시각 ${BriefingScheduler.LEAD_MINUTES}분 전에 미리 정리해 두고, 그 시각엔 결과만 바로 보여 줘요.",
                 style = MaterialTheme.typography.bodyLarge,
             )
         }
@@ -319,6 +370,16 @@ private fun AppCleanupCard(vm: JarvisViewModel) {
                     "그 앱의 알림을 켜 두어야 쌤톡스가 모을 수 있고, 여기 목록에도 떠요.",
                     Modifier.padding(10.dp), style = MaterialTheme.typography.bodySmall,
                 )
+            }
+            // 🚫 광고 자동 거르기 (문자·카톡의 광고성 메시지)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("🚫 광고 자동 거르기", fontWeight = FontWeight.Bold)
+                    Text(if (vm.adFilterOn) "오늘 광고 ${vm.adCount}건을 걸렀어요 · (광고)·수신거부·할인·쿠폰 등. 학부모 방·키워드는 거르지 않아요"
+                         else "꺼짐 · 광고성 문자·카톡도 모아요", style = MaterialTheme.typography.bodySmall)
+                }
+                Switch(checked = vm.adFilterOn, onCheckedChange = { vm.setAdFilter(it) },
+                    colors = SwitchDefaults.colors(checkedTrackColor = Ssam.Sprout, checkedThumbColor = Ssam.Ink))
             }
             if (vm.aiBusy) LinearProgressIndicator(Modifier.fillMaxWidth(), color = Ssam.Sprout)
 
@@ -434,7 +495,7 @@ private fun ParentCard(vm: JarvisViewModel) {
             open.forEach { c ->
                 HorizontalDivider()
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(c.room + if (c.students.isNotEmpty()) " · 🧒 " + c.students.joinToString(", ") else "",
+                    Text(c.displayName + if (c.link == null && c.students.isNotEmpty()) " · 🧒 " + c.students.joinToString(", ") else "",
                         fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), maxLines = 1)
                     Surface(shape = MaterialTheme.shapes.small,
                         color = if (c.category.needsReply) Ssam.Blush.copy(alpha = 0.25f) else Ssam.Sprout.copy(alpha = 0.3f)) {
@@ -544,7 +605,7 @@ private fun StudentsCard(vm: JarvisViewModel) {
             if (vm.students.isEmpty()) Text("아직 명부가 비어 있어요.", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             else {
-                Text("학생 ${vm.students.size}명 · 눌러서 기록 보기", style = MaterialTheme.typography.labelMedium,
+                Text("학생 ${vm.students.size}명 · 눌러서 👪 학부모 연결·기록 보기", style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     vm.students.forEach { name ->
@@ -565,10 +626,13 @@ private fun StudentDialog(vm: JarvisViewModel, name: String, entries: List<Stude
     val fmt = remember { SimpleDateFormat("M/d(E) HH:mm", Locale.KOREA) }
     AlertDialog(
         onDismissRequest = { vm.closeStudent() },
-        title = { Text("🧒 $name 기록 · ${entries.size}건") },
+        title = { Text("🧒 $name") },
         text = {
-            Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (entries.isEmpty()) Text("아직 기록이 없어요. 이 학생 이름이 들어간 연락이 오면 여기에 쌓여요.")
+            Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                ParentLinkSection(vm, name)
+                HorizontalDivider()
+                Text("📒 기록 ${entries.size}건", fontWeight = FontWeight.Bold)
+                if (entries.isEmpty()) Text("아직 기록이 없어요. 이 학생 이름이 들어간 연락이나 연결한 학부모의 연락이 오면 여기에 쌓여요.")
                 entries.forEach { e ->
                     val cat = ParentAdvisor.classify(listOf(NotiItem(0, "", e.app, e.sender, e.text, e.time, e.room)))
                     Column {
@@ -581,6 +645,39 @@ private fun StudentDialog(vm: JarvisViewModel, name: String, entries: List<Stude
         },
         confirmButton = { TextButton(onClick = { vm.closeStudent() }) { Text("닫기") } },
     )
+}
+
+/**
+ * 👪 학부모 연결: 이름·번호와 관계를 넣거나, 최근 연락한 사람을 눌러 바로 연결.
+ * 연결하면 문자·카톡·밴드·하이클래스·학교종이 어디서 온 연락이든 이 학생의 학부모 연락으로 정리됨.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ParentLinkSection(vm: JarvisViewModel, student: String) {
+    var input by rememberSaveable { mutableStateOf("") }
+    var relation by rememberSaveable { mutableStateOf("어머님") }
+    val mine = vm.parentLinks.filter { it.student == student }
+    Text("👪 학부모 연결", fontWeight = FontWeight.Bold)
+    Text("연결하면 문자·카톡·밴드·하이클래스·학교종이 어디서 온 연락이든 \"${if (student.length == 3) student.substring(1) else student} $relation\" 연락으로 정리돼요.",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    if (mine.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        mine.forEach { l -> InputChip(selected = true, onClick = { vm.removeParentLink(l) }, label = { Text("${l.relation} · ${l.match}  ✕") }) }
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        listOf("어머님", "아버님", "보호자").forEach { r -> FilterChip(selected = relation == r, onClick = { relation = r }, label = { Text(r) }) }
+    }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(value = input, onValueChange = { input = it }, singleLine = true,
+            placeholder = { Text("이름·번호 (예: 민준맘, 010-1234-5678)") }, modifier = Modifier.weight(1f))
+        Button(onClick = { vm.addParentLink(student, relation, input); input = "" }, enabled = input.isNotBlank()) { Text("연결") }
+    }
+    if (vm.recentSenders.isNotEmpty()) {
+        Text("최근 연락한 사람에서 고르기 ($relation)", style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            vm.recentSenders.forEach { s -> AssistChip(onClick = { vm.addParentLink(student, relation, s) }, label = { Text("+ $s") }) }
+        }
+    }
 }
 
 // ───────────────────────── 🏫 수업 중 · 🌙 퇴근 모드 (설정) ─────────────────────────

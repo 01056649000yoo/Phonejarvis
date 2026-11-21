@@ -43,7 +43,9 @@ object Students {
     fun log(ctx: Context, names: List<String>, n: NotiItem) {
         if (names.isEmpty()) return
         val db = NotificationDb.get(ctx)
-        find(names, n).forEach { db.logStudent(it, n) }
+        // 이름이 나온 학생 + 학부모 명부로 연결된 학생 (이름이 없어도 "민준 어머님"의 연락이면 민준 기록에)
+        val linked = ParentBook.find(ParentBook.links(ctx), n)?.student
+        (find(names, n) + listOfNotNull(linked)).distinct().forEach { db.logStudent(it, n) }
     }
 }
 
@@ -287,7 +289,7 @@ object QuietMode {
             val rules = AppFilter.rules(ctx)
             val items = NotificationDb.get(ctx).since(since).filter { rules.allows(it) }
             if (items.isNotEmpty()) {
-                val parents = ParentAdvisor.contacts(items, ParentAdvisor.parentRooms(ctx))
+                val parents = ParentAdvisor.contacts(ctx, items)
                 val rooms = items.map { it.roomOrTitle }.distinct()
                 Notifications.ensureChannels(ctx)
                 Notifications.notify(ctx, Notifications.ID_QUIET, Notifications.result(ctx,
@@ -302,4 +304,108 @@ object QuietMode {
 /** 수업·퇴근 경계 시각에 깨어나 상태를 반영하고 다음 경계를 예약. */
 class QuietReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) = QuietMode.tick(ctx)
+}
+
+// ───────────────────────── 🚫 광고 자동 거르기 ─────────────────────────
+
+/**
+ * 문자·카톡의 광고성 메시지를 규칙으로 판단.
+ * - 확실한 표시: (광고), [광고], 무료수신거부, 수신거부, 080 번호 → 광고
+ * - 광고 단어(할인·쿠폰·이벤트·특가·적립·최대 N%·무료배송 등)가 2개 이상 → 광고
+ * 학부모 방·중요 키워드·학생 이름이 든 메시지는 거르지 않음 (AppFilter.Rules에서 처리).
+ */
+object AdFilter {
+    private val STRONG = listOf("(광고)", "[광고]", "(AD)", "[AD]", "무료수신거부", "무료 수신거부", "수신거부", "수신 거부", "080-", "080)")
+    private val WEAK = listOf(
+        "할인", "쿠폰", "이벤트", "특가", "적립", "혜택", "무료배송", "세일", "SALE", "핫딜", "오픈기념", "선착순",
+        "최저가", "구매하기", "지금 바로", "가입하면", "포인트", "당첨", "경품", "증정", "프로모션", "한정 수량",
+    )
+    private val PERCENT = Regex("""최대\s*\d{1,2}\s*%|\d{1,2}\s*%\s*(할인|OFF|off)""")
+
+    fun isAd(title: String, text: String): Boolean {
+        val t = "$title $text"
+        if (STRONG.any { it in t }) return true
+        val weak = WEAK.count { it in t } + if (PERCENT.containsMatchIn(t)) 1 else 0
+        return weak >= 2
+    }
+
+    private fun prefs(ctx: Context) = ctx.getSharedPreferences("apps", Context.MODE_PRIVATE)
+    fun enabled(ctx: Context) = prefs(ctx).getBoolean("ad_filter", true)
+    fun setEnabled(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("ad_filter", on).apply()
+
+    /** 오늘 거른 광고 수 (날짜가 바뀌면 0부터) */
+    fun countToday(ctx: Context): Int {
+        val p = prefs(ctx)
+        return if (p.getLong("ad_day", 0) == NotificationDb.startOfToday()) p.getInt("ad_count", 0) else 0
+    }
+    fun addOne(ctx: Context) {
+        val today = NotificationDb.startOfToday()
+        prefs(ctx).edit().putLong("ad_day", today).putInt("ad_count", countToday(ctx) + 1).apply()
+    }
+}
+
+// ───────────────────────── 👪 학부모 명부 (학생 ↔ 학부모 이름·번호) ─────────────────────────
+
+/** 학생 한 명의 학부모 연결: 관계(어머님/아버님/보호자)와 알아볼 이름·번호 */
+data class ParentLink(val student: String, val relation: String, val match: String) {
+    /** 화면·브리핑에 보일 이름. 세 글자 학생은 성 빼고 "민준 어머님" */
+    val label: String get() = (if (student.length == 3) student.substring(1) else student) + " " + relation
+}
+
+/**
+ * 학부모 명부.
+ * 연결해 둔 이름·번호로 문자·카톡·밴드·하이클래스·학교종이 어디서 온 연락이든 그 학생의 학부모 연락으로 정리.
+ * 번호는 숫자만 비교(뒤 8자리), 이름은 띄어쓰기 없이 비교.
+ */
+object ParentBook {
+    private const val SEP = "\u0001"
+    private fun prefs(ctx: Context) = ctx.getSharedPreferences("apps", Context.MODE_PRIVATE)
+
+    fun links(ctx: Context): List<ParentLink> =
+        prefs(ctx).getStringSet("parent_links", emptySet())!!.mapNotNull {
+            val p = it.split(SEP); if (p.size == 3) ParentLink(p[0], p[1], p[2]) else null
+        }.sortedWith(compareBy({ it.student }, { it.relation }))
+
+    fun add(ctx: Context, link: ParentLink) {
+        if (link.match.isBlank()) return
+        val s = prefs(ctx).getStringSet("parent_links", emptySet())!!.toMutableSet()
+        s.add(listOf(link.student, link.relation, link.match.trim()).joinToString(SEP))
+        prefs(ctx).edit().putStringSet("parent_links", s).apply()
+    }
+    fun remove(ctx: Context, link: ParentLink) {
+        val s = prefs(ctx).getStringSet("parent_links", emptySet())!!.toMutableSet()
+        s.remove(listOf(link.student, link.relation, link.match).joinToString(SEP))
+        prefs(ctx).edit().putStringSet("parent_links", s).apply()
+    }
+
+    /** 비교용: 번호면 숫자 뒤 8자리, 이름이면 띄어쓰기·괄호 뺀 글자 */
+    fun norm(s: String): String {
+        val digits = s.filter { it.isDigit() }
+        return if (digits.length >= 8 && digits.length * 2 >= s.count { !it.isWhitespace() }) digits.takeLast(8)
+        else s.filterNot { it.isWhitespace() || it in "()[]<>-" }
+    }
+
+    /** 이 알림을 보낸 사람(제목)·방이 연결된 학부모인지 */
+    fun find(links: List<ParentLink>, n: NotiItem): ParentLink? {
+        val who = listOf(n.title, n.room).filter { it.isNotBlank() }.map(::norm)
+        return links.firstOrNull { l -> val m = norm(l.match); m.length >= 2 && who.any { it == m || (m.length >= 3 && m in it) } }
+    }
+
+    // 학급 소통 앱: 여기서 온 연락에 학부모 호칭이나 우리 반 학생 이름이 있으면 학부모 연락으로 봄
+    private val SCHOOL_APPS = listOf("하이클래스", "hiclass", "클래스팅", "classting", "학교종이", "알리미", "밴드", "band", "e알리미")
+    private val PARENT_WORDS = listOf("어머님", "아버님", "어머니", "아버지", "학부모", "보호자", "맘", "엄마", "아빠")
+    fun isSchoolApp(n: NotiItem) = (n.app + " " + n.pkg).lowercase().let { k -> SCHOOL_APPS.any { it.lowercase() in k } }
+    fun looksParentInSchoolApp(n: NotiItem, studentNames: List<String>): Boolean =
+        isSchoolApp(n) && (PARENT_WORDS.any { it in n.title || it in n.room } || Students.find(studentNames, n).isNotEmpty())
+
+    /** 최근 연락한 사람 (문자·1:1 대화의 보낸 사람) — "최근 연락에서 고르기"용 */
+    fun recentSenders(items: List<NotiItem>, links: List<ParentLink>): List<String> {
+        val linked = links.map { norm(it.match) }.toSet()
+        return items.asReversed()
+            .filter { it.room.isEmpty() && it.title.isNotBlank() && AppAdvisor.isMessaging(AppStat(it.pkg, it.app, 0, emptyList())) }
+            .map { it.title }
+            .distinct()
+            .filter { norm(it) !in linked }
+            .take(12)
+    }
 }

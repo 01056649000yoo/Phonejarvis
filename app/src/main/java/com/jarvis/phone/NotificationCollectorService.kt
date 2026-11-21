@@ -27,7 +27,10 @@ class NotificationCollectorService : NotificationListenerService() {
             ?.toString()?.trim().orEmpty().take(100)
 
         // 설정에서 뺀 방은 모으지 않음 (단, 중요 키워드가 있으면 모음)
-        if (!AppFilter.rules(this).allows(sbn.packageName, room, title, text)) return
+        val rules = AppFilter.rules(this)
+        // 🚫 광고성 문자·카톡은 모으지 않음 (오늘 거른 수만 셈)
+        if (rules.isBlockedAd(sbn.packageName, room, title, text)) { AdFilter.addOne(this); return }
+        if (!rules.allows(sbn.packageName, room, title, text)) return
 
         val app = appLabel(sbn.packageName)
         NotificationDb.get(this).insert(

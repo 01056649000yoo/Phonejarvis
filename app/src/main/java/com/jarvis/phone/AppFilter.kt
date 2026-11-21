@@ -63,16 +63,35 @@ object AppFilter {
      * 이 알림을 모으고 요약에 넣을지: 뺀 앱은 무조건 제외,
      * 뺀 방이라도 중요 키워드가 들어 있으면 포함 (놓치면 안 되는 연락).
      */
-    class Rules(val apps: Set<String>, val rooms: Set<String>, val keywords: List<String>) {
+    class Rules(
+        val apps: Set<String>, val rooms: Set<String>, val keywords: List<String>,
+        val adFilter: Boolean = false, val parentRooms: Set<String> = emptySet(),
+        val parentLinks: List<ParentLink> = emptyList(),
+    ) {
+        /** 광고로 걸러야 하는지: 학부모 방·키워드·학생 이름이 있으면 광고처럼 보여도 거르지 않음 */
+        fun isBlockedAd(pkg: String, room: String, title: String, text: String): Boolean =
+            adFilter && AdFilter.isAd(title, text) &&
+                !isLinkedParent(pkg, room, title) &&
+                !ParentAdvisor.isParent(parentRooms, pkg, room.ifEmpty { title }) &&
+                !hasKeyword(keywords, title, text, room)
+
         fun allows(pkg: String, room: String, title: String, text: String): Boolean {
             if (pkg in apps) return false
-            if (isRoomExcluded(rooms, pkg, room.ifEmpty { title })) return hasKeyword(keywords, title, text, room)
+            if (isBlockedAd(pkg, room, title, text)) return false             // 🚫 광고
+            if (isRoomExcluded(rooms, pkg, room.ifEmpty { title }))
+                return hasKeyword(keywords, title, text, room) || isLinkedParent(pkg, room, title)   // 명부의 학부모는 끈 방이라도 모음
             return true
         }
         fun allows(n: NotiItem) = allows(n.pkg, n.room, n.title, n.text)
+        /** 학부모 명부에 연결된 사람이 보낸 알림인지 */
+        fun isLinkedParent(pkg: String, room: String, title: String) =
+            parentLinks.isNotEmpty() && ParentBook.find(parentLinks, NotiItem(0, pkg, "", title, "", 0, room)) != null
     }
     // 학생 이름(성 뺀 이름 포함)도 중요 키워드처럼: 끈 방에서 와도 모으고 ⭐에 모임
-    fun rules(ctx: Context) = Rules(excluded(ctx), excludedRooms(ctx), keywords(ctx) + Students.allTerms(Students.names(ctx)))
+    fun rules(ctx: Context) = Rules(
+        excluded(ctx), excludedRooms(ctx), keywords(ctx) + Students.allTerms(Students.names(ctx)),
+        AdFilter.enabled(ctx), ParentAdvisor.parentRooms(ctx), ParentBook.links(ctx),
+    )
 }
 
 /**
@@ -235,12 +254,17 @@ data class ParentContact(
     val category: ParentAdvisor.Category,
     /** 메시지·방 이름에 나온 우리 반 학생 */
     val students: List<String> = emptyList(),
+    /** 학부모 명부에 연결된 학부모면 그 연결 (문자·카톡·밴드 등 어디서 왔든) */
+    val link: ParentLink? = null,
 ) {
     val last: NotiItem get() = messages.last()
     /** 답장함 표시에 쓰는 키: 마지막 메시지가 바뀌면 다시 '답장 필요' */
     val key: String get() = "$pkg|$room|${last.time}"
-    /** 호칭: 방 이름으로 어머님/아버님 추정, 모르면 학부모님 */
+    /** 화면·브리핑에 보일 이름: 연결된 학부모면 "민준 어머님 (문자 이름)" */
+    val displayName: String get() = link?.let { if (it.label.replace(" ", "") in room.replace(" ", "")) room else "${it.label} ($room)" } ?: room
+    /** 호칭: 명부의 관계 → 방 이름으로 추정 → 학부모님 */
     val honorific: String get() = when {
+        link != null && link.relation.isNotBlank() -> link.relation
         "아버" in room -> "아버님"
         "어머" in room || "맘" in room -> "어머님"
         else -> "학부모님"
@@ -300,12 +324,29 @@ object ParentAdvisor {
     }
 
     /** 오늘 알림에서 학부모 연락 묶기 (최근 연락 먼저). */
-    fun contacts(items: List<NotiItem>, parentRooms: Set<String>, studentNames: List<String> = emptyList()): List<ParentContact> =
-        items.filter { isParent(parentRooms, it.pkg, it.roomOrTitle) }
+    /**
+     * 학부모 연락으로 보는 알림:
+     * ① 👪로 지정한 방, ② 학부모 명부에 연결된 이름·번호(문자·카톡·밴드 등 어디서든),
+     * ③ 학급 소통 앱(하이클래스·학교종이·밴드 등)에서 학부모 호칭이나 우리 반 학생 이름이 나온 연락
+     */
+    fun contacts(
+        items: List<NotiItem>, parentRooms: Set<String>, studentNames: List<String> = emptyList(),
+        links: List<ParentLink> = emptyList(),
+    ): List<ParentContact> =
+        items.filter {
+            isParent(parentRooms, it.pkg, it.roomOrTitle) || ParentBook.find(links, it) != null ||
+                ParentBook.looksParentInSchoolApp(it, studentNames)
+        }
             .groupBy { it.pkg to it.roomOrTitle }
-            .map { (k, list) -> ParentContact(k.first, list.first().app, k.second, list, classify(list),
-                list.flatMap { Students.find(studentNames, it) }.distinct()) }
+            .map { (k, list) ->
+                val link = list.firstNotNullOfOrNull { ParentBook.find(links, it) }
+                val students = (listOfNotNull(link?.student) + list.flatMap { Students.find(studentNames, it) }).distinct()
+                ParentContact(k.first, list.first().app, k.second, list, classify(list), students, link)
+            }
             .sortedByDescending { it.last.time }
+
+    fun contacts(ctx: Context, items: List<NotiItem>): List<ParentContact> =
+        contacts(items, parentRooms(ctx), Students.names(ctx), ParentBook.links(ctx))
 
     // ── 답장 추천 ──
     fun templates(c: ParentContact): List<String> {

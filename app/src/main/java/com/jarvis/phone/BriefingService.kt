@@ -40,12 +40,17 @@ class BriefingService : Service() {
             return START_NOT_STICKY
         }
         Notifications.ensureChannels(this)
+        // 미리 준비(브리핑 15분 전)면 결과를 알리지 않고 저장만 → 브리핑 시각에 바로 보여 줌
+        val prepareSlot = intent?.getStringExtra(EXTRA_PREPARE)?.let { runCatching { BriefingSlot.valueOf(it) }.getOrNull() }
+        val title = if (prepareSlot != null) "브리핑 미리 준비 중" else "쌤톡스가 알림을 정리하는 중"
         ServiceCompat.startForeground(
-            this, Notifications.ID_PROGRESS, Notifications.progress(this, "브리핑 준비 중…"),
+            this, Notifications.ID_PROGRESS, Notifications.progress(this, "브리핑 준비 중…", title = title),
             if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0,
         )
         if (running) return START_NOT_STICKY     // 이미 도는 중이면 겹쳐 실행하지 않음
         running = true
+        preparing = prepareSlot
+        showWhenDone = false
 
         val label = intent?.getStringExtra(EXTRA_LABEL) ?: "브리핑"
         // 화면이 꺼져 있어도 CPU가 잠들지 않도록 (최대 30분)
@@ -57,10 +62,16 @@ class BriefingService : Service() {
             try {
                 val result = Briefings.runSinceLast(this@BriefingService, label) { s ->
                     Notifications.notify(this@BriefingService, Notifications.ID_PROGRESS,
-                        Notifications.progress(this@BriefingService, s))
+                        Notifications.progress(this@BriefingService, s, title = title))
                 }
-                Notifications.notify(this@BriefingService, Notifications.ID_RESULT,
-                    Notifications.result(this@BriefingService, result.title, result.body))
+                if (prepareSlot != null && !showWhenDone) {
+                    // 미리 준비 완료: 저장해 두었다가 브리핑 시각에 알림
+                    BriefingScheduler.saveReady(this@BriefingService, prepareSlot, result.title, result.body)
+                } else {
+                    // 일반 실행이거나, 준비가 길어져 브리핑 시각이 이미 지난 경우 → 바로 알림
+                    Notifications.notify(this@BriefingService, Notifications.ID_RESULT,
+                        Notifications.result(this@BriefingService, result.title, result.body))
+                }
             } catch (s: Summarizer.StoppedException) {
                 Notifications.notify(this@BriefingService, Notifications.ID_RESULT,
                     Notifications.result(this@BriefingService, "$label 중지됨", s.message ?: "중지했어요."))
@@ -72,6 +83,7 @@ class BriefingService : Service() {
                 runCatching { Summarizer.get(this@BriefingService).release() }
                 if (wake.isHeld) wake.release()
                 running = false
+                preparing = null
                 ServiceCompat.stopForeground(this@BriefingService, ServiceCompat.STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
@@ -83,7 +95,14 @@ class BriefingService : Service() {
 
     companion object {
         const val EXTRA_LABEL = "label"
+        const val EXTRA_PREPARE = "prepare"
         const val ACTION_STOP = "com.jarvis.phone.STOP_BRIEFING"
+
+        /** 지금 미리 준비 중인 브리핑 (없으면 null) */
+        @Volatile var preparing: BriefingSlot? = null
+            private set
+        /** 준비가 브리핑 시각을 넘겼으면 끝나는 대로 바로 알림 */
+        @Volatile var showWhenDone = false
     }
 }
 
@@ -119,7 +138,7 @@ object Briefings {
         // ⭐ 키워드 알림: AI 없이 규칙으로 찾아 맨 위에 (놓치지 않게)
         val keywordPart = keywordSection(items, rules.keywords)
         // 👪 학부모 연락: 지정한 학부모 방의 연락을 분류해 맨 위에 (규칙, 즉시)
-        val parentPart = parentSection(ParentAdvisor.contacts(items, ParentAdvisor.parentRooms(ctx), Students.names(ctx)))
+        val parentPart = parentSection(ParentAdvisor.contacts(ctx, items))
         // 📌 오늘·내일 마감 (할 일 목록에서, 끝내지 않은 것)
         items.forEach { runCatching { TaskExtractor.save(ctx, it) } }
         val taskPart = taskSection(db.tasks())
@@ -156,8 +175,8 @@ object Briefings {
             append("👪 학부모 연락 (${contacts.size}건, 답장 필요 ${need})\n")
             contacts.take(10).forEach { c ->
                 val mark = if (c.category.needsReply) " · 답장 필요" else ""
-                val who = if (c.students.isNotEmpty()) " (${c.students.joinToString(", ")})" else ""
-                append("- ${fmt.format(c.last.time)} ${c.room}$who [${c.category.label}$mark] ${c.last.text.replace('\n', ' ').take(70)}\n")
+                val who = if (c.link == null && c.students.isNotEmpty()) " (${c.students.joinToString(", ")})" else ""
+                append("- ${fmt.format(c.last.time)} ${c.displayName}$who [${c.category.label}$mark] ${c.last.text.replace('\n', ' ').take(70)}\n")
             }
             append("\n")
         }
@@ -203,11 +222,11 @@ object Notifications {
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
-    fun progress(ctx: Context, text: String, showStop: Boolean = true): Notification =
+    fun progress(ctx: Context, text: String, showStop: Boolean = true, title: String = "쌤톡스가 알림을 정리하는 중"): Notification =
         NotificationCompat.Builder(ctx, CH_PROGRESS)
             .setSmallIcon(R.drawable.ic_stat_ssamtox)
             .setColor(0xFF2E4A3D.toInt())
-            .setContentTitle("쌤톡스가 알림을 정리하는 중")
+            .setContentTitle(title)
             .setContentText(text)
             .setProgress(0, 0, true)
             .setOngoing(true)
