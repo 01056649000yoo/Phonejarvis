@@ -79,6 +79,18 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         prefs.getString("model_id", null)?.let { runCatching { ModelOption.valueOf(it) }.getOrNull() })
         private set
 
+    init {
+        // 이미 모델이 설치된 폰(예전 버전에서 업데이트)은 설치 안내를 건너뛰고 바로 메인 화면으로.
+        // 앱을 켤 때 한 번만 확인 — 메인의 "바꾸기"로 안내를 다시 연 경우에는 건너뛰지 않음.
+        if (!onboardingDone && summarizer.hasModel()) {
+            if (installedModel == null) {
+                installedModel = ModelOption.bySize(summarizer.modelFile.length())
+                prefs.edit().putString("model_id", installedModel?.name).apply()
+            }
+            finishOnboarding()
+        }
+    }
+
     /** 메인 화면의 "모델 바꾸기/받기": 설치 안내의 폰 진단 단계부터 다시 보여줌. */
     fun openModelGuide() {
         onboardingStep = 1
