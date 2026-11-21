@@ -414,19 +414,17 @@ object ParentBook {
 
     /**
      * 아무렇게나 넣은 이름 목록을 학부모 연결로 바꿈.
-     * 예) "민준맘, 이서윤 아버님 010-1234-5678
-박지호 김영희" →
-     *   민준(명부의 김민준) 어머님 [민준맘] · 이서윤 아버님 [이서윤 아버님, 010-1234-5678] · 박지호 [박지호] · 김영희 [김영희]
+     * 예) "민준맘, 이서윤 아버님 / 박지호 김영희" →
+     *   민준(명부의 김민준) 어머님 [민준맘] · 이서윤 아버님 [이서윤 아버님] · 박지호 [박지호] · 김영희 [김영희]
      * 명부에 있는 학생 이름(성 빼고도)과 맞으면 그 학생의 학부모로, 아니면 넣은 이름 그대로 한 사람으로.
      */
     fun parse(raw: String, students: List<String>): List<ParentLink> {
         class Entry(val words: MutableList<String>, var rel: String?, val phones: MutableList<String>)
         val out = mutableListOf<ParentLink>()
-        raw.split(Regex("""[,
-;/·、，]+""")).forEach { piece ->
+        raw.split(Regex("""[,\n;/·、，]+""")).forEach { piece ->
             val entries = mutableListOf<Entry>()
-            piece.trim().split(Regex("""s+""")).filter { it.isNotBlank() }.forEach { w0 ->
-                val w = w0.trim('(', ')', '[', ']', '"', ''', '.', ':')
+            piece.trim().split(Regex("""\s+""")).filter { it.isNotBlank() }.forEach { w0 ->
+                val w = w0.trim('(', ')', '[', ']', '"', '\'', '.', ':')
                 if (w.isEmpty()) return@forEach
                 val exactRel = REL_WORDS.firstOrNull { it.first == w }?.second
                 when {
