@@ -273,6 +273,7 @@ object QuietMode {
         val prev = runCatching { State.valueOf(p.getString("last", "NONE")!!) }.getOrDefault(State.NONE)
         val cur = state(ctx)
         if (prev != cur) onChange(ctx, prev, cur)
+        else if (cur != State.NONE) Dnd.upgradeIfOld(ctx)   // 이미 켜져 있던 옛 모드(전화 제한)를 새 모드로
 
         val am = ctx.getSystemService(AlarmManager::class.java)
         am.cancel(pending(ctx))
@@ -314,29 +315,34 @@ object QuietMode {
 
 /**
  * 🔕 모아 두는 시간의 방해 금지 (v1.7.0).
- * 안드로이드 '모드'(AutomaticZenRule)로 "쌤톡스 모아 두기" 모드를 만들어 켜고 끈다 — 알람·즐겨찾기 연락처 전화·같은 사람이
- * 3분 안에 다시 건 전화만 울림. 폰 설정의 모드 목록에도 보여서 선생님이 더 고칠 수 있다.
- * 모드를 못 만드는 폰이면 예전처럼 폰 방해 금지(중요 알림만)를 통째로 켰다 끈다. 권한은 사용자가 직접 한 번 허용해야 한다.
+ * 안드로이드 '모드'(AutomaticZenRule)로 "쌤톡스 모아 두기" 모드를 만들어 켜고 끈다 — 메시지·알림 소리만 끄고
+ * 전화는 손대지 않는다(v1.8.1, 2026-11-22 선생님: "긴급 전화도 있으니 전화는 이 앱에서 제어하지 말자, 메시지가 포인트").
+ * 그래서 전화를 막을 수 있는 폰 방해 금지 통째로 켜기(예전 대신 쓰던 길)는 없앴다. 권한은 사용자가 직접 한 번 허용해야 한다.
  */
 object Dnd {
     private fun prefs(ctx: Context) = ctx.getSharedPreferences("quiet", Context.MODE_PRIVATE)
     private val CONDITION = android.net.Uri.parse("condition://com.jarvis.phone/collect")
+    private const val RULE_V = 2   // 2 = 전화 모두 허용(v1.8.1)
     fun autoOn(ctx: Context) = prefs(ctx).getBoolean("dnd_auto", true)
     fun granted(ctx: Context) = ctx.getSystemService(NotificationManager::class.java).isNotificationPolicyAccessGranted
 
     private fun ruleId(ctx: Context, nm: NotificationManager): String? {
-        prefs(ctx).getString("zen_rule", null)?.let { id -> if (runCatching { nm.getAutomaticZenRule(id) }.getOrNull() != null) return id }
+        prefs(ctx).getString("zen_rule", null)?.let { id ->
+            // v1.8.1 전에 만든 모드는 전화를 즐겨찾기만 받게 돼 있어 지우고 새로 만든다
+            if (prefs(ctx).getInt("zen_rule_v", 1) < RULE_V) { runCatching { nm.removeAutomaticZenRule(id) }; prefs(ctx).edit().remove("zen_rule").apply() }
+            else if (runCatching { nm.getAutomaticZenRule(id) }.getOrNull() != null) return id
+        }
         return runCatching {
             val policy = android.service.notification.ZenPolicy.Builder()
                 .allowAlarms(true).allowMedia(true)
-                .allowCalls(android.service.notification.ZenPolicy.PEOPLE_TYPE_STARRED).allowRepeatCallers(true)
+                .allowCalls(android.service.notification.ZenPolicy.PEOPLE_TYPE_ANYONE).allowRepeatCallers(true)   // 📞 전화는 모두 그대로
                 .allowMessages(android.service.notification.ZenPolicy.PEOPLE_TYPE_NONE)
                 .allowConversations(android.service.notification.ZenPolicy.CONVERSATION_SENDERS_NONE)
                 .allowReminders(false).allowEvents(false).allowSystem(false).build()
             val rule = android.app.AutomaticZenRule("쌤톡스 모아 두기", null,
                 android.content.ComponentName(ctx, MainActivity::class.java), CONDITION, policy,
                 NotificationManager.INTERRUPTION_FILTER_PRIORITY, true)
-            nm.addAutomaticZenRule(rule).also { prefs(ctx).edit().putString("zen_rule", it).apply() }
+            nm.addAutomaticZenRule(rule).also { prefs(ctx).edit().putString("zen_rule", it).putInt("zen_rule_v", RULE_V).apply() }
         }.getOrNull()
     }
 
@@ -344,12 +350,9 @@ object Dnd {
         val nm = ctx.getSystemService(NotificationManager::class.java)
         if (!autoOn(ctx) || !nm.isNotificationPolicyAccessGranted) return
         val id = ruleId(ctx, nm)
-        val ok = id != null && runCatching {
+        // 모드를 못 만들면 소리 끄기는 건너뜀(알림은 그래도 숨기고 모음) — 폰 방해 금지를 통째로 켜면 전화까지 막힐 수 있어서
+        if (id != null) runCatching {
             nm.setAutomaticZenRuleState(id, android.service.notification.Condition(CONDITION, "모아 두는 중", android.service.notification.Condition.STATE_TRUE))
-        }.isSuccess
-        if (!ok && nm.currentInterruptionFilter == NotificationManager.INTERRUPTION_FILTER_ALL) {
-            nm.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_PRIORITY)
-            prefs(ctx).edit().putBoolean("we_set_dnd", true).apply()
         }
     }
 
@@ -363,6 +366,11 @@ object Dnd {
             nm.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL)
             prefs(ctx).edit().putBoolean("we_set_dnd", false).apply()
         }
+    }
+
+    /** v1.8.1 전에 만든 모드(즐겨찾기 전화만 울림)가 남아 있으면 지우고 새 모드로 다시 켬 */
+    fun upgradeIfOld(ctx: Context) {
+        if (prefs(ctx).getString("zen_rule", null) != null && prefs(ctx).getInt("zen_rule_v", 1) < RULE_V) on(ctx)
     }
 
     /** 자동 켜기 스위치. 끄면 지금 켜 둔 모드도 끔 */
