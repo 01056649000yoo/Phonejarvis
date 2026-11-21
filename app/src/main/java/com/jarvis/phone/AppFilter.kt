@@ -55,6 +55,20 @@ object AppAdvisor {
         "보안", "security", "백신", "광고",
     )
 
+    /** 메시지·SNS 앱 (카톡, 문자, 메신저, 밴드, 학급 소통 앱, SNS 등). 추천 목록에서 맨 위에 모아 보여 줌. */
+    private val MESSAGING = listOf(
+        "카카오톡", "kakao.talk", "카카오워크", "문자", "메시지", "messag", "sms", "메신저", "messenger",
+        "밴드", "band", "라인", "jp.naver.line", "텔레그램", "telegram", "whatsapp", "왓츠앱", "디스코드", "discord",
+        "slack", "슬랙", "teams", "팀즈", "인스타", "instagram", "페이스북", "facebook", "스레드", "threads",
+        "트위터", "twitter", "com.twitter", "하이클래스", "hiclass", "클래스팅", "classting", "알리미", "학교종이",
+    )
+
+    fun isMessaging(s: AppStat): Boolean = (s.app + " " + s.pkg).lowercase().let { k -> MESSAGING.any { it in k } }
+
+    /** 메시지·SNS 앱 먼저, 그 안에서는 알림 많은 순. */
+    fun sortForDisplay(recs: List<AppRec>): List<AppRec> =
+        recs.sortedWith(compareByDescending<AppRec> { isMessaging(it.stat) }.thenByDescending { it.stat.count })
+
     fun byRules(stats: List<AppStat>): List<AppRec> = stats.map { s ->
         val key = (s.app + " " + s.pkg).lowercase()
         when {

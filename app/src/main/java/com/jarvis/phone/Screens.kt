@@ -22,7 +22,7 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** 이번 버전에서 바뀐 점 한 줄 (버전 올릴 때 같이 고치기). */
-private const val WHATS_NEW = "맨 위 ⚙️ 설정 버튼으로 언제든 설정에 갈 수 있어요 · AI 알림 앱 정리 · 요약 중지 버튼"
+private const val WHATS_NEW = "알림 앱 정리에서 메시지·SNS 앱을 맨 위에 모아 보여 줘요 · 맨 위 ⚙️ 설정 버튼"
 
 /** 메인: 아래 탭 두 개 — 브리핑(결과만 보기) / 설정(내 방식대로). */
 @Composable
@@ -239,7 +239,14 @@ private fun AppCleanupCard(vm: JarvisViewModel) {
                 Text("또는 아래에서 앱마다 켜고 끄세요. 끈 앱은 모으지도, 요약하지도 않아요.",
                     style = MaterialTheme.typography.bodySmall)
 
-                recs.forEach { r ->
+                recs.forEachIndexed { i, r ->
+                    // 묶음 제목: 메시지·SNS 앱이 위, 그 밖의 앱은 아래
+                    val msg = AppAdvisor.isMessaging(r.stat)
+                    if (i == 0 || msg != AppAdvisor.isMessaging(recs[i - 1].stat)) {
+                        Text(if (msg) "💬 메시지·SNS 앱" else "📱 그 밖의 앱",
+                            style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(top = 6.dp))
+                    }
                     val keepNow = r.stat.pkg !in vm.excludedApps
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {

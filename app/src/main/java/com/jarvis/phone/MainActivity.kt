@@ -143,13 +143,13 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
             val stats = withContext(Dispatchers.IO) { db.appStats(7) }
             val pkgs = stats.map { it.pkg }.toSet()
             if (pkgs == aiDoneFor && appRecs.isNotEmpty()) return@launch
-            val rules = AppAdvisor.byRules(stats)
+            val rules = AppAdvisor.sortForDisplay(AppAdvisor.byRules(stats))
             appRecs = rules
             excludedApps = AppFilter.excluded(ctx)
             if (!summarizer.hasModel() || stats.isEmpty() || aiBusy) return@launch
             aiBusy = true
             try {
-                appRecs = AppAdvisor.byAi(ctx, rules)
+                appRecs = AppAdvisor.sortForDisplay(AppAdvisor.byAi(ctx, rules))
                 aiDoneFor = pkgs
             } finally { aiBusy = false }
         }
