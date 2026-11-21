@@ -14,7 +14,7 @@ enum class ModelOption(
 ) {
     E4B(
         "Gemma 4 E4B", "gemma-4-E4B-it.litertlm", 3_659_530_240L,
-        "요약이 더 꼼꼼하고 자연스러워요. 램 12GB 이상 폰에 맞아요.",
+        "요약이 더 꼼꼼하고 자연스러워요. 램 8GB 이상인 요즘 폰에 맞아요(기본).",
     ),
     E2B(
         "Gemma 4 E2B", "gemma-4-E2B-it.litertlm", 2_588_147_712L,
@@ -28,8 +28,8 @@ enum class ModelOption(
     val neededBytes get() = bytes * 2 + 500_000_000L
 
     companion object {
-        /** 진단을 못 하거나 애매할 때 쓰는 기본값: 대부분의 폰에서 무리 없이 도는 E2B. */
-        val DEFAULT = E2B
+        /** 진단을 못 하거나 애매할 때 쓰는 기본값(2026-11-21 선생님: 요즘 폰이면 E4B 가 돈다). */
+        val DEFAULT = E4B
 
         /** 복사된 파일 크기로 어떤 모델인지 알아냄 (다른 이름으로 받아도 인식). */
         fun bySize(size: Long): ModelOption? = entries.firstOrNull { it.bytes == size }
@@ -49,8 +49,8 @@ data class DeviceReport(
 )
 
 object DeviceCheck {
-    // 12GB 폰은 시스템 예약 때문에 실제로 약 11GB로 잡힘
-    private const val RAM_FOR_E4B = 10_500_000_000L
+    // 8GB 폰은 시스템 예약 때문에 실제로 약 7.3GB로 잡힘(2026-11-21: 12GB → 8GB, 요즘 폰 기본이 E4B)
+    private const val RAM_FOR_E4B = 7_000_000_000L
     private const val RAM_MIN = 5_500_000_000L
 
     fun run(ctx: Context): DeviceReport {
