@@ -240,3 +240,36 @@ object BackupCrypto {
         catch (e: javax.crypto.AEADBadTagException) { throw IllegalArgumentException("백업 비밀번호가 달라요.") }
     }
 }
+
+/** 🔎 다운로드 폴더(하위 폴더 포함)에서 쌤톡스 백업 파일을 자동으로 찾기 */
+object BackupFinder {
+    data class Candidate(val file: File, val created: Long, val summary: String, val encrypted: Boolean) {
+        /** "Download/KakaoTalk" 처럼 어디 있는지 */
+        val where: String get() = file.parentFile?.let { p ->
+            val root = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            if (p == root) "Download" else "Download/" + p.relativeTo(root).path
+        } ?: ""
+    }
+
+    /** 이름이 아니라 내용(쌤톡스 백업 표시)으로 알아봄. 최신순. 권한이 없으면 빈 목록 */
+    fun findAll(): List<Candidate> {
+        if (!ModelFinder.hasAccess()) return emptyList()
+        val root = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        val out = mutableListOf<Candidate>()
+        fun scan(dir: File, depth: Int) {
+            dir.listFiles()?.forEach { f ->
+                when {
+                    f.isDirectory && depth < 3 && !f.name.startsWith(".") -> scan(f, depth + 1)
+                    f.isFile && f.name.endsWith(".json", ignoreCase = true) && f.length() in 50..2_000_000 ->
+                        runCatching {
+                            val j = JSONObject(f.readText())
+                            if (j.optString("format") == "ssamtox-backup")
+                                out += Candidate(f, j.optLong("created", f.lastModified()), j.optString("summary"), j.optBoolean("enc"))
+                        }
+                }
+            }
+        }
+        runCatching { scan(root, 0) }
+        return out.sortedByDescending { it.created }.distinctBy { it.created to it.summary }
+    }
+}

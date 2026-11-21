@@ -30,7 +30,7 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** 이번 버전에서 바뀐 점 한 줄 (버전 올릴 때 같이 고치기). */
-private const val WHATS_NEW = "🔐 보안 강화(새 서명·잠금화면 숨김·백업 암호화·긴급 알림은 안 숨김) · 시간표 버튼 · 🍎 부드러운 스프링 애니메이션"
+private const val WHATS_NEW = "🔎 예전 설정 불러오기를 누르면 다운로드 폴더에서 백업 파일을 자동으로 찾아요 · 🔐 보안 강화 · 🍎 부드러운 움직임"
 
 /** 메인: 아래 탭 두 개 — 브리핑(결과만 보기) / 설정(내 방식대로). */
 @Composable
@@ -887,8 +887,9 @@ private fun BackupCard(vm: JarvisViewModel) {
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { vm.backupNow() }, enabled = vm.hasBackupPin) { Text("지금 백업") }
                 OutlinedButton(onClick = { export.launch("쌤톡스_백업.json") }, enabled = vm.hasBackupPin) { Text("파일로 내보내기") }
-                OutlinedButton(onClick = { importer.launch(arrayOf("application/json", "*/*")) }) { Text("파일에서 불러오기") }
+                OutlinedButton(onClick = { vm.findBackups() }) { Text("🔎 백업 찾아서 불러오기") }
             }
+            BackupFinderPanel(vm, onPickManually = { importer.launch(arrayOf("application/json", "*/*")) })
             if (vm.status.startsWith("💾") || vm.status.startsWith("불러오지") || vm.status.startsWith("백업"))
                 Text(vm.status, style = MaterialTheme.typography.bodySmall)
         }

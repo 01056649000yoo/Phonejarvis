@@ -280,6 +280,26 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
             status = if (ok) "💾 백업 파일을 저장했어요." else "백업 파일을 저장하지 못했어요."
         }
     }
+    // ── 🔎 백업 파일 자동 찾기 ──
+    /** null: 아직 안 찾음 / 빈 목록: 못 찾음 */
+    var backupCandidates by mutableStateOf<List<BackupFinder.Candidate>?>(null)
+        private set
+    var searchingBackup by mutableStateOf(false)
+        private set
+    /** 권한이 없어서 기다리는 중 (권한을 켜고 돌아오면 자동으로 찾음) */
+    var backupNeedsAccess by mutableStateOf(false)
+        private set
+    fun findBackups() {
+        if (!ModelFinder.hasAccess()) { backupNeedsAccess = true; return }
+        backupNeedsAccess = false
+        searchingBackup = true
+        viewModelScope.launch {
+            backupCandidates = withContext(Dispatchers.IO) { BackupFinder.findAll() }
+            searchingBackup = false
+        }
+    }
+    fun restoreCandidate(c: BackupFinder.Candidate) = restoreBackup(Uri.fromFile(c.file))
+
     /** 📥 받은 백업 파일: (uri, (저장 시각, 요약)). null이면 창 닫힘 */
     var incomingBackup by mutableStateOf<Pair<Uri, Pair<Long, String>>?>(null)
         private set
@@ -584,6 +604,8 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         hasModel = summarizer.hasModel()
         notiPermission = NotificationManagerCompat.from(ctx).areNotificationsEnabled()
         adCount = AdFilter.countToday(ctx)
+        // 백업 찾기를 누르고 권한을 켜러 갔다가 돌아왔으면 바로 찾기
+        if (backupNeedsAccess && ModelFinder.hasAccess()) findBackups()
         lastBackup = Backup.lastBackupTime(ctx)
         slots = readSlots()
         // 모델 받기 단계에 있으면(권한 설정에서 돌아온 경우 포함) 다운로드 폴더를 다시 찾아봄
