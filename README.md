@@ -54,7 +54,7 @@ Android Studio 상단에서 기기(SM-F936N 등)가 선택된 것 확인 → ▶
 ## 문제 해결
 | 증상 | 해결 |
 |---|---|
-| 요약 중 token/context 관련 오류 | `Summarizer.kt`의 `CHUNK_CHARS`를 1000으로 낮추기 |
+| 요약 중 token/context 관련 오류 | `BriefingComposer.kt`의 `ROOM_CHARS`(대화방 하나에 넣는 글자)를 1000으로 낮추기 |
 | GPU 실패 후 CPU로 느리게 동작 | 정상 동작(폴백). 상태 문구로 확인 가능 |
 | 알림이 수집 안 됨 | 설정 → 배터리 → 백그라운드 사용 제한 → 쌤톡스를 "절전 예외 앱"에 추가 |
 | 특정 앱 알림을 빼고 싶음 | `NotificationCollectorService.kt`의 `IGNORED_PACKAGES`에 패키지명 추가 |

@@ -11,12 +11,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Locale
 
 /**
- * 1차: 규칙으로 알림을 거르고 묶는다 (광고 제거, 앱·대화방별 그룹화)
- * 2차: Gemma가 묶음별 요약 → 최종 브리핑 (map-reduce)
+ * 폰 안의 Gemma 로 요약. 무엇을 어떻게 묻는지는 BriefingComposer(대화방마다 세 줄, 앱 알림은 AI 없이).
  */
 class Summarizer private constructor(private val ctx: Context) {
 
@@ -70,83 +67,33 @@ class Summarizer private constructor(private val ctx: Context) {
     /** 중지했거나 시간 제한에 걸렸는데 정리된 부분이 하나도 없을 때. */
     class StoppedException(msg: String) : Exception(msg)
 
-    suspend fun summarize(items: List<NotiItem>, onStatus: (String) -> Unit): String =
+    suspend fun summarize(items: List<NotiItem>, onStatus: (String) -> Unit): BriefingComposer.Result =
         runLock.withLock {
             stopRequested = false
             try { summarizeLocked(items, onStatus) } finally { stopRequested = false }
         }
 
-    private suspend fun summarizeLocked(items: List<NotiItem>, onStatus: (String) -> Unit): String {
-        val groups = preprocess(items)
-        if (groups.isEmpty()) return "요약할 알림이 없어요."
-
-        // 묶음들을 모델 입력 한도에 맞춰 덩어리로 나눔.
-        // 하루 알림이 수천 건이어도 오래 걸리지 않도록 최근 대화방부터 MAX_CHUNKS 덩어리까지만.
-        val chunks = mutableListOf<String>()
-        val sb = StringBuilder()
-        var skippedGroups = 0
-        for (g in groups) {
-            if (sb.length + g.text.length > CHUNK_CHARS && sb.isNotEmpty()) {
-                chunks += sb.toString(); sb.clear()
-            }
-            if (chunks.size >= MAX_CHUNKS) { skippedGroups++; continue }
-            sb.append(g.text.take(CHUNK_CHARS)).append("\n")
-        }
-        if (sb.isNotEmpty() && chunks.size < MAX_CHUNKS) chunks += sb.toString()
-
-        // 부분 요약: 한 덩어리 끝날 때마다 중지 요청·시간 제한을 확인
-        val deadline = System.currentTimeMillis() + MAX_MILLIS
-        val partials = mutableListOf<String>()
-        var cutReason: String? = null
-        for ((i, chunk) in chunks.withIndex()) {
-            if (stopRequested) { cutReason = "중지해서 여기까지만 정리했어요."; break }
-            if (System.currentTimeMillis() > deadline) { cutReason = "시간이 오래 걸려 여기까지만 정리했어요."; break }
-            onStatus("요약 중… (${i + 1}/${chunks.size})")
-            partials += ask(PARTIAL_PROMPT + chunk, onStatus)
-        }
-        if (partials.isEmpty()) throw StoppedException(cutReason ?: "중지했어요.")
-
-        // 최종 정리: 중간에 끊겼거나 시간이 넘었으면 모델을 더 부르지 않고 부분 요약을 그대로 보여 줌
-        val body = when {
-            partials.size == 1 -> partials[0]
-            cutReason != null || stopRequested || System.currentTimeMillis() > deadline ->
-                partials.joinToString("\n\n")
-            else -> {
-                onStatus("최종 브리핑 정리 중…")
-                ask(FINAL_PROMPT + partials.joinToString("\n\n---\n\n"), onStatus)
-            }
-        }
-        val notes = buildList {
-            if (cutReason != null) add("${cutReason} (${partials.size}/${chunks.size})")
-            if (skippedGroups > 0) add("알림이 많아 최근 대화 위주로 정리했어요. 오래된 대화방 ${skippedGroups}곳은 빠졌어요.")
-        }
-        return if (notes.isEmpty()) body else body + "\n\n" + notes.joinToString("\n") { "($it)" }
-    }
-
-    private class Group(val lastTime: Long, val text: String)
-
     /**
-     * 규칙 기반 전처리: 광고·중복 제거, 같은 앱·같은 제목(대화방) 묶기.
-     * 최근에 알림이 온 대화방이 먼저 오도록 정렬 (요약 한도를 넘으면 오래된 방부터 빠짐).
+     * v1.4.0: 사람 메시지는 대화방마다 따로 세 줄(요점·요청·답장)로, 앱 알림은 AI 없이 건수로 — BriefingComposer.
+     * 중지·시간 제한은 대화방 하나가 끝날 때마다 본다.
      */
-    private fun preprocess(items: List<NotiItem>): List<Group> {
-        val fmt = SimpleDateFormat("HH:mm", Locale.KOREA)
-        return items
-            .filterNot { it.title.startsWith("(광고)") || it.text.startsWith("(광고)") }
-            .distinctBy { listOf(it.app, it.room, it.title, it.text) }
-            .groupBy { it.app to it.roomOrTitle }   // 단톡방 단위로 묶음 (1:1·일반 앱은 제목 단위)
-            .map { (key, list) ->
-                val (app, room) = key
-                Group(list.maxOf { it.time }, buildString {
-                    append("■ [$app] $room (${list.size}건)\n")
-                    // 대화방이 길면 최근 PER_GROUP개만. 단톡방이면 보낸 사람도 함께
-                    list.takeLast(PER_GROUP).forEach {
-                        val who = if (it.room.isNotEmpty() && it.title != it.room) "${it.title}: " else ""
-                        append("  ${fmt.format(it.time)} $who${it.text.take(200)}\n")
-                    }
-                })
-            }
-            .sortedByDescending { it.lastTime }
+    private suspend fun summarizeLocked(items: List<NotiItem>, onStatus: (String) -> Unit): BriefingComposer.Result {
+        val deadline = System.currentTimeMillis() + MAX_MILLIS
+        var called = 0
+        val result = BriefingComposer.compose(
+            items,
+            ask = { prompt -> called++; ask(prompt, onStatus) },
+            onStatus = onStatus,
+            stopReason = {
+                when {
+                    stopRequested -> "중지해서 여기까지만 정리했어요."
+                    System.currentTimeMillis() > deadline -> "시간이 오래 걸려 여기까지만 정리했어요."
+                    else -> null
+                }
+            },
+        )
+        if (stopRequested && called == 0) throw StoppedException("중지했어요.")
+        return result
     }
 
     /** 모델 파일 교체 직전처럼 엔진을 바로 내려야 할 때. */
@@ -164,37 +111,7 @@ class Summarizer private constructor(private val ctx: Context) {
             }
 
         const val MODEL_NAME = "model.litertlm"
-        // 기본 컨텍스트가 2048토큰일 수 있어 보수적으로 설정. "token" 관련 오류가 나면 줄이세요.
-        private const val CHUNK_CHARS = 1500
-        // 한 번 요약에 모델을 부르는 횟수 상한 (부분 요약 8번 + 최종 1번). 하루 수천 건이어도 몇 분 안에 끝나게.
-        private const val MAX_CHUNKS = 8
         // 요약 한 번에 쓰는 최대 시간. 넘으면 그때까지 정리한 부분만 보여 줌 (멈추지 않는 문제 방지)
         private const val MAX_MILLIS = 5 * 60_000L
-        // 대화방 하나에서 요약에 넣는 최근 알림 수
-        private const val PER_GROUP = 15
-
-        private val PARTIAL_PROMPT = """
-            너는 교사인 사용자의 비서 '쌤톡스'야. 아래는 오늘 휴대폰에 온 알림 목록이야.
-            한국어로 핵심만 요약해. 규칙:
-            - 사용자가 답장하거나 처리해야 할 일(약속, 요청, 결제, 마감)을 맨 위에 "할 일"로
-            - 그다음 사람/대화방별로 중요한 내용 한 줄씩
-            - 배송, 금융 거래는 짧게 한 줄
-            - 목록에 없는 내용은 절대 지어내지 마
-
-            알림 목록:
-
-        """.trimIndent()
-
-        private val FINAL_PROMPT = """
-            너는 교사인 사용자의 비서 '쌤톡스'야. 아래는 오늘 알림을 부분별로 요약한 것들이야.
-            하나의 브리핑으로 합쳐줘. 형식:
-            📌 할 일
-            💬 대화·연락
-            📦 배송·금융·기타
-            중복은 합치고, 없는 내용은 지어내지 마. 전체 15줄 이내.
-
-            부분 요약들:
-
-        """.trimIndent()
     }
 }

@@ -157,8 +157,12 @@ object Briefings {
         // 👥 직접 만든 묶음(교직원·가족 등)의 사람 연락: 묶음별로 바로
         val (peoplePart, peopleItems) = People.section(People.customBook(ctx), items - workItems.toSet())
         val rest = items - workItems.toSet() - peopleItems
-        val aiPart = if (rest.isEmpty()) "" else summarizer.summarize(rest, onStatus)
-        val text = taskPart + workPart + peoplePart + parentPart + keywordPart + aiPart
+        // 🙋 답장할 연락·💬 사람 메시지(대화방마다 AI 세 줄)·📦 앱 알림(AI 없이 건수) — BriefingComposer
+        val ai = if (rest.isEmpty()) null else summarizer.summarize(rest, onStatus)
+        // 읽는 순서: 마감 → 학부모 → 답장할 연락·사람 메시지 → 내 묶음 → 업무 → 키워드 → 앱 알림
+        val aiPeople = ai?.people?.takeIf { it.isNotBlank() }?.let { it + "\n\n" } ?: ""
+        val text = (taskPart + parentPart + aiPeople + peoplePart + workPart + keywordPart + (ai?.apps ?: "")).trim()
+            .ifEmpty { "요약할 알림이 없어요." }
         val now = System.currentTimeMillis()
         // time = 이번 요약이 덮은 마지막 시각 (다음 요약은 이 다음부터)
         db.insertBriefing(Briefing(time = cutoff, fromTime = from, label = label, count = items.size, text = text))

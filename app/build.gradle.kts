@@ -12,8 +12,8 @@ android {
         applicationId = "com.jarvis.phone"
         minSdk = 31          // Galaxy Z Fold4 (Android 14+) 기준
         targetSdk = 36
-        versionCode = 33
-        versionName = "1.3.0"
+        versionCode = 34
+        versionName = "1.4.0"
     }
 
     // 🔐 배포용 서명 키: 저장소에 두지 않고 GitHub Secrets → 빌드할 때만 환경 변수로 받음
@@ -56,11 +56,20 @@ android {
     }
 }
 
+android.testOptions.unitTests.isReturnDefaultValues = true
+android.testOptions.unitTests.all { test ->
+    // 시뮬레이션: OLLAMA_MODEL=gemma4:e2b ./gradlew testDebugUnitTest — 없으면 건너뜀
+    test.environment("OLLAMA_MODEL", System.getenv("OLLAMA_MODEL") ?: "")
+    test.testLogging { showStandardStreams = true }
+}
+
 dependencies {
     // 온디바이스 LLM 런타임 (Gemma 4 .litertlm 실행)
     implementation("com.google.ai.edge.litertlm:litertlm-android:0.19.1")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    // 맥미니에서 요약 규칙 시험·시뮬레이션(src/test)
+    testImplementation("junit:junit:4.13.2")
     implementation("androidx.core:core-ktx:1.16.0")
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.2")
