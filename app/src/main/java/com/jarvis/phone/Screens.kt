@@ -30,72 +30,137 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** 이번 버전에서 바뀐 점 한 줄 (버전 올릴 때 같이 고치기). */
-private const val WHATS_NEW = "🔎 예전 설정 불러오기를 누르면 다운로드 폴더에서 백업 파일을 자동으로 찾아요 · 🔐 보안 강화 · 🍎 부드러운 움직임"
+private const val WHATS_NEW = "새 구조: 📋 오늘(결과) · 🧒 우리 반(사람) · ⚙️ 설정(목록 메뉴) — 더 간단하게"
 
-/** 메인: 아래 탭 두 개 — 브리핑(결과만 보기) / 설정(내 방식대로). */
+/**
+ * 메인: 아래 탭 세 개
+ *  📋 오늘 — 결과만 보기 (브리핑·할 일·학부모 연락)
+ *  🧒 우리 반 — 사람 (학생 명부·학부모·중요 키워드)
+ *  ⚙️ 설정 — 앱 동작 (알림 앱·시간·AI 모델·백업), 아이폰 '설정'처럼 목록 → 세부 화면
+ */
 @Composable
 fun JarvisScreen(vm: JarvisViewModel) {
+    // 폰의 뒤로 버튼: 세부 화면 → 탭 첫 화면 → 오늘 탭
+    androidx.activity.compose.BackHandler(enabled = vm.page != null || vm.tab != JarvisViewModel.Tab.BRIEFING) { vm.back() }
     Scaffold(
         bottomBar = {
             NavigationBar {
-                NavigationBarItem(
-                    selected = vm.tab == JarvisViewModel.Tab.BRIEFING,
-                    onClick = { vm.tab = JarvisViewModel.Tab.BRIEFING },
-                    icon = { Text("📋") }, label = { Text("브리핑") },
-                )
-                NavigationBarItem(
-                    selected = vm.tab == JarvisViewModel.Tab.SETTINGS,
-                    onClick = { vm.tab = JarvisViewModel.Tab.SETTINGS },
-                    icon = { Text("⚙️") }, label = { Text("설정") },
-                )
+                listOf(
+                    Triple(JarvisViewModel.Tab.BRIEFING, "📋", "오늘"),
+                    Triple(JarvisViewModel.Tab.CLASS, "🧒", "우리 반"),
+                    Triple(JarvisViewModel.Tab.SETTINGS, "⚙️", "설정"),
+                ).forEach { (t, icon, label) ->
+                    NavigationBarItem(
+                        selected = vm.tab == t,
+                        onClick = { vm.selectTab(t) },
+                        icon = { Text(icon) }, label = { Text(label) },
+                    )
+                }
             }
         },
     ) { inner ->
-        Column(
-            Modifier.fillMaxSize().padding(inner).padding(horizontal = 16.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Spacer(Modifier.height(4.dp))
-            Header(vm)
-            // 🎬 탭 전환: 옆으로 살짝 밀리며 부드럽게 (브리핑 → 설정은 오른쪽에서, 반대는 왼쪽에서)
-            AnimatedContent(
-                targetState = vm.tab,
-                transitionSpec = {
-                    val dir = if (targetState.ordinal > initialState.ordinal) 1 else -1
-                    (slideInHorizontally(Motion.offset) { it * dir / 8 } + fadeIn(Motion.fade) + scaleIn(Motion.fade, initialScale = 0.985f)) togetherWith
-                        (slideOutHorizontally(Motion.offset) { -it * dir / 12 } + fadeOut(Motion.fadeFast))
-                },
-                label = "tab",
-            ) { tab ->
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    when (tab) {
-                        JarvisViewModel.Tab.BRIEFING -> BriefingTab(vm)
-                        JarvisViewModel.Tab.SETTINGS -> SettingsTab(vm)
-                    }
+        // 화면 위치: (탭, 세부 화면). 세부 화면으로 들어가면 옆에서 밀려 들어오고(iOS처럼), 탭끼리는 살짝 겹쳐 바뀜
+        val route = vm.tab to vm.page
+        AnimatedContent(
+            targetState = route,
+            transitionSpec = {
+                val (fromTab, fromPage) = initialState
+                val (toTab, toPage) = targetState
+                when {
+                    fromTab == toTab && fromPage == null && toPage != null ->      // 들어가기
+                        (slideInHorizontally(Motion.offset) { it } + fadeIn(Motion.fade)) togetherWith
+                            (slideOutHorizontally(Motion.offset) { -it / 4 } + fadeOut(Motion.fadeFast))
+                    fromTab == toTab && fromPage != null && toPage == null ->      // 뒤로
+                        (slideInHorizontally(Motion.offset) { -it / 4 } + fadeIn(Motion.fade)) togetherWith
+                            (slideOutHorizontally(Motion.offset) { it } + fadeOut(Motion.fadeFast))
+                    else ->                                                        // 탭 바꾸기
+                        (fadeIn(Motion.fade) + scaleIn(Motion.fade, initialScale = 0.985f)) togetherWith fadeOut(Motion.fadeFast)
                 }
+            },
+            modifier = Modifier.padding(inner),
+            label = "route",
+        ) { (tab, page) ->
+            Column(
+                Modifier.fillMaxSize().padding(horizontal = 16.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Spacer(Modifier.height(4.dp))
+                if (page == null) Header(vm, tab) else PageHeader(vm, page)
+                if (page != null) PageContent(vm, page)
+                else when (tab) {
+                    JarvisViewModel.Tab.BRIEFING -> BriefingTab(vm)
+                    JarvisViewModel.Tab.CLASS -> ClassTab(vm)
+                    JarvisViewModel.Tab.SETTINGS -> SettingsTab(vm)
+                }
+                Spacer(Modifier.height(12.dp))
             }
-            Spacer(Modifier.height(8.dp))
         }
     }
 }
 
 @Composable
-private fun Header(vm: JarvisViewModel) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        SsamLogo(44.dp)
-        Column(Modifier.weight(1f)) {
-            Text("쌤톡스", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary)
-            Text("선생님을 위한 디지털 디톡스 · v${vm.appVersion}", style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun Header(vm: JarvisViewModel, tab: JarvisViewModel.Tab) {
+    if (tab == JarvisViewModel.Tab.BRIEFING) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            SsamLogo(44.dp)
+            Column(Modifier.weight(1f)) {
+                Text("쌤톡스", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary)
+                Text("선생님을 위한 디지털 디톡스 · v${vm.appVersion}", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
-        // 아래 탭이 안 보이는 기기에서도 언제든 설정 ↔ 브리핑으로 갈 수 있게 맨 위에도 버튼
-        val inSettings = vm.tab == JarvisViewModel.Tab.SETTINGS
-        FilledTonalButton(
-            onClick = { vm.tab = if (inSettings) JarvisViewModel.Tab.BRIEFING else JarvisViewModel.Tab.SETTINGS },
-            contentPadding = PaddingValues(horizontal = 14.dp),
-        ) { Text(if (inSettings) "📋 브리핑" else "⚙️ 설정") }
+    } else {
+        // 우리 반·설정: 큰 제목 (아이폰 설정 앱처럼)
+        Text(if (tab == JarvisViewModel.Tab.CLASS) "우리 반" else "설정",
+            style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
+    }
+}
+
+/** 세부 화면 위: ‹ 뒤로 + 제목 */
+@Composable
+private fun PageHeader(vm: JarvisViewModel, page: JarvisViewModel.Page) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        TextButton(onClick = { vm.back() }, contentPadding = PaddingValues(start = 0.dp, end = 8.dp)) {
+            Text("‹ " + if (page.tab == JarvisViewModel.Tab.CLASS) "우리 반" else "설정",
+                style = MaterialTheme.typography.titleMedium)
+        }
+    }
+    Text(page.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+}
+
+/** 세부 화면 내용: 예전 설정 칸들을 그대로 씀 */
+@Composable
+private fun PageContent(vm: JarvisViewModel, page: JarvisViewModel.Page) {
+    vm.roomApp?.let { (pkg, name) -> RoomPickerDialog(vm, pkg, name) }
+    when (page) {
+        JarvisViewModel.Page.APPS -> AppCleanupCard(vm)
+        JarvisViewModel.Page.TIMES -> TimesCard(vm)
+        JarvisViewModel.Page.QUIET -> QuietCard(vm)
+        JarvisViewModel.Page.SYSTEM -> SystemSettings(vm)
+        JarvisViewModel.Page.BACKUP -> BackupCard(vm)
+        JarvisViewModel.Page.PARENTS -> ParentsPage(vm)
+        JarvisViewModel.Page.KEYWORDS -> KeywordCard(vm)
+    }
+}
+
+/** 아이폰 설정 앱 같은 한 줄 메뉴: 아이콘·제목·지금 상태·› */
+@Composable
+private fun MenuGroup(rows: List<Triple<String, String, () -> Unit>>) {
+    Card(Modifier.fillMaxWidth()) {
+        Column {
+            rows.forEachIndexed { i, (title, status, onClick) ->
+                if (i > 0) HorizontalDivider(Modifier.padding(start = 16.dp))
+                Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text(title, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                    Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1, modifier = Modifier.padding(start = 8.dp).widthIn(max = 180.dp))
+                    Text("  ›", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
     }
 }
 
@@ -127,20 +192,6 @@ private fun BriefingTab(vm: JarvisViewModel) {
 
     TasksCard(vm)
     ParentCard(vm)
-
-    // ⭐ 중요 키워드 바로가기: 지금 키워드를 보여 주고, 누르면 설정의 키워드 칸으로
-    Card(Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                if (vm.keywords.isEmpty()) "⭐ 중요 키워드를 정해 두면 놓치면 안 될 연락을 맨 위에 모아 드려요"
-                else "⭐ 중요 키워드: " + vm.keywords.take(5).joinToString(", ") + if (vm.keywords.size > 5) " 외 ${vm.keywords.size - 5}개" else "",
-                Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, maxLines = 2,
-            )
-            TextButton(onClick = { vm.openSettings(JarvisViewModel.Section.KEYWORDS) }) {
-                Text(if (vm.keywords.isEmpty()) "정하기" else "바꾸기")
-            }
-        }
-    }
 
     Button(
         onClick = { vm.summarizeToday() },
@@ -269,34 +320,88 @@ private fun BriefingCard(vm: JarvisViewModel, b: Briefing, primary: Boolean, onH
 @Composable
 private fun SettingsTab(vm: JarvisViewModel) {
     val ctx = LocalContext.current
-    vm.roomApp?.let { (pkg, name) -> RoomPickerDialog(vm, pkg, name) }
-    vm.studentView?.let { (name, entries) -> StudentDialog(vm, name, entries) }
+    val rev = vm.quietRev   // 수업·퇴근 설정이 바뀌면 상태 줄도 다시 그림
+    val hm = { m: Int -> "%02d:%02d".format(m / 60, m % 60) }
+    val fmt = remember { SimpleDateFormat("M/d", Locale.KOREA) }
+    val slotsOn = vm.slots.filter { it.on }
+    val quietStatus = listOfNotNull(
+        if (QuietMode.classOn(ctx)) "수업 중 켜짐" else null,
+        if (QuietMode.afterWorkOn(ctx)) "퇴근 ${hm(QuietMode.workEnd(ctx))}" else null,
+    ).joinToString(" · ").ifEmpty { if (rev >= 0) "꺼짐" else "" }
+    val permsMissing = listOf(vm.listenerEnabled, vm.notiPermission).count { !it }
 
-    // 칸 고르기: 한 번에 한 칸만 보여서 길게 스크롤하지 않음
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        JarvisViewModel.Section.entries.forEach { s ->
-            FilterChip(selected = vm.section == s, onClick = { vm.section = s }, label = { Text(s.label) })
+    MenuGroup(listOf(
+        Triple("🌱 알림 앱 정리", "뺀 앱 ${vm.excludedApps.size}개 · 광고 ${vm.adCount}건") { vm.open(JarvisViewModel.Page.APPS) },
+        Triple("⏰ 브리핑 시각",
+            if (slotsOn.isEmpty()) "꺼짐" else (if (vm.skipWeekend) "평일 " else "") + slotsOn.joinToString(" · ") { hm(it.minute) }) {
+            vm.open(JarvisViewModel.Page.TIMES) },
+        Triple("🏫 수업·퇴근 모드", quietStatus) { vm.open(JarvisViewModel.Page.QUIET) },
+    ))
+    MenuGroup(listOf(
+        Triple("🤖 AI 모델·권한",
+            (vm.installedModel?.title ?: if (vm.hasModel) "모델 있음" else "모델 없음") + if (permsMissing > 0) " · 권한 확인 $permsMissing" else "") {
+            vm.open(JarvisViewModel.Page.SYSTEM) },
+        Triple("💾 백업·복원",
+            (if (vm.lastBackup > 0) "${fmt.format(vm.lastBackup)} 백업" else "백업 없음") + if (vm.hasBackupPin) " · 🔒" else "") {
+            vm.open(JarvisViewModel.Page.BACKUP) },
+    ))
+    Text("쌤톡스 v${vm.appVersion} · 알림은 폰 밖으로 나가지 않아요", style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp))
+}
+
+// ───────────────────────── 🧒 우리 반 탭: 사람 ─────────────────────────
+
+@Composable
+private fun ClassTab(vm: JarvisViewModel) {
+    vm.studentView?.let { (name, entries) -> StudentDialog(vm, name, entries) }
+    StudentsCard(vm)
+    val linked = vm.parentLinks.size
+    MenuGroup(listOf(
+        Triple("👪 학부모 방·연결", "방 ${vm.parentRooms.size}곳 · 연결 ${linked}명") { vm.open(JarvisViewModel.Page.PARENTS) },
+        Triple("⭐ 중요 키워드",
+            if (vm.keywords.isEmpty()) "아직 없음" else vm.keywords.take(2).joinToString(", ") + if (vm.keywords.size > 2) " 외 ${vm.keywords.size - 2}개" else "") {
+            vm.open(JarvisViewModel.Page.KEYWORDS) },
+    ))
+}
+
+/** 👪 학부모 방·연결 한곳에서 보기: 지정한 방, 학생별로 연결한 학부모. 추가하는 곳도 안내 */
+@Composable
+private fun ParentsPage(vm: JarvisViewModel) {
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.animateContentSize(Motion.size).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("👪 학부모 방", fontWeight = FontWeight.Bold)
+            Text("지정한 방의 연락은 학부모 연락으로 따로 모아 답장까지 추천해요.", style = MaterialTheme.typography.bodySmall)
+            if (vm.parentRooms.isEmpty()) Text("아직 없어요.", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            vm.parentRooms.sorted().forEach { key ->
+                val (pkg, room) = key.split("|", limit = 2).let { it[0] to it.getOrElse(1) { "" } }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(room, Modifier.weight(1f), maxLines = 1)
+                    TextButton(onClick = { vm.setParentRoom(pkg, room, false) }) { Text("빼기") }
+                }
+            }
+            OutlinedButton(onClick = { vm.open(JarvisViewModel.Page.APPS) }) { Text("＋ 방 고르기에서 👪 지정하기") }
         }
     }
-    // 🎬 칸 전환: 살짝 떠오르며 바뀜
-    AnimatedContent(
-        targetState = vm.section,
-        transitionSpec = {
-            (fadeIn(Motion.fade) + scaleIn(Motion.fade, initialScale = 0.985f)) togetherWith fadeOut(Motion.fadeFast)
-        },
-        label = "section",
-    ) { section ->
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            when (section) {
-                JarvisViewModel.Section.APPS -> AppCleanupCard(vm)
-                JarvisViewModel.Section.STUDENTS -> StudentsCard(vm)
-                JarvisViewModel.Section.KEYWORDS -> KeywordCard(vm)
-                JarvisViewModel.Section.QUIET -> QuietCard(vm)
-                JarvisViewModel.Section.TIMES -> TimesCard(vm)
-                JarvisViewModel.Section.BASIC -> BasicSettings(vm)
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.animateContentSize(Motion.size).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("🔗 학생별 학부모 연결", fontWeight = FontWeight.Bold)
+            Text("연결하면 문자·카톡·밴드·하이클래스 어디서 온 연락이든 그 학생 학부모 연락으로 정리돼요.",
+                style = MaterialTheme.typography.bodySmall)
+            if (vm.parentLinks.isEmpty()) Text("아직 없어요. 우리 반 탭에서 학생을 눌러 연결해요.", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            vm.parentLinks.groupBy { it.student }.forEach { (student, links) ->
+                Row(Modifier.fillMaxWidth().clickable { vm.openStudent(student) }.padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text("🧒 $student", fontWeight = FontWeight.Medium, modifier = Modifier.width(96.dp))
+                    Text(links.joinToString(", ") { "${it.relation} ${it.match}" }, Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodySmall, maxLines = 2)
+                    Text(" ›")
+                }
             }
         }
     }
+    vm.studentView?.let { (name, entries) -> StudentDialog(vm, name, entries) }
 }
 
 @Composable
@@ -366,9 +471,8 @@ private fun TimesCard(vm: JarvisViewModel) {
 }
 
 @Composable
-private fun BasicSettings(vm: JarvisViewModel) {
+private fun SystemSettings(vm: JarvisViewModel) {
     val ctx = LocalContext.current
-    BackupCard(vm)
     SetupCard(
         done = vm.listenerEnabled, title = "알림 접근 권한",
         desc = if (vm.listenerEnabled) "허용됨" else "다른 앱의 알림을 읽으려면 허용이 필요해요",
@@ -545,7 +649,7 @@ private fun ParentCard(vm: JarvisViewModel) {
             Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("👪 학부모 방을 지정하면 학부모 연락만 따로 모아 답장까지 추천해 드려요.",
                     Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                TextButton(onClick = { vm.openSettings(JarvisViewModel.Section.APPS) }) { Text("지정하기") }
+                TextButton(onClick = { vm.open(JarvisViewModel.Page.PARENTS) }) { Text("지정하기") }
             }
         }
         return

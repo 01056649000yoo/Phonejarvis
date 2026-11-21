@@ -130,7 +130,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     fun importFound(f: ModelFinder.Found) = importModel(Uri.fromFile(f.file))
 
     // ── 탭: 브리핑(결과만) / 설정 ──
-    enum class Tab { BRIEFING, SETTINGS }
+    enum class Tab { BRIEFING, CLASS, SETTINGS }
     /** 처음 들어오면 설정 탭부터. 알림 앱 정리를 한 번 적용한 뒤에는 브리핑 탭부터. */
     var tab by mutableStateOf(if (prefs.getBoolean("apps_setup_done", false)) Tab.BRIEFING else Tab.SETTINGS)
 
@@ -202,7 +202,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         appsApplied = true
         val dropped = target.count { !it.keep }
         status = if (dropped > 0) "앱 ${dropped}개를 뺐어요. 이제 학교·연락 알림만 모아요." else "추천대로 적용했어요."
-        tab = Tab.BRIEFING
+        tab = Tab.BRIEFING; page = null
         refresh()
     }
 
@@ -248,12 +248,22 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     var pendingCount by mutableIntStateOf(0)
         private set
 
-    // ── 설정 탭 칸: 한 번에 한 칸만 보여 줌 ──
-    enum class Section(val label: String) {
-        APPS("🌱 알림 앱"), STUDENTS("🧒 우리 반"), KEYWORDS("⭐ 키워드"), QUIET("🏫 수업·퇴근"), TIMES("⏰ 브리핑 시각"), BASIC("🔧 기본 설정")
+    // ── 탭 안의 세부 화면 (목록 → 누르면 옆에서 밀려 들어오는 화면) ──
+    enum class Page(val title: String, val tab: Tab) {
+        APPS("🌱 알림 앱 정리", Tab.SETTINGS), TIMES("⏰ 브리핑 시각", Tab.SETTINGS), QUIET("🏫 수업·퇴근 모드", Tab.SETTINGS),
+        SYSTEM("🤖 AI 모델·권한", Tab.SETTINGS), BACKUP("💾 백업·복원", Tab.SETTINGS),
+        PARENTS("👪 학부모 방·연결", Tab.CLASS), KEYWORDS("⭐ 중요 키워드", Tab.CLASS),
     }
-    var section by mutableStateOf(Section.APPS)
-    fun openSettings(s: Section) { section = s; tab = Tab.SETTINGS }
+    /** 지금 열린 세부 화면 (null이면 탭의 첫 화면) */
+    var page by mutableStateOf<Page?>(if (prefs.getBoolean("apps_setup_done", false)) null else Page.APPS)
+    fun open(p: Page) { tab = p.tab; page = p }
+    fun selectTab(t: Tab) { tab = t; page = null }
+    /** 뒤로: 세부 화면 → 탭 첫 화면 → 오늘 탭. 더 갈 곳이 없으면 false */
+    fun back(): Boolean = when {
+        page != null -> { page = null; true }
+        tab != Tab.BRIEFING -> { tab = Tab.BRIEFING; true }
+        else -> false
+    }
 
     // ── 💾 백업·복원 ──
     var lastBackup by mutableStateOf(Backup.lastBackupTime(app))
@@ -571,7 +581,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     /** 아직 알림이 없을 때 "나중에 할게요": 브리핑 탭으로. */
     fun skipAppSetup() {
         prefs.edit().putBoolean("apps_setup_done", true).apply()
-        tab = Tab.BRIEFING
+        tab = Tab.BRIEFING; page = null
     }
 
     /** 메인 화면의 "모델 바꾸기/받기": 설치 안내의 폰 진단 단계부터 다시 보여줌. */
