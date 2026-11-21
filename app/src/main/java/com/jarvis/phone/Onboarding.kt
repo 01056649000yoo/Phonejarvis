@@ -280,9 +280,44 @@ private fun DiagnoseStep(vm: JarvisViewModel) {
             }
         }
     }
+    ModelCompare()
     Text("나중에 설정 → 🤖 AI 모델·권한 → 바꾸기에서 언제든 바꿀 수 있어요.", style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant)
     PrimaryButton("${vm.selectedModel.title}(으)로 진행") { vm.onboardingStep = 2 }
+}
+
+/** 두 모델 차이 한눈에 (2026-11-22 선생님: 고를 때 차이를 알려 주면 좋겠다) */
+@Composable
+private fun ModelCompare() {
+    val rows = listOf(
+        Triple("", "E4B", "E2B"),
+        Triple("파일 크기", "3.7GB", "2.6GB"),
+        Triple("필요한 램", "8GB 이상", "6GB 이상"),
+        Triple("필요한 공간", "약 7.8GB", "약 5.7GB"),
+        Triple("요약 꼼꼼함", "더 꼼꼼 — 긴 단톡방에서 부탁·답장할 것을 더 잘 골라요", "핵심은 잡지만 가끔 놓쳐요"),
+        Triple("요약 속도", "조금 느려요", "더 빨라요"),
+        Triple("폰 발열·배터리", "조금 더 써요", "덜 써요"),
+        Triple("이런 분께", "요즘 폰(램 8GB↑), 정확한 요약이 중요", "오래된 폰, 빠른 요약이 좋음"),
+    )
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("🔍 두 모델 차이", fontWeight = FontWeight.Bold)
+            rows.forEachIndexed { i, (label, a, b) ->
+                if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                Row(verticalAlignment = Alignment.Top) {
+                    Text(label, Modifier.width(96.dp), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    val head = i == 0
+                    Text(a, Modifier.weight(1f).padding(end = 8.dp), style = if (head) MaterialTheme.typography.labelLarge else MaterialTheme.typography.bodySmall,
+                        fontWeight = if (head) FontWeight.Bold else null)
+                    Text(b, Modifier.weight(1f), style = if (head) MaterialTheme.typography.labelLarge else MaterialTheme.typography.bodySmall,
+                        fontWeight = if (head) FontWeight.Bold else null)
+                }
+            }
+            Text("두 모델 모두 폰 안에서만 돌고, 알림 내용은 밖으로 나가지 않아요.", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
 }
 
 @Composable

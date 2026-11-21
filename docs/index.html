@@ -96,6 +96,12 @@
   .flow b::before { content: counter(f) ". "; color: var(--accent); }
   .flow span { font-size: 14px; color: var(--muted); }
 
+  .mtable { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; font-size: 14px; }
+  .mr { display: grid; grid-template-columns: 6.5em minmax(0,1fr) minmax(0,1fr); gap: 10px; padding: 11px 14px; border-top: 1px solid var(--line); line-height: 1.55; }
+  .mr:first-child { border-top: 0; }
+  .mr > span:first-child { color: var(--muted); }
+  .mh { background: var(--hl); }
+  .mh em { font-style: normal; font-size: 11px; background: var(--accent); color: var(--on-accent); border-radius: 8px; padding: 1px 6px; margin-left: 4px; white-space: nowrap; }
   .note { margin: 14px 0 0; padding: 14px 16px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); font-size: 14px; line-height: 1.7; }
   .widget { background: var(--card); border: 1px solid var(--line); border-radius: 22px; padding: 14px; max-width: 420px; box-shadow: 0 6px 18px rgba(0,0,0,.06); }
   .w-head { display: flex; align-items: center; gap: 6px; }
@@ -308,6 +314,21 @@
         <div><dt>저장공간</dt><dd>받는 동안 잠깐 두 벌이 생겨서 E4B 약 7.8GB, E2B 약 5.7GB 여유</dd></div>
         <div><dt>인터넷</dt><dd>처음 모델을 브라우저로 받을 때만 (와이파이 권장). 앱 자체는 인터넷을 쓰지 않아요</dd></div>
       </dl>
+    </section>
+
+    <section id="models">
+      <h2>두 모델, 무엇을 고를까요?</h2>
+      <p class="sub">설치할 때 앱이 폰을 진단해 추천해 줘요. 나중에 설정에서 바꿀 수 있어요.</p>
+      <div class="mtable" role="table" aria-label="E4B와 E2B 비교">
+        <div class="mr mh" role="row"><span></span><b>Gemma 4 E4B <em>기본</em></b><b>Gemma 4 E2B</b></div>
+        <div class="mr" role="row"><span>파일 크기</span><span>3.7GB</span><span>2.6GB</span></div>
+        <div class="mr" role="row"><span>필요한 램</span><span>8GB 이상</span><span>6GB 이상</span></div>
+        <div class="mr" role="row"><span>필요한 공간</span><span>약 7.8GB</span><span>약 5.7GB</span></div>
+        <div class="mr" role="row"><span>요약 꼼꼼함</span><span>더 꼼꼼 — 긴 단톡방에서 부탁·답장할 것을 더 잘 골라요</span><span>핵심은 잡지만 가끔 놓쳐요</span></div>
+        <div class="mr" role="row"><span>속도</span><span>조금 느려요</span><span>더 빨라요</span></div>
+        <div class="mr" role="row"><span>발열·배터리</span><span>조금 더 써요</span><span>덜 써요</span></div>
+        <div class="mr" role="row"><span>이런 분께</span><span>요즘 폰, 정확한 요약이 중요</span><span>오래된 폰, 빠른 요약이 좋음</span></div>
+      </div>
     </section>
 
     <section id="faq">
