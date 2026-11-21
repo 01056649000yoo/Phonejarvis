@@ -27,7 +27,10 @@ jobs:
           ./gradlew assembleDebug --stacktrace
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk SsamTox-${{ github.run_number }}.apk
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk SsamTox-${{ github.run_number }}.apk
+          # 이름이 항상 같은 사본: releases/latest/download/SsamTox.apk 링크 하나로 늘 최신본을 받게
+          cp app/build/outputs/apk/debug/app-debug.apk SsamTox.apk
 
       - uses: actions/upload-artifact@v4
         with:
@@ -39,4 +42,7 @@ jobs:
         with:
           tag_name: build-${{ github.run_number }}
           name: 쌤톡스 빌드 ${{ github.run_number }}
-          files: SsamTox-*.apk
+          make_latest: true
+          files: |
+            SsamTox-${{ github.run_number }}.apk
+            SsamTox.apk
