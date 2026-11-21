@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,6 +33,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -128,9 +130,12 @@ private fun WelcomeStep(vm: JarvisViewModel) {
     Text("처음 한 번만 설정하면 돼요: 폰 진단 → AI 모델 받기 → 권한 허용 (약 10분)",
         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     PrimaryButton("시작하기") { vm.onboardingStep = 1 }
-    if (vm.hasModel) TextButton(onClick = { vm.finishOnboarding() }, modifier = Modifier.fillMaxWidth()) {
-        Text("이미 설정했어요 · 건너뛰기")
+    // 모델 파일을 이미 다운로드 폴더에 받아 둔 경우: 진단·다운로드를 건너뛰고 바로 가져오기로
+    TextButton(onClick = { vm.onboardingStep = 2 }, modifier = Modifier.fillMaxWidth()) {
+        Text("모델 파일을 이미 받아 뒀어요 → 바로 가져오기")
     }
+    Text("쌤톡스 v${vm.appVersion}", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
 }
 
 @Composable
@@ -204,8 +209,13 @@ private fun DownloadStep(vm: JarvisViewModel) {
     val picker = rememberLauncherForActivityResult(OpenInDownloads()) { uri -> if (uri != null) vm.importModel(uri) }
 
     StepTitle("3 / 4 · AI 모델 받기", "${m.title} (${m.sizeText})")
-    Text("쌤톡스는 개인정보 보호를 위해 인터넷 권한이 없어요. 그래서 모델은 브라우저로 받고, 받은 파일을 앱으로 가져와요.",
+    Text("쌤톡스는 개인정보 보호를 위해 인터넷 권한이 없어요. 그래서 모델은 브라우저로 받고, 받은 파일을 앱으로 가져와요.\n" +
+         "이미 다운로드 폴더에 받아 뒀다면 ①은 건너뛰고 ② 파일 선택만 하면 돼요. (E4B·E2B 어느 파일이든 알아서 인식해요)",
         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+    // 이미 받아 둔 파일 자동 찾기
+    LaunchedEffect(Unit) { vm.scanDownloads() }
+    AutoFindCard(vm)
 
     // 데이터 요금 안내 (앱은 네트워크 상태 권한도 없어서 직접 확인하지 않고 사용자에게 물어봄)
     Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(
@@ -261,6 +271,44 @@ private fun DownloadStep(vm: JarvisViewModel) {
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
     PrimaryButton("다음", enabled = vm.hasModel && !vm.busy) { vm.onboardingStep = 3 }
+}
+
+/** 다운로드 폴더에 이미 받아 둔 모델을 찾아 한 번에 가져오는 카드. */
+@Composable
+private fun AutoFindCard(vm: JarvisViewModel) {
+    val ctx = LocalContext.current
+    if (vm.hasModel) return
+    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(
+        containerColor = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("🔎 이미 받아 둔 모델 찾기", fontWeight = FontWeight.Bold)
+            when {
+                !vm.fileAccess -> {
+                    Text("다운로드 폴더에 받아 둔 파일을 쌤톡스가 직접 찾아요. '모든 파일 접근'을 한 번 켜 주세요. " +
+                         "쌤톡스는 인터넷 권한이 없어서 파일이 폰 밖으로 나가지 않아요. 다 가져온 뒤 꺼도 돼요.",
+                        style = MaterialTheme.typography.bodyMedium)
+                    Button(onClick = { ctx.startActivity(ModelFinder.accessSettingsIntent(ctx)) },
+                        colors = ButtonDefaults.buttonColors(containerColor = Ssam.Sprout, contentColor = Ssam.Ink)) {
+                        Text("권한 켜고 자동으로 찾기")
+                    }
+                }
+                !vm.scanned -> Text("다운로드 폴더를 찾는 중…", style = MaterialTheme.typography.bodyMedium)
+                vm.found.isEmpty() -> {
+                    Text("다운로드 폴더에서 모델 파일을 못 찾았어요. 아래 ①로 받거나, 다른 폴더에 있다면 ② 파일 선택을 쓰세요.",
+                        style = MaterialTheme.typography.bodyMedium)
+                    OutlinedButton(onClick = { vm.scanDownloads() }) { Text("다시 찾기", color = Ssam.Chalk) }
+                }
+                else -> vm.found.take(3).forEach { f ->
+                    Text("찾았어요: ${f.model?.title ?: "모르는 모델"} · ${f.label}", style = MaterialTheme.typography.bodyMedium)
+                    Button(onClick = { vm.importFound(f) }, enabled = !vm.busy,
+                        colors = ButtonDefaults.buttonColors(containerColor = Ssam.Sprout, contentColor = Ssam.Ink)) {
+                        Text("이 파일 가져오기")
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable

@@ -69,7 +69,17 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     /** 설치 안내를 끝냈는지. 모델이 없으면 안내를 끝냈어도 다시 보여줌. */
     var onboardingDone by mutableStateOf(prefs.getBoolean("onboarding_done", false))
         private set
-    var onboardingStep by mutableIntStateOf(0)
+    /**
+     * 설치 안내의 현재 단계. 저장해 둬서, 권한 설정 화면에 다녀오는 사이 앱이 다시 시작돼도
+     * 처음(모델 받기 전)으로 돌아가지 않고 하던 단계에서 이어짐.
+     */
+    private var stepState by mutableIntStateOf(prefs.getInt("onboarding_step", 0))
+    var onboardingStep: Int
+        get() = stepState
+        set(v) { stepState = v; prefs.edit().putInt("onboarding_step", v).apply() }
+    val appVersion: String = runCatching {
+        app.packageManager.getPackageInfo(app.packageName, 0).versionName
+    }.getOrNull() ?: "?"
     val device: DeviceReport by lazy { DeviceCheck.run(app) }
     /** 사용자가 고른 모델. 기본값은 진단 결과의 추천 모델. */
     var chosenModel by mutableStateOf<ModelOption?>(null)
@@ -82,7 +92,8 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     init {
         // 이미 모델이 설치된 폰(예전 버전에서 업데이트)은 설치 안내를 건너뛰고 바로 메인 화면으로.
         // 앱을 켤 때 한 번만 확인 — 메인의 "바꾸기"로 안내를 다시 연 경우에는 건너뛰지 않음.
-        if (!onboardingDone && summarizer.hasModel()) {
+        // 단, 마지막 권한 단계(3) 중이었다면 그 단계에서 이어서 보여줌.
+        if (!onboardingDone && summarizer.hasModel() && onboardingStep != 3) {
             if (installedModel == null) {
                 installedModel = ModelOption.bySize(summarizer.modelFile.length())
                 prefs.edit().putString("model_id", installedModel?.name).apply()
@@ -90,6 +101,25 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
             finishOnboarding()
         }
     }
+
+    // ── 다운로드 폴더에서 모델 자동 찾기 ──
+    var fileAccess by mutableStateOf(ModelFinder.hasAccess())
+        private set
+    var found by mutableStateOf<List<ModelFinder.Found>>(emptyList())
+        private set
+    var scanned by mutableStateOf(false)
+        private set
+
+    fun scanDownloads() {
+        fileAccess = ModelFinder.hasAccess()
+        if (!fileAccess) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val list = ModelFinder.find(selectedModel)
+            withContext(Dispatchers.Main) { found = list; scanned = true }
+        }
+    }
+
+    fun importFound(f: ModelFinder.Found) = importModel(Uri.fromFile(f.file))
 
     /** 메인 화면의 "모델 바꾸기/받기": 설치 안내의 폰 진단 단계부터 다시 보여줌. */
     fun openModelGuide() {
@@ -100,6 +130,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     fun finishOnboarding() {
         prefs.edit().putBoolean("onboarding_done", true).apply()
         onboardingDone = true
+        onboardingStep = 0
     }
 
     var hasModel by mutableStateOf(false)
@@ -120,6 +151,8 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         hasModel = summarizer.hasModel()
         notiPermission = NotificationManagerCompat.from(ctx).areNotificationsEnabled()
         slots = readSlots()
+        // 모델 받기 단계에 있으면(권한 설정에서 돌아온 경우 포함) 다운로드 폴더를 다시 찾아봄
+        if (!onboardingDone && onboardingStep == 2) scanDownloads()
         viewModelScope.launch(Dispatchers.IO) {
             db.purgeOld()
             val items = db.today()
@@ -149,6 +182,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
                         if (si >= 0 && !c.isNull(si)) total = c.getLong(si)
                     }
                 }
+                if (name == "?") name = uri.lastPathSegment ?: "?"   // 자동 찾기(file://)로 고른 경우
                 if (total <= 0) total = runCatching {
                     ctx.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: -1L
                 }.getOrDefault(-1L)
@@ -271,7 +305,7 @@ fun JarvisScreen(vm: JarvisViewModel) {
             Column {
                 Text("쌤톡스", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary)
-                Text("선생님을 위한 디지털 디톡스", style = MaterialTheme.typography.bodySmall,
+                Text("선생님을 위한 디지털 디톡스 · v${vm.appVersion}", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }

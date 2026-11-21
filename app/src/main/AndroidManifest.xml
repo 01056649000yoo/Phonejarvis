@@ -15,6 +15,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- 다운로드 폴더에 이미 받아 둔 모델 파일을 자동으로 찾기 (사용자가 켤 때만). 인터넷 권한이 없어 파일은 밖으로 나가지 않음 -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
+
     <application
         android:allowBackup="false"
         android:label="@string/app_name"
