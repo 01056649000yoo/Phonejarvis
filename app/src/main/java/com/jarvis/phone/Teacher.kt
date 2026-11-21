@@ -10,7 +10,7 @@ import java.util.Calendar
 
 // ───────────────────────── 🧒 우리 반 명부 + 학생별 기록 ─────────────────────────
 
-/** 학생 한 명에 대한 기록 한 줄 (원래 알림이 지워져도 1년 보관). */
+/** 학생 한 명에 대한 기록 한 줄 (원래 알림이 지워져도 남음, 기본 1년 · 저장 공간 설정). */
 data class StudentEntry(val student: String, val time: Long, val app: String, val room: String, val sender: String, val text: String)
 
 object Students {

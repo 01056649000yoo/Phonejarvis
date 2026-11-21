@@ -20,10 +20,11 @@ object Backup {
     private const val FORMAT = "ssamtox-backup"
 
     /** 백업할 설정 묶음과, 그 안에서 넣지 않을 값(그때그때 바뀌는 상태) */
-    private val FILES = listOf("apps", "briefing", "quiet", "app")
+    private val FILES = listOf("apps", "briefing", "quiet", "app", "storage")
     private val SKIP = mapOf(
         "apps" to setOf("handled", "ad_day", "ad_count"),
         "quiet" to setOf("last", "since", "we_set_dnd"),
+        "storage" to setOf("last_clean", "last_vacuum"),
     )
     /** "app" 묶음은 이것만 (설치 안내 진행·모델 정보는 기기마다 다름) */
     private val APP_ONLY = setOf("apps_setup_done")

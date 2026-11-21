@@ -83,6 +83,7 @@ class BriefingService : Service() {
                 // 백그라운드에서 수 GB 모델을 계속 들고 있지 않도록 내림
                 runCatching { Summarizer.get(this@BriefingService).release() }
                 runCatching { Backup.autoBackup(this@BriefingService) }   // 💾 하루 한 번 자동 백업
+                runCatching { Storage.autoClean(this@BriefingService) }   // 🧹 앱을 안 열어도 오래된 기록 자동 정리
                 if (wake.isHeld) wake.release()
                 running = false
                 active = false

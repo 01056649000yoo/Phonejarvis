@@ -13,8 +13,6 @@ class NotificationCollectorService : NotificationListenerService() {
         if (sbn.isOngoing) return                                          // 음악 재생, 다운로드 진행 등 상시 알림 제외
         if (n.flags and Notification.FLAG_GROUP_SUMMARY != 0) return       // "새 메시지 3개" 같은 묶음 요약 제외
         if (sbn.packageName in IGNORED_PACKAGES) return
-        if (sbn.packageName in AppFilter.excluded(this)) return            // 설정에서 '빼기'한 앱
-
         val ex = n.extras
         val title = ex.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim().orEmpty()
         val text = (ex.getCharSequence(Notification.EXTRA_BIG_TEXT)
@@ -26,13 +24,20 @@ class NotificationCollectorService : NotificationListenerService() {
             ?: if (sbn.packageName == "com.kakao.talk") ex.getCharSequence(Notification.EXTRA_SUB_TEXT) else null)
             ?.toString()?.trim().orEmpty().take(100)
 
+        // 📒 앱·방 이름 기억 (내용 X): 뺀 앱·끈 방도 목록에서 사라지지 않고 다시 켤 수 있게
+        val app = appLabel(sbn.packageName)
+        runCatching {
+            val roomKey = room.ifEmpty { if (AppAdvisor.isMessaging(app, sbn.packageName)) title.take(100) else "" }
+            NotificationDb.get(this).touchSeen(sbn.packageName, app, roomKey, sbn.postTime)
+        }
+        if (sbn.packageName in AppFilter.excluded(this)) return            // 설정에서 '빼기'한 앱
+
         // 설정에서 뺀 방은 모으지 않음 (단, 중요 키워드가 있으면 모음)
         val rules = AppFilter.rules(this)
         // 🚫 광고성 문자·카톡은 모으지 않음 (오늘 거른 수만 셈)
         if (rules.isBlockedAd(sbn.packageName, room, title, text)) { AdFilter.addOne(this); return }
         if (!rules.allows(sbn.packageName, room, title, text)) return
 
-        val app = appLabel(sbn.packageName)
         NotificationDb.get(this).insert(
             pkg = sbn.packageName,
             app = app,

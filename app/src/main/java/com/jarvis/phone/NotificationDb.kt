@@ -19,6 +19,9 @@ data class NotiItem(
     val roomOrTitle: String get() = room.ifEmpty { title }
 }
 
+/** 방 고르기 목록의 방 하나: 이름, 최근 7일 건수, 마지막 알림 시각(0이면 직접 추가한 방) */
+data class KnownRoom(val name: String, val recent: Int, val last: Long)
+
 /** 한 번의 브리핑 결과. fromTime~time 사이 알림 count건을 요약한 것. */
 data class Briefing(
     val time: Long,
@@ -30,7 +33,7 @@ data class Briefing(
 
 /** 수집한 알림을 휴대폰 안에만 저장하는 SQLite DB (7일 보관). */
 class NotificationDb private constructor(ctx: Context) :
-    SQLiteOpenHelper(ctx, "jarvis.db", null, 4) {
+    SQLiteOpenHelper(ctx, "jarvis.db", null, 5) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -47,6 +50,7 @@ class NotificationDb private constructor(ctx: Context) :
         db.execSQL("CREATE INDEX idx_noti_time ON noti(time)")
         createBriefingTable(db)
         createTeacherTables(db)
+        createSeenTable(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldV: Int, newV: Int) {
@@ -55,6 +59,46 @@ class NotificationDb private constructor(ctx: Context) :
         if (oldV < 3) db.execSQL("ALTER TABLE noti ADD COLUMN room TEXT NOT NULL DEFAULT ''")
         // v4: 학생별 기록, 할 일·마감
         if (oldV < 4) createTeacherTables(db)
+        // v5: 알림이 온 앱·방 기억 (뺀 앱·끈 방도 목록에서 사라지지 않게)
+        if (oldV < 5) createSeenTable(db)
+    }
+
+    /**
+     * v5: 알림을 보낸 앱(room='')과 메시지 앱의 방 이름만 기억 (내용은 저장 안 함, 180일 보관).
+     * 뺀 앱·끈 방은 알림을 저장하지 않아 7일 뒤 목록에서 사라지던 문제를 막음.
+     */
+    private fun createSeenTable(db: SQLiteDatabase) {
+        db.execSQL(
+            """CREATE TABLE IF NOT EXISTS seen(
+                pkg TEXT NOT NULL,
+                room TEXT NOT NULL,
+                app TEXT NOT NULL,
+                last INTEGER NOT NULL,
+                PRIMARY KEY(pkg, room))"""
+        )
+    }
+
+    /** 알림이 올 때마다 (뺀 앱·끈 방이어도) 앱·방 이름과 마지막 시각만 기록 */
+    fun touchSeen(pkg: String, app: String, room: String, time: Long) {
+        val sql = "INSERT INTO seen(pkg,room,app,last) VALUES(?,?,?,?) " +
+            "ON CONFLICT(pkg,room) DO UPDATE SET app=excluded.app, last=MAX(last, excluded.last)"
+        writableDatabase.execSQL(sql, arrayOf<Any>(pkg, "", app, time))
+        if (room.isNotBlank()) writableDatabase.execSQL(sql, arrayOf<Any>(pkg, room.take(100), app, time))
+    }
+
+    /** 지금까지 알림을 보낸 적 있는 앱 (패키지, 이름, 마지막 시각) */
+    fun knownApps(): List<Triple<String, String, Long>> =
+        readableDatabase.rawQuery("SELECT pkg, app, last FROM seen WHERE room='' ORDER BY last DESC", null)
+            .use { c -> buildList { while (c.moveToNext()) add(Triple(c.getString(0), c.getString(1), c.getLong(2))) } }
+
+    /** 방 고르기 목록: 지금까지 알림이 온 모든 방 (최근 7일 건수가 많은 순, 그다음 최근에 온 순) */
+    fun knownRooms(pkg: String): List<KnownRoom> {
+        val recent = roomStats(pkg, 7).toMap()
+        val seen = readableDatabase.rawQuery("SELECT room, last FROM seen WHERE pkg=? AND room<>''", arrayOf(pkg))
+            .use { c -> buildMap { while (c.moveToNext()) put(c.getString(0), c.getLong(1)) } }
+        return (recent.keys + seen.keys).distinct()
+            .map { KnownRoom(it, recent[it] ?: 0, seen[it] ?: 0L) }
+            .sortedWith(compareByDescending<KnownRoom> { it.recent }.thenByDescending { it.last })
     }
 
     /** v4: 학생별 기록(1년 보관)과 할 일·마감. 원래 알림(7일)이 지워져도 남음. */
@@ -211,16 +255,30 @@ class NotificationDb private constructor(ctx: Context) :
         ).use { c -> buildList { while (c.moveToNext()) add(c.getString(0) to c.getInt(1)) } }
     }
 
-    fun purgeOld(days: Int = 7) {
-        val cutoff = System.currentTimeMillis() - days * 24L * 3600 * 1000
-        writableDatabase.delete("noti", "time<?", arrayOf(cutoff.toString()))
-        writableDatabase.delete("briefing", "time<?", arrayOf(cutoff.toString()))
-        // 학생별 기록은 1년, 끝낸 할 일은 30일 보관
-        val year = System.currentTimeMillis() - 365L * 24 * 3600 * 1000
-        writableDatabase.delete("student_log", "time<?", arrayOf(year.toString()))
-        val month = System.currentTimeMillis() - 30L * 24 * 3600 * 1000
-        writableDatabase.delete("task", "done=1 AND due<?", arrayOf(month.toString()))
+    /** 보관 기간이 지난 기록 지우기 (🧹 Storage가 설정값으로 부름) */
+    fun purge(notiDays: Int, briefDays: Int, logDays: Int) {
+        val now = System.currentTimeMillis()
+        val day = 24L * 3600 * 1000
+        val w = writableDatabase
+        w.delete("noti", "time<?", arrayOf((now - notiDays * day).toString()))
+        w.delete("briefing", "time<?", arrayOf((now - briefDays * day).toString()))
+        w.delete("student_log", "time<?", arrayOf((now - logDays * day).toString()))
+        w.delete("seen", "last<?", arrayOf((now - 180 * day).toString()))
+        // 끝낸 할 일은 30일, 마감이 지난 지 60일 된 할 일은 끝내지 않았어도 지움
+        w.delete("task", "done=1 AND due<?", arrayOf((now - 30 * day).toString()))
+        w.delete("task", "due<?", arrayOf((now - 60 * day).toString()))
     }
+
+    /** 표마다 몇 줄인지 (저장 공간 화면) */
+    fun counts(): Map<String, Int> = listOf("noti", "briefing", "student_log", "task").associateWith { t ->
+        readableDatabase.rawQuery("SELECT COUNT(*) FROM $t", null).use { c -> if (c.moveToFirst()) c.getInt(0) else 0 }
+    }
+
+    /** 받은 알림 원문 모두 지우기 */
+    fun clearNotis() { writableDatabase.delete("noti", null, null) }
+
+    /** 지운 자리를 정리해 파일 크기를 실제로 줄임 */
+    fun vacuum() { writableDatabase.execSQL("VACUUM") }
 
     companion object {
         @Volatile private var inst: NotificationDb? = null

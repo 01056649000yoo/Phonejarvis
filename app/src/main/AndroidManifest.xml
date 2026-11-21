@@ -30,6 +30,11 @@
         <package android:name="jp.naver.line.android" />
         <package android:name="org.telegram.messenger" />
         <package android:name="com.microsoft.teams" />
+        <!-- ＋ 앱 추가: 홈 화면에 보이는 앱 목록 -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
     </queries>
 
     <application

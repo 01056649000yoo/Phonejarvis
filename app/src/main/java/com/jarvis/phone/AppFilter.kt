@@ -34,6 +34,22 @@ object AppFilter {
         prefs(ctx).edit().putStringSet("reviewed", reviewed(ctx) + pkgs).apply()
     }
 
+    // ── ＋ 직접 추가한 앱 (아직 알림이 안 와도 목록에 보이게) ──
+    fun addedApps(ctx: Context): Set<String> = prefs(ctx).getStringSet("added_apps", emptySet())!!.toSet()
+    fun addApp(ctx: Context, pkg: String) {
+        prefs(ctx).edit().putStringSet("added_apps", addedApps(ctx) + pkg).apply()
+        setKeep(ctx, pkg, true)
+    }
+
+    // ── ＋ 직접 추가한 방 ("패키지|방 이름"): 알림이 오기 전에 미리 켜고 끄기 ──
+    fun manualRooms(ctx: Context, pkg: String): List<String> =
+        prefs(ctx).getStringSet("manual_rooms", emptySet())!!.filter { it.startsWith("$pkg|") }.map { it.substringAfter('|') }
+    fun addManualRoom(ctx: Context, pkg: String, room: String) {
+        val r = room.trim().take(100)
+        if (r.isEmpty()) return
+        prefs(ctx).edit().putStringSet("manual_rooms", prefs(ctx).getStringSet("manual_rooms", emptySet())!! + "$pkg|$r").apply()
+    }
+
     // ── 방 고르기: 앱 안에서 뺀 방 ("패키지|방 이름") ──
     private fun roomKey(pkg: String, room: String) = "$pkg|$room"
     fun excludedRooms(ctx: Context): Set<String> = prefs(ctx).getStringSet("excluded_rooms", emptySet())!!.toSet()
@@ -147,7 +163,8 @@ object AppAdvisor {
         }
     }
 
-    fun isMessaging(s: AppStat): Boolean = (s.app + " " + s.pkg).lowercase().let { k -> MESSAGING.any { it in k } }
+    fun isMessaging(s: AppStat): Boolean = isMessaging(s.app, s.pkg)
+    fun isMessaging(app: String, pkg: String): Boolean = (app + " " + pkg).lowercase().let { k -> MESSAGING.any { it in k } }
 
     /** 메시지·SNS 앱 먼저, 그 안에서는 알림 많은 순. */
     fun sortForDisplay(recs: List<AppRec>): List<AppRec> =

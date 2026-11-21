@@ -151,7 +151,14 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     fun loadApps() {
         val ctx = getApplication<Application>()
         viewModelScope.launch {
-            val stats = withContext(Dispatchers.IO) { db.appStats(7) }
+            // 최근 7일 알림을 보낸 앱 + 예전에 알림을 보낸 앱(뺀 앱 포함) + 직접 추가한 앱 → 한 번 빼도 목록에서 사라지지 않음
+            val stats = withContext(Dispatchers.IO) {
+                val recent = db.appStats(7)
+                val have = recent.map { it.pkg }.toMutableSet()
+                val older = db.knownApps().filter { have.add(it.first) }.map { AppStat(it.first, it.second, 0, emptyList()) }
+                val added = AppFilter.addedApps(ctx).filter { have.add(it) }.map { AppStat(it, labelOf(it), 0, emptyList()) }
+                recent + older + added
+            }
             val pkgs = stats.map { it.pkg }.toSet()
             if (pkgs == aiDoneFor && appRecs.isNotEmpty()) return@launch
             silentApps = withContext(Dispatchers.IO) { AppAdvisor.silentMessagingApps(ctx, stats) }
@@ -172,6 +179,42 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
                 aiDoneFor = pkgs
             } finally { aiBusy = false }
         }
+    }
+
+    private fun labelOf(pkg: String): String = runCatching {
+        val pm = getApplication<Application>().packageManager
+        pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+    }.getOrDefault(pkg)
+
+    // ── ＋ 앱 추가: 폰에 설치된 앱 중 목록에 없는 앱 ──
+    /** 앱 추가 창: (패키지, 이름). null이면 닫힘 */
+    var addableApps by mutableStateOf<List<Pair<String, String>>?>(null)
+        private set
+    fun openAddApps() {
+        val ctx = getApplication<Application>()
+        addableApps = emptyList()
+        viewModelScope.launch {
+            addableApps = withContext(Dispatchers.IO) {
+                val listed = appRecs.map { it.stat.pkg }.toSet()
+                val pm = ctx.packageManager
+                pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)
+                    .map { it.activityInfo.packageName }.distinct()
+                    .filter { it != ctx.packageName && it !in listed }
+                    .map { it to labelOf(it) }
+                    .sortedWith(compareByDescending<Pair<String, String>> { AppAdvisor.isMessaging(it.second, it.first) }.thenBy { it.second })
+            }
+        }
+    }
+    fun closeAddApps() { addableApps = null }
+    fun addApp(pkg: String, name: String) {
+        val ctx = getApplication<Application>()
+        AppFilter.addApp(ctx, pkg)
+        excludedApps = AppFilter.excluded(ctx)
+        reviewedApps = AppFilter.reviewed(ctx)
+        addableApps = addableApps?.filterNot { it.first == pkg }
+        status = "＋ $name 추가! 이제 이 앱 알림이 오면 모아요."
+        aiDoneFor = emptySet()
+        loadApps()
     }
 
     fun setAppKeep(pkg: String, keep: Boolean) {
@@ -211,7 +254,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     /** 방 고르기 창을 연 앱 (패키지, 이름). null이면 닫힘. */
     var roomApp by mutableStateOf<Pair<String, String>?>(null)
         private set
-    var rooms by mutableStateOf<List<Pair<String, Int>>>(emptyList())
+    var rooms by mutableStateOf<List<KnownRoom>>(emptyList())
         private set
     var excludedRooms by mutableStateOf(AppFilter.excludedRooms(app))
         private set
@@ -219,7 +262,23 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     fun openRooms(pkg: String, name: String) {
         roomApp = pkg to name
         rooms = emptyList()
-        viewModelScope.launch { rooms = withContext(Dispatchers.IO) { db.roomStats(pkg) } }
+        loadRooms(pkg)
+    }
+    /** 지금까지 알림이 온 모든 방 + 직접 추가한 방 */
+    private fun loadRooms(pkg: String) {
+        val ctx = getApplication<Application>()
+        viewModelScope.launch {
+            rooms = withContext(Dispatchers.IO) {
+                val known = db.knownRooms(pkg)
+                val names = known.map { it.name }.toSet()
+                known + AppFilter.manualRooms(ctx, pkg).filter { it !in names }.map { KnownRoom(it, 0, 0L) }
+            }
+        }
+    }
+    /** ＋ 방 이름 직접 추가 (아직 알림이 안 온 방도 미리 켜고 끄기) */
+    fun addRoom(pkg: String, name: String) {
+        AppFilter.addManualRoom(getApplication<Application>(), pkg, name)
+        loadRooms(pkg)
     }
     fun closeRooms() { roomApp = null; refresh() }
     fun isRoomOn(pkg: String, room: String) = !AppFilter.isRoomExcluded(excludedRooms, pkg, room)
@@ -230,7 +289,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun setAllRooms(pkg: String, keep: Boolean) {
         val ctx = getApplication<Application>()
-        AppFilter.setAllRooms(ctx, pkg, rooms.map { it.first }, keep)
+        AppFilter.setAllRooms(ctx, pkg, rooms.map { it.name }, keep)
         excludedRooms = AppFilter.excludedRooms(ctx)
     }
     /** 앱 목록에 보여 줄 "뺀 방 N개" */
@@ -255,7 +314,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     // ── 탭 안의 세부 화면 (목록 → 누르면 옆에서 밀려 들어오는 화면) ──
     enum class Page(val title: String, val tab: Tab) {
         APPS("🌱 알림 앱 정리", Tab.SETTINGS), TIMES("⏰ 브리핑 시각", Tab.SETTINGS), QUIET("🏫 수업·퇴근 모드", Tab.SETTINGS),
-        SYSTEM("🤖 AI 모델·권한", Tab.SETTINGS), BACKUP("💾 백업·복원", Tab.SETTINGS),
+        SYSTEM("🤖 AI 모델·권한", Tab.SETTINGS), BACKUP("💾 백업·복원", Tab.SETTINGS), STORAGE("🧹 저장 공간", Tab.SETTINGS),
         PARENTS("👪 학부모 명부", Tab.CLASS), KEYWORDS("⭐ 중요 키워드", Tab.CLASS),
         TODAY_ALL("🗂 오늘 받은 알림 전체", Tab.BRIEFING),
     }
@@ -416,6 +475,38 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
     fun closeBriefingDetail() { briefingDetail = null }
+
+    // ── 🧹 저장 공간 ──
+    var storageUsage by mutableStateOf<Storage.Usage?>(null)
+        private set
+    var notiDays by mutableStateOf(Storage.notiDays(app))
+        private set
+    var briefDays by mutableStateOf(Storage.briefDays(app))
+        private set
+    var logDays by mutableStateOf(Storage.logDays(app))
+        private set
+    var cleaning by mutableStateOf(false)
+        private set
+    fun setRetention(key: String, days: Int) {
+        val ctx = getApplication<Application>()
+        Storage.setDays(ctx, key, days)
+        notiDays = Storage.notiDays(ctx); briefDays = Storage.briefDays(ctx); logDays = Storage.logDays(ctx)
+    }
+    private fun runClean(block: (Application) -> Long) {
+        if (cleaning) return
+        cleaning = true
+        viewModelScope.launch {
+            val ctx = getApplication<Application>()
+            val (freed, use) = withContext(Dispatchers.IO) { block(ctx) to Storage.usage(ctx) }
+            storageUsage = use; cleaning = false
+            status = if (freed > 0) "🧹 ${Storage.size(freed)} 비웠어요." else "🧹 정리했어요. 더 지울 기록이 없어요."
+            refresh()
+        }
+    }
+    /** 지금 정리하기: 보관 기간이 지난 기록 지우고 파일 줄이기 */
+    fun cleanNow() = runClean { Storage.clean(it, vacuum = true) }
+    /** 받은 알림 원문 모두 지우기 (브리핑·학생 기록·할 일은 남음) */
+    fun clearNotis() = runClean { Storage.clearNotis(it) }
     fun hideBriefing(b: Briefing) {
         hiddenBriefings = hiddenBriefings + b.time.toString(); saveSet("hidden_briefings", hiddenBriefings)
     }
@@ -588,7 +679,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     }
     /** 방 고르기 창: 이름으로 학부모 같아 보이는데 아직 지정 안 한 방 */
     fun suggestedParentRooms(pkg: String) =
-        rooms.map { it.first }.filter { ParentAdvisor.looksParent(it) && !isParentRoom(pkg, it) }
+        rooms.map { it.name }.filter { ParentAdvisor.looksParent(it) && !isParentRoom(pkg, it) }
     fun setAllSuggestedParents(pkg: String) = suggestedParentRooms(pkg).forEach { setParentRoom(pkg, it, true) }
 
     fun markHandled(c: ParentContact) {
@@ -672,7 +763,9 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         if (!onboardingDone && onboardingStep == 2) scanDownloads()
         if (onboardingDone) loadApps()
         viewModelScope.launch(Dispatchers.IO) {
-            db.purgeOld()
+            runCatching { Storage.autoClean(ctx) }   // 🧹 보관 기간이 지난 기록 자동 정리 (6시간에 한 번)
+            val use = runCatching { Storage.usage(ctx) }.getOrNull()
+            withContext(Dispatchers.Main) { if (use != null) storageUsage = use }
             runCatching { Backup.autoBackup(ctx) }   // 💾 하루 한 번 자동 백업
             val rules = AppFilter.rules(ctx)
             val items = db.today().filter { rules.allows(it) }

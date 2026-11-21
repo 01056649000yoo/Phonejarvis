@@ -30,10 +30,13 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** 이번 버전에서 바뀐 점 한 줄 (버전 올릴 때 같이 고치기). */
-private const val WHATS_NEW = "👪 학부모 명부: 이름·번호만 등록하면 자동으로 · 정리는 백그라운드에서, 끝나면 알림"
+private const val WHATS_NEW = "🧹 오래된 기록 자동 정리 · ＋ 알림 앱 추가 · 예전 방도 모두 고르기"
 
 /** 업데이트 내역 큰 창 (버전 올릴 때 같이 고치기) */
 private val WHATS_NEW_DETAIL = listOf(
+    "🧹 오래된 기록은 저절로 지워요" to "설정 → 🧹 저장 공간에서 받은 알림(3일~30일)·브리핑 모음(7일~90일)·학생 기록(3개월~1년) 보관 기간을 고를 수 있어요. 기간이 지나면 앱을 열지 않아도 저절로 지워지고, 일주일에 한 번 파일 크기까지 줄여서 앱이 무거워지지 않아요.",
+    "＋ 알림 앱 추가" to "설정 → 🌱 알림 앱 정리에서 '＋ 앱 추가'를 누르면 폰에 깔린 앱 중 목록에 없는 앱을 골라 넣을 수 있어요. 한 번 뺀 앱도 이제 목록에서 사라지지 않아 언제든 다시 켤 수 있어요.",
+    "💬 방 고르기가 편해졌어요" to "한 번이라도 알림이 온 방은 7일이 지나도 모두 목록에 남아요. 아직 알림이 안 온 방은 방 이름을 직접 넣어 미리 켜고 끌 수 있어요. (카톡 방 목록은 다른 앱이 읽을 수 없어서 이름으로 넣어요)",
     "👪 학부모 방 고르기 대신 학부모 명부" to "우리 반 → 👪 학부모 명부에서 학생·관계(어머님/아버님)·이름이나 번호만 등록하세요. 문자·카톡·밴드·하이클래스 등 어떤 앱이든 보낸 사람·방 이름·내용에 그 이름·번호가 보이면 자동으로 \"민준 어머님\" 연락으로 모아 답장까지 추천해요.",
     "🙋 한 사람으로 모아요" to "같은 학부모가 문자와 카톡으로 따로 연락해도 오늘 탭 👪 학부모 연락에 한 사람으로 묶여요. 이름·번호·카톡 별명을 여러 개 등록해도 돼요.",
     "🔔 정리는 백그라운드에서" to "지금 정리하기를 누르면 \"완료되면 알림으로 알려드릴게요\" 안내 뒤 앱이 닫히고, 백그라운드에서 정리해요. 다 되면 알림이 오고, 누르면 📄 세부 내역(요약 전체 + 원래 알림)이 바로 열려요.",
@@ -150,6 +153,7 @@ private fun PageContent(vm: JarvisViewModel, page: JarvisViewModel.Page) {
         JarvisViewModel.Page.QUIET -> QuietCard(vm)
         JarvisViewModel.Page.SYSTEM -> SystemSettings(vm)
         JarvisViewModel.Page.BACKUP -> BackupCard(vm)
+        JarvisViewModel.Page.STORAGE -> StoragePage(vm)
         JarvisViewModel.Page.PARENTS -> ParentsPage(vm)
         JarvisViewModel.Page.KEYWORDS -> KeywordCard(vm)
         JarvisViewModel.Page.TODAY_ALL -> TodayAllPage(vm)
@@ -404,7 +408,7 @@ private fun BriefingDetailDialog(vm: JarvisViewModel, b: Briefing, items: List<N
                                 }
                             }
                         }
-                        if (items.isEmpty()) Text("원래 알림은 7일이 지나 지워졌어요.", style = MaterialTheme.typography.bodySmall)
+                        if (items.isEmpty()) Text("원래 알림은 보관 기간이 지나 지워졌어요. (설정 → 🧹 저장 공간)", style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
@@ -482,6 +486,9 @@ private fun SettingsTab(vm: JarvisViewModel) {
         Triple("💾 백업·복원",
             (if (vm.lastBackup > 0) "${fmt.format(vm.lastBackup)} 백업" else "백업 없음") + if (vm.hasBackupPin) " · 🔒" else "") {
             vm.open(JarvisViewModel.Page.BACKUP) },
+        Triple("🧹 저장 공간",
+            (vm.storageUsage?.let { Storage.size(it.bytes) + " · " } ?: "") + "알림 ${Storage.label(vm.notiDays)} 보관 · 자동 정리") {
+            vm.open(JarvisViewModel.Page.STORAGE) },
     ))
     Text("쌤톡스 v${vm.appVersion} · 알림은 폰 밖으로 나가지 않아요", style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp))
@@ -695,6 +702,13 @@ private fun AppCleanupCard(vm: JarvisViewModel) {
                     Modifier.padding(10.dp), style = MaterialTheme.typography.bodySmall,
                 )
             }
+            // ＋ 앱 추가: 기본은 모든 앱을 모으고, 뺄 앱만 끔. 목록에 없는 앱은 여기서 추가
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("모든 앱 알림을 기본으로 모아요. 아래 목록에서 뺄 앱만 끄고, 목록에 없는 앱은 추가하세요.",
+                    Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                OutlinedButton(onClick = { vm.openAddApps() }) { Text("＋ 앱 추가", color = Ssam.Chalk) }
+            }
+            vm.addableApps?.let { list -> AddAppDialog(vm, list) }
             // 🚫 광고 자동 거르기 (문자·카톡의 광고성 메시지)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -771,7 +785,8 @@ private fun AppCleanupCard(vm: JarvisViewModel) {
                     val keepNow = r.stat.pkg !in vm.excludedApps
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text("${r.stat.app} · ${r.stat.count}건", fontWeight = FontWeight.Medium)
+                            Text("${r.stat.app} · " + if (r.stat.count > 0) "${r.stat.count}건" else "최근 7일 0건",
+                                fontWeight = FontWeight.Medium)
                             Text((if (r.keep) "추천: 모으기 — " else "추천: 빼기 — ") + r.reason,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = if (r.keep) Ssam.Sprout else Ssam.Blush)
@@ -798,6 +813,95 @@ private fun AppCleanupCard(vm: JarvisViewModel) {
             }
         }
     }
+}
+
+/** 🧹 저장 공간: 보관 기간 고르기 + 지금 정리하기. 기간이 지난 기록은 자동으로 지워짐. */
+@Composable
+private fun StoragePage(vm: JarvisViewModel) {
+    var confirmClear by remember { mutableStateOf(false) }
+    Text("쌓인 기록은 아래 보관 기간이 지나면 저절로 지워져요. 앱을 열지 않아도 브리핑이 끝날 때마다 정리하고, " +
+         "일주일에 한 번은 지운 자리까지 줄여 용량을 돌려받아요.",
+        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(
+        containerColor = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            val u = vm.storageUsage
+            Text("💾 지금 쓰는 공간 " + (u?.let { Storage.size(it.bytes) } ?: "…"), fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleMedium)
+            if (u != null) Text("받은 알림 ${u.noti}건 · 브리핑 ${u.briefings}개 · 학생 기록 ${u.logs}건 · 할 일 ${u.tasks}개",
+                style = MaterialTheme.typography.bodySmall)
+            Text("AI 모델 파일(수 GB)은 요약에 꼭 필요해서 여기서 지우지 않아요.", style = MaterialTheme.typography.labelSmall)
+        }
+    }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("⏳ 보관 기간", fontWeight = FontWeight.Bold)
+            RetentionRow("📨 받은 알림 원문", "브리핑 세부 내역의 '원래 알림'도 이 기간만큼 볼 수 있어요", Storage.NOTI_CHOICES, vm.notiDays) {
+                vm.setRetention("noti_days", it) }
+            RetentionRow("📚 브리핑 모음", "요약 결과라 작아요", Storage.BRIEF_CHOICES, vm.briefDays) { vm.setRetention("brief_days", it) }
+            RetentionRow("🧒 학생별 기록", "상담·생활기록에 쓰려면 길게 두세요", Storage.LOG_CHOICES, vm.logDays) { vm.setRetention("log_days", it) }
+            Text("📌 끝낸 할 일은 30일, 마감이 60일 지난 할 일은 저절로 지워요. 앱·방 이름 목록은 180일 동안 안 오면 지워요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+    Button(onClick = { vm.cleanNow() }, enabled = !vm.cleaning, modifier = Modifier.fillMaxWidth().height(52.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = Ssam.Sprout, contentColor = Ssam.Ink)) {
+        Text(if (vm.cleaning) "정리하는 중…" else "🧹 지금 정리하기", fontWeight = FontWeight.Bold)
+    }
+    OutlinedButton(onClick = { confirmClear = true }, enabled = !vm.cleaning, modifier = Modifier.fillMaxWidth()) {
+        Text("받은 알림 원문 모두 지우기")
+    }
+    if (vm.status.isNotEmpty()) Text(vm.status, style = MaterialTheme.typography.bodySmall)
+    if (confirmClear) AlertDialog(
+        onDismissRequest = { confirmClear = false },
+        title = { Text("받은 알림 원문을 모두 지울까요?") },
+        text = { Text("모은 알림 ${vm.storageUsage?.noti ?: 0}건이 지워지고 되돌릴 수 없어요. 브리핑 모음·학생 기록·할 일·설정은 그대로 남아요. 아직 정리 안 한 알림도 지워져요.") },
+        confirmButton = { Button(onClick = { confirmClear = false; vm.clearNotis() }) { Text("모두 지우기") } },
+        dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("취소") } },
+    )
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun RetentionRow(title: String, hint: String, choices: List<Int>, value: Int, onPick: (Int) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(title, fontWeight = FontWeight.Medium)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            choices.forEach { d -> FilterChip(selected = value == d, onClick = { onPick(d) }, label = { Text(Storage.label(d)) }) }
+        }
+        Text(hint, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** ＋ 앱 추가: 폰에 설치된 앱 중 아직 목록에 없는 앱 (메시지 앱 먼저) */
+@Composable
+private fun AddAppDialog(vm: JarvisViewModel, apps: List<Pair<String, String>>) {
+    var q by rememberSaveable { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = { vm.closeAddApps() },
+        title = { Text("＋ 앱 추가") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("추가한 앱은 알림이 오면 바로 모아요. 그 앱의 알림이 켜져 있어야 해요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                OutlinedTextField(value = q, onValueChange = { q = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("앱 이름 찾기") })
+                Column(Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())) {
+                    val shown = apps.filter { q.isBlank() || q.trim() in it.second }
+                    if (apps.isEmpty()) Text("앱 목록을 불러오는 중이에요…", Modifier.padding(vertical = 12.dp))
+                    else if (shown.isEmpty()) Text("찾는 앱이 없어요.", Modifier.padding(vertical = 12.dp))
+                    shown.forEach { (pkg, name) ->
+                        Row(Modifier.fillMaxWidth().clickable { vm.addApp(pkg, name) }.padding(vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Text((if (AppAdvisor.isMessaging(name, pkg)) "💬 " else "📱 ") + name, Modifier.weight(1f))
+                            Text("＋ 추가", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { vm.closeAddApps() }) { Text("닫기") } },
+    )
 }
 
 /**
@@ -930,7 +1034,7 @@ private fun StudentsCard(vm: JarvisViewModel) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("🧒 우리 반 명부", fontWeight = FontWeight.Bold)
-            Text("학생 이름을 넣어 두면 연락에 \"민준이\"처럼 이름만 나와도 알아보고, 학생별 기록에 계속 쌓아요 (1년 보관). " +
+            Text("학생 이름을 넣어 두면 연락에 \"민준이\"처럼 이름만 나와도 알아보고, 학생별 기록에 계속 쌓아요 (보관 기간은 설정 → 🧹 저장 공간). " +
                  "학생 이름은 중요 키워드처럼 브리핑 맨 위에 모여요.", style = MaterialTheme.typography.bodySmall)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(value = input, onValueChange = { input = it },
@@ -1183,7 +1287,9 @@ private fun QuietTimeRow(vm: JarvisViewModel, label: String, value: Int, presets
     }
 }
 
-/** 방 고르기: 이 앱에서 최근 7일 알림이 온 방을 많은 순으로, 스위치로 켜고 끄기. */
+private fun roomLast(vm: JarvisViewModel, room: String) = vm.rooms.firstOrNull { it.name == room }?.last ?: 0L
+
+/** 방 고르기: 이 앱에서 알림이 온 적 있는 모든 방(최근 많은 순) + 직접 추가한 방, 스위치로 켜고 끄기. */
 @Composable
 private fun RoomPickerDialog(vm: JarvisViewModel, pkg: String, name: String) {
     AlertDialog(
@@ -1192,9 +1298,18 @@ private fun RoomPickerDialog(vm: JarvisViewModel, pkg: String, name: String) {
         text = {
             Column(Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("방을 누르거나 스위치로 켜고 꺼요. 끈 방은 모으지도, 요약하지도 않아요. 단, 중요 키워드가 들어간 알림은 모아요.",
+                Text("방을 누르거나 스위치로 켜고 꺼요. 끈 방은 모으지도, 요약하지도 않아요. 단, 중요 키워드·등록한 학부모는 모아요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (vm.rooms.isEmpty()) Text("최근 7일 동안 알림이 온 방이 없어요.", Modifier.padding(vertical = 12.dp))
+                // ＋ 방 이름 직접 추가: 다른 앱은 카톡 방 목록을 읽을 수 없어서, 아직 알림이 안 온 방은 이름으로 미리 넣음
+                var newRoom by rememberSaveable { mutableStateOf("") }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    OutlinedTextField(value = newRoom, onValueChange = { newRoom = it }, singleLine = true,
+                        modifier = Modifier.weight(1f), placeholder = { Text("방 이름 직접 추가") })
+                    OutlinedButton(onClick = { vm.addRoom(pkg, newRoom); newRoom = "" }, enabled = newRoom.isNotBlank()) { Text("추가") }
+                }
+                Text("한 번이라도 알림이 온 방은 모두 여기 남아요. 아직 알림이 안 온 방은 이름을 그대로 넣으면 미리 켜고 끌 수 있어요.",
+                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (vm.rooms.isEmpty()) Text("아직 알림이 온 방이 없어요. 위에서 방 이름을 넣어 추가할 수 있어요.", Modifier.padding(vertical = 12.dp))
                 else Row {
                     TextButton(onClick = { vm.setAllRooms(pkg, true) }) { Text("모두 켜기") }
                     TextButton(onClick = { vm.setAllRooms(pkg, false) }) { Text("모두 끄기") }
@@ -1205,7 +1320,11 @@ private fun RoomPickerDialog(vm: JarvisViewModel, pkg: String, name: String) {
                     Row(Modifier.fillMaxWidth().clickable { vm.setRoom(pkg, room, !on) }, verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(room, maxLines = 1, fontWeight = FontWeight.Medium)
-                            Text("최근 7일 ${count}건",
+                            Text(when {
+                                    count > 0 -> "최근 7일 ${count}건"
+                                    roomLast(vm, room) > 0 -> "마지막 알림 " + SimpleDateFormat("M/d", Locale.KOREA).format(roomLast(vm, room))
+                                    else -> "직접 추가한 방"
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
