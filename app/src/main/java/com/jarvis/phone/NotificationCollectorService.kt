@@ -12,7 +12,7 @@ class NotificationCollectorService : NotificationListenerService() {
         if (sbn.packageName == packageName) return                       // 내 앱 알림 제외
         if (sbn.isOngoing) return                                          // 음악 재생, 다운로드 진행 등 상시 알림 제외
         if (n.flags and Notification.FLAG_GROUP_SUMMARY != 0) return       // "새 메시지 3개" 같은 묶음 요약 제외
-        if (sbn.packageName in IGNORED_PACKAGES) return
+        if (sbn.packageName in IGNORED_PACKAGES || sbn.packageName == packageName) return   // 쌤톡스 자기 알림(요약 중·완료)은 모으지 않음
         val ex = n.extras
         val title = ex.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim().orEmpty()
         val text = (ex.getCharSequence(Notification.EXTRA_BIG_TEXT)

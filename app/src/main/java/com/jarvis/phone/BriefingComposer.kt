@@ -33,8 +33,24 @@ object BriefingComposer {
     private val AD = Regex("^\\(광고\\)")
     private val QUESTION = Regex("[?？]|(주세요|주시면|주실|부탁|가능할까|될까요|되나요|인가요|있나요|어떠세요|알려|확인해|회신|답장|연락 ?주)")
 
-    /** 사람 메시지(메시지 앱)인가 — 업무 앱·사람 묶음은 이 앞에서 이미 빠진다 */
-    fun isPerson(n: NotiItem): Boolean = AppAdvisor.isMessaging(n.app, n.pkg)
+    /** 사람 메시지(메시지 앱)인가 — 업무 앱·사람 묶음은 이 앞에서 이미 빠진다. 메시지 앱이어도 봇·채널·앱 안내는 사람이 아니다 */
+    fun isPerson(n: NotiItem): Boolean = AppAdvisor.isMessaging(n.app, n.pkg) && !isAutomated(n)
+
+    // 2026-11-21 선생님: 사람 메시지에 자비스(텔레그램 봇)·카카오톡 알림이 섞임
+    private val BOT_NAME = Regex("(?i)(bot\\b|봇$|봇\\b|자비스|jarvis|openclaw|오픈클로|noreply|no-reply|알림봇|알림센터|고객센터|공지사항)")
+    // 기업 알림톡: 이 말이 하나라도 있으면 기업 알림
+    private val BUSINESS_STRONG = Regex("(\\[Web발신]|\\(광고\\)|고객님|회원님|수신거부|채널 ?추가|인증번호|이용해 주셔서|발송되었습니다|접수되었습니다)")
+    // 흔한 말이라 두 가지 이상 함께 나와야 기업 알림(학부모가 '체험학습비 결제'라고 써도 사람 메시지로)
+    private val BUSINESS_WEAK = listOf("주문", "배송", "결제", "승인", "포인트", "쿠폰", "예약번호", "운송장", "도착 예정", "출고")
+
+    /** 봇·채널 알림톡·메시지 앱 자체 안내 — 사람이 쓴 말이 아닌 것 */
+    fun isAutomated(n: NotiItem): Boolean {
+        val sender = n.title.trim()
+        if (sender.isEmpty() || sender == n.app) return true
+        if (BOT_NAME.containsMatchIn(sender) || BOT_NAME.containsMatchIn(n.room)) return true
+        // 1:1 로 온 기업 알림톡(배송·결제·예약)은 앱 알림으로. 단톡방은 사람 말 속 낱말일 수 있어 보지 않는다
+        return n.room.isEmpty() && (BUSINESS_STRONG.containsMatchIn(n.text) || BUSINESS_WEAK.count { it in n.text } >= 2)
+    }
 
     /** 광고·같은 알림 거르고 대화방별로 묶기(최근 방부터) */
     fun conversations(items: List<NotiItem>): List<Conversation> = items
@@ -114,7 +130,11 @@ object BriefingComposer {
         return buildString {
             append("📦 앱 알림 (${items.size}건 · 요약 안 함)\n")
             byApp.take(8).forEach { (app, list) ->
-                val titles = list.sortedByDescending { it.time }.map { it.title.ifBlank { it.text }.replace('\n', ' ').take(24) }
+                // 메시지 앱의 봇·채널 알림은 보낸 이만으로는 알 수 없어 '보낸 이: 내용'으로
+                val titles = list.sortedByDescending { it.time }.map {
+                    val line = if (AppAdvisor.isMessaging(it.app, it.pkg) && it.text.isNotBlank()) "${it.title}: ${it.text}" else it.title.ifBlank { it.text }
+                    line.replace('\n', ' ').take(if (AppAdvisor.isMessaging(it.app, it.pkg)) 34 else 24)
+                }
                     .distinct().take(2).joinToString(", ")
                 append("- $app ${list.size}건" + (if (titles.isNotBlank()) " · $titles" else "") + "\n")
             }

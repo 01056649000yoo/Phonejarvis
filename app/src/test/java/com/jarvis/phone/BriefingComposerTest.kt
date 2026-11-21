@@ -82,4 +82,17 @@ class BriefingComposerTest {
         val group = BriefingComposer.conversations(listOf(kakao("동학년방", "최선생", "명단 양식 있을까요?")))[0]
         assertFalse(BriefingComposer.parse(group, "요점: 양식 문의\n요청: 없음\n답장: 아님").needReply)
     }
+
+    @Test fun 봇_채널_알림톡_메신저_자체_안내는_사람_메시지가_아니다() {
+        val tg = { title: String, text: String -> NotiItem(0, "org.telegram.messenger", "Telegram", title, text, t++) }
+        assertFalse(BriefingComposer.isPerson(tg("자비스", "배포 완료: 독서록 글자 수 수정")))
+        assertFalse(BriefingComposer.isPerson(tg("agit_status_bot", "서버 점검 모두 정상")))
+        assertFalse(BriefingComposer.isPerson(kakao("", "쿠팡", "고객님의 주문하신 상품이 배송 출발했습니다.")))
+        assertFalse(BriefingComposer.isPerson(kakao("", "카카오톡", "새로운 기기에서 로그인했습니다.")))
+        assertTrue(BriefingComposer.isPerson(kakao("", "서윤 어머니", "선생님, 내일 도시락 챙겨야 하나요?")))
+        assertTrue(BriefingComposer.isPerson(kakao("", "도윤 아버님", "체험학습비 결제는 어떻게 하나요?")))
+        assertFalse(BriefingComposer.isPerson(kakao("", "CJ대한통운", "운송장 1234 상품이 오늘 도착 예정입니다.")))
+        // 단톡방에서 사람이 '배송'이라는 말을 써도 사람 메시지
+        assertTrue(BriefingComposer.isPerson(kakao("6학년 동학년방", "김부장", "학예회 소품 배송은 목요일에 와요")))
+    }
 }
