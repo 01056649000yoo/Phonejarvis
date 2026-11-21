@@ -1041,7 +1041,7 @@ class MainActivity : ComponentActivity() {
         BriefingScheduler.scheduleAll(this)   // 강제 종료 등으로 알람이 지워졌을 때를 대비해 다시 등록
         QuietMode.tick(this)                  // 수업 중·퇴근 모드 상태 반영과 다음 경계 예약
         BackupShare.uriFrom(intent)?.let { vm.offerRestore(it) }   // 📥 받은 백업 파일로 열렸으면 불러오기 제안
-        if (savedInstanceState == null) openFromNotification(intent)   // 폴드 접기·화면 회전으로 다시 그릴 때는 또 열지 않음
+        if (savedInstanceState == null) { openFromNotification(intent); openFromWidget(intent) }   // 폴드 접기·화면 회전으로 다시 그릴 때는 또 열지 않음
         setContent {
             SsamTheme {
                 Surface(color = MaterialTheme.colorScheme.background) {
@@ -1087,7 +1087,17 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onResume() { super.onResume(); vm.refresh() }
+    override fun onResume() {
+        super.onResume(); vm.refresh()
+        AppScope.main.launch { SummaryWidget.refresh(this@MainActivity) }   // 🏠 앱에서 바꾼 것이 위젯에도
+    }
+
+    /** 🏠 위젯 [⚙️] 로 열었으면 설정 탭 */
+    private fun openFromWidget(intent: Intent?) {
+        if (intent?.getStringExtra(SummaryWidget.EXTRA_OPEN_TAB) == "settings") {
+            vm.selectTab(JarvisViewModel.Tab.SETTINGS); intent.removeExtra(SummaryWidget.EXTRA_OPEN_TAB)
+        }
+    }
 
     /** 🔔 정리 완료 알림을 눌러 열었으면 그 브리핑의 세부 내역 보여 주기 */
     private fun openFromNotification(intent: Intent?) {
@@ -1099,6 +1109,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         openFromNotification(intent)
+        openFromWidget(intent)
         BackupShare.uriFrom(intent)?.let { vm.offerRestore(it) }
     }
 }

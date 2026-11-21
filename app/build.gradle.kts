@@ -12,8 +12,8 @@ android {
         applicationId = "com.jarvis.phone"
         minSdk = 31          // Galaxy Z Fold4 (Android 14+) 기준
         targetSdk = 36
-        versionCode = 35
-        versionName = "1.5.0"
+        versionCode = 36
+        versionName = "1.6.0"
     }
 
     // 🔐 배포용 서명 키: 저장소에 두지 않고 GitHub Secrets → 빌드할 때만 환경 변수로 받음
@@ -68,6 +68,8 @@ dependencies {
     implementation("com.google.ai.edge.litertlm:litertlm-android:0.19.1")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    // 🏠 홈 화면 위젯(Compose 와 같은 방식)
+    implementation("androidx.glance:glance-appwidget:1.1.1")
     // 맥미니에서 요약 규칙 시험·시뮬레이션(src/test)
     testImplementation("junit:junit:4.13.2")
     implementation("androidx.core:core-ktx:1.16.0")

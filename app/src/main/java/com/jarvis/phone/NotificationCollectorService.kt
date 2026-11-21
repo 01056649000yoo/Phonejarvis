@@ -1,5 +1,6 @@
 package com.jarvis.phone
 
+import kotlinx.coroutines.launch
 import android.app.Notification
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
@@ -47,6 +48,7 @@ class NotificationCollectorService : NotificationListenerService() {
             room = room,
         )
         val item = NotiItem(0, sbn.packageName, app, title.take(200), text.take(1000), sbn.postTime, room)
+        AppScope.main.launch { SummaryWidget.refreshForNewNoti(this@NotificationCollectorService) }   // 🏠 위젯 '요약 N'(10분에 한 번까지)
         runCatching {
             Students.log(this, Students.names(this), item)   // 🧒 학생 이름이 나오면 학생별 기록에
             TaskExtractor.save(this, item)                   // 📌 마감·할 일이 있으면 할 일 목록에

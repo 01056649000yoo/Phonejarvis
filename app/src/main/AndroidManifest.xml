@@ -117,5 +117,18 @@
                 <action android:name="android.intent.action.TIMEZONE_CHANGED" />
             </intent-filter>
         </receiver>
+
+        <!-- 🏠 홈 화면 위젯: 최근 요약 + [요약]·[⚙️] -->
+        <receiver
+            android:name=".SummaryWidgetReceiver"
+            android:exported="true"
+            android:label="쌤톡스 요약">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/summary_widget_info" />
+        </receiver>
     </application>
 </manifest>

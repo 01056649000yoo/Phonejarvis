@@ -50,6 +50,7 @@ class BriefingService : Service() {
         if (running) return START_NOT_STICKY     // 이미 도는 중이면 겹쳐 실행하지 않음
         running = true
         active = true
+        AppScope.main.launch { SummaryWidget.refresh(this@BriefingService) }   // 🏠 위젯에 '요약 중…'
         preparing = prepareSlot
         showWhenDone = false
 
@@ -88,6 +89,7 @@ class BriefingService : Service() {
                 running = false
                 active = false
                 preparing = null
+                runCatching { SummaryWidget.refresh(this@BriefingService) }   // 🏠 위젯에 새 요약
                 ServiceCompat.stopForeground(this@BriefingService, ServiceCompat.STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
