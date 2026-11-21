@@ -393,6 +393,29 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         collapsedBriefings = if (k in collapsedBriefings) collapsedBriefings - k else collapsedBriefings + k
         saveSet("collapsed_briefings", collapsedBriefings)
     }
+    /** 📄 브리핑 세부 내역: (브리핑, 그 브리핑이 정리한 원래 알림들). null이면 닫힘 */
+    var briefingDetail by mutableStateOf<Pair<Briefing, List<NotiItem>>?>(null)
+        private set
+    fun openBriefingDetail(b: Briefing) {
+        viewModelScope.launch {
+            val ctx = getApplication<Application>()
+            val items = withContext(Dispatchers.IO) {
+                val rules = AppFilter.rules(ctx)
+                db.since(b.fromTime).filter { it.time <= b.time && rules.allows(it) }
+            }
+            briefingDetail = b to items
+        }
+    }
+    /** 완료 알림을 눌러 들어왔을 때: 그 시각의 브리핑을 찾아 세부 내역 열기 */
+    fun openBriefingDetail(time: Long) {
+        viewModelScope.launch {
+            val b = withContext(Dispatchers.IO) { db.briefings(50).firstOrNull { it.time == time } } ?: return@launch
+            tab = Tab.BRIEFING; page = null
+            if (b.time.toString() in hiddenBriefings) { hiddenBriefings = hiddenBriefings - b.time.toString(); saveSet("hidden_briefings", hiddenBriefings) }
+            openBriefingDetail(b)
+        }
+    }
+    fun closeBriefingDetail() { briefingDetail = null }
     fun hideBriefing(b: Briefing) {
         hiddenBriefings = hiddenBriefings + b.time.toString(); saveSet("hidden_briefings", hiddenBriefings)
     }
@@ -762,8 +785,6 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** 새 알림이 이만큼 넘으면 오래 걸리니 백그라운드(포그라운드 서비스)에서 정리하고 끝나면 알림 */
-    private val BACKGROUND_FROM = 30
     /** 백그라운드에서 정리 중인지 */
     var bgRunning by mutableStateOf(false)
         private set
@@ -772,7 +793,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     private fun startBackgroundSummary() {
         BriefingScheduler.startNow(getApplication<Application>(), "정리 완료")
         bgRunning = true; stopping = false
-        status = "🔔 새 알림 ${pendingCount}건이라 조금 걸려요. 백그라운드에서 정리하고 다 되면 알림으로 알려 드릴게요. 앱을 닫아도 돼요."
+        status = "🔔 새 알림 ${pendingCount}건을 백그라운드에서 정리하고 있어요. 다 되면 알림으로 알려 드릴게요."
         watchBackground()
     }
     /** 서비스가 끝날 때까지 지켜보다가 끝나면 화면 새로고침 */
@@ -791,25 +812,8 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun summarizeToday() {
-        if (pendingCount >= BACKGROUND_FROM) { startBackgroundSummary(); return }
-        busy = true; summary = ""
-        viewModelScope.launch {
-            try {
-                // 지난 요약 이후 새로 온 알림만 (한 번 요약한 건 다시 넣지 않음)
-                val out = Briefings.runSinceLast(getApplication<Application>(), "지금 정리") { s ->
-                    viewModelScope.launch { status = s }
-                }
-                summary = out.body
-                lastBriefing = withContext(Dispatchers.IO) { db.lastBriefing() }
-                refresh()
-            } catch (s: Summarizer.StoppedException) {
-                status = s.message ?: "중지했어요."
-            } catch (t: Throwable) {
-                status = "요약 실패: ${t.message}"
-            } finally { busy = false; stopping = false }
-        }
-    }
+    /** "지금 정리하기": 건수와 상관없이 백그라운드에서 정리하고 끝나면 알림 (누르면 세부 내역) */
+    fun summarizeToday() { startBackgroundSummary() }
 
     /** 요약이 너무 오래 걸릴 때 "중지". 지금 하던 부분이 끝나면 멈추고 그때까지 정리한 것을 보여 줌. */
     var stopping by mutableStateOf(false)
@@ -838,6 +842,7 @@ class MainActivity : ComponentActivity() {
         BriefingScheduler.scheduleAll(this)   // 강제 종료 등으로 알람이 지워졌을 때를 대비해 다시 등록
         QuietMode.tick(this)                  // 수업 중·퇴근 모드 상태 반영과 다음 경계 예약
         BackupShare.uriFrom(intent)?.let { vm.offerRestore(it) }   // 📥 받은 백업 파일로 열렸으면 불러오기 제안
+        if (savedInstanceState == null) openFromNotification(intent)   // 폴드 접기·화면 회전으로 다시 그릴 때는 또 열지 않음
         setContent {
             SsamTheme {
                 Surface(color = MaterialTheme.colorScheme.background) {
@@ -885,9 +890,16 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() { super.onResume(); vm.refresh() }
 
+    /** 🔔 정리 완료 알림을 눌러 열었으면 그 브리핑의 세부 내역 보여 주기 */
+    private fun openFromNotification(intent: Intent?) {
+        val t = intent?.getLongExtra(Notifications.EXTRA_BRIEFING, 0L) ?: 0L
+        if (t > 0) { vm.openBriefingDetail(t); intent?.removeExtra(Notifications.EXTRA_BRIEFING) }
+    }
+
     // 📥 카톡·드라이브에서 받은 백업 파일로 열렸을 때 (앱이 이미 떠 있으면 onNewIntent)
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        openFromNotification(intent)
         BackupShare.uriFrom(intent)?.let { vm.offerRestore(it) }
     }
 }

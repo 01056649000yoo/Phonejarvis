@@ -67,11 +67,11 @@ class BriefingService : Service() {
                 }
                 if (prepareSlot != null && !showWhenDone) {
                     // 미리 준비 완료: 저장해 두었다가 브리핑 시각에 알림
-                    BriefingScheduler.saveReady(this@BriefingService, prepareSlot, result.title, result.body)
+                    BriefingScheduler.saveReady(this@BriefingService, prepareSlot, result.title, result.body, result.time)
                 } else {
                     // 일반 실행이거나, 준비가 길어져 브리핑 시각이 이미 지난 경우 → 바로 알림
-                    Notifications.notify(this@BriefingService, Notifications.ID_RESULT,
-                        Notifications.result(this@BriefingService, result.title, result.body))
+                    Notifications.notify(this@BriefingService, Notifications.idFor(result.time),
+                        Notifications.result(this@BriefingService, result.title, result.body, result.time))
                 }
             } catch (s: Summarizer.StoppedException) {
                 Notifications.notify(this@BriefingService, Notifications.ID_RESULT,
@@ -114,7 +114,8 @@ class BriefingService : Service() {
 
 /** 브리핑 실행 로직 (서비스·화면 공용). */
 object Briefings {
-    data class Outcome(val title: String, val body: String)
+    /** time: 저장한 브리핑의 시각 키 (알림을 누르면 이 브리핑의 세부 내역을 엶). 0이면 저장 안 함 */
+    data class Outcome(val title: String, val body: String, val time: Long = 0)
 
 
     /**
@@ -153,7 +154,7 @@ object Briefings {
         // time = 이번 요약이 덮은 마지막 시각 (다음 요약은 이 다음부터)
         db.insertBriefing(Briefing(time = cutoff, fromTime = from, label = label, count = items.size, text = text))
         onStatus("완료 (${(now - start) / 1000}초)")
-        return Outcome("$label · 알림 ${items.size}건", text)
+        return Outcome("$label · 알림 ${items.size}건", text, cutoff)
     }
 
     /** 오늘·내일 마감인 할 일 (지난 것 포함). 없으면 빈 문자열. */
@@ -212,6 +213,8 @@ object Notifications {
     private const val CH_BRIEFING = "briefing"
     const val ID_PROGRESS = 1
     const val ID_RESULT = 2
+    /** 브리핑마다 다른 알림 번호 → 아침 브리핑을 저녁 브리핑이 덮어쓰지 않음 */
+    fun idFor(briefingTime: Long): Int = if (briefingTime > 0) 1000 + ((briefingTime / 1000) % 100_000).toInt() else ID_RESULT
     const val ID_QUIET = 3
 
     fun ensureChannels(ctx: Context) {
@@ -222,9 +225,13 @@ object Notifications {
             NotificationChannel(CH_BRIEFING, "쌤톡스 브리핑", NotificationManager.IMPORTANCE_DEFAULT))
     }
 
-    private fun openApp(ctx: Context): PendingIntent = PendingIntent.getActivity(
-        ctx, 0,
-        Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+    /** 알림을 누르면 앱을 열고, 브리핑 시각이 있으면 그 브리핑의 세부 내역을 바로 보여 줌 */
+    const val EXTRA_BRIEFING = "briefing_time"
+    private fun openApp(ctx: Context, briefingTime: Long = 0): PendingIntent = PendingIntent.getActivity(
+        ctx, if (briefingTime > 0) idFor(briefingTime) else 0,   // 브리핑마다 따로 (같은 번호면 옛 알림을 눌러도 최신 브리핑이 열림)
+        Intent(ctx, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            .apply { if (briefingTime > 0) putExtra(EXTRA_BRIEFING, briefingTime) },
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
@@ -247,14 +254,14 @@ object Notifications {
             }
             .build()
 
-    fun result(ctx: Context, title: String, body: String): Notification =
+    fun result(ctx: Context, title: String, body: String, briefingTime: Long = 0): Notification =
         NotificationCompat.Builder(ctx, CH_BRIEFING)
             .setSmallIcon(R.drawable.ic_stat_ssamtox)
             .setColor(0xFF2E4A3D.toInt())
             .setContentTitle(title)
             .setContentText(body.lineSequence().firstOrNull { it.isNotBlank() } ?: body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
-            .setContentIntent(openApp(ctx))
+            .setContentIntent(openApp(ctx, briefingTime))
             .setAutoCancel(true)
             // 🔒 잠금화면에서는 내용(학부모·학생 이름)을 숨기고 "새 브리핑"만 보여 줌
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)

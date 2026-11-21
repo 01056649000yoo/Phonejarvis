@@ -30,13 +30,13 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** 이번 버전에서 바뀐 점 한 줄 (버전 올릴 때 같이 고치기). */
-private const val WHATS_NEW = "👪 학부모 명부: 이름·번호만 등록하면 자동으로 · 30건 넘으면 백그라운드 정리"
+private const val WHATS_NEW = "👪 학부모 명부: 이름·번호만 등록하면 자동으로 · 정리는 백그라운드에서, 끝나면 알림"
 
 /** 업데이트 내역 큰 창 (버전 올릴 때 같이 고치기) */
 private val WHATS_NEW_DETAIL = listOf(
     "👪 학부모 방 고르기 대신 학부모 명부" to "우리 반 → 👪 학부모 명부에서 학생·관계(어머님/아버님)·이름이나 번호만 등록하세요. 문자·카톡·밴드·하이클래스 등 어떤 앱이든 보낸 사람·방 이름·내용에 그 이름·번호가 보이면 자동으로 \"민준 어머님\" 연락으로 모아 답장까지 추천해요.",
     "🙋 한 사람으로 모아요" to "같은 학부모가 문자와 카톡으로 따로 연락해도 오늘 탭 👪 학부모 연락에 한 사람으로 묶여요. 이름·번호·카톡 별명을 여러 개 등록해도 돼요.",
-    "🔔 30건 넘으면 백그라운드로" to "새 알림이 30건 넘을 때 지금 정리하기를 누르면 백그라운드에서 정리하고, 다 되면 알림으로 알려 드려요. 기다리지 말고 앱을 닫아도 돼요.",
+    "🔔 정리는 백그라운드에서" to "지금 정리하기를 누르면 \"완료되면 알림으로 알려드릴게요\" 안내 뒤 앱이 닫히고, 백그라운드에서 정리해요. 다 되면 알림이 오고, 누르면 📄 세부 내역(요약 전체 + 원래 알림)이 바로 열려요.",
     "🧒 명부도 자동으로" to "학부모를 등록할 때 명부에 없는 학생이면 우리 반 명부에 같이 추가돼요.",
     "📋 지난 변화 (v1.0.2)" to "정리(요약)한 알림은 카드에서 사라지고, 오늘 받은 알림 전체는 맨 아래 '🗂 오늘 받은 알림 전체'에서 봐요.",
     "🧭 지난 큰 변화 (v1.0)" to "아래 탭이 📋 오늘 · 🧒 우리 반 · ⚙️ 설정 세 개로 바뀌었고, 설정은 목록에서 세부 화면으로 들어가요.",
@@ -212,6 +212,7 @@ private fun BriefingTab(vm: JarvisViewModel) {
         confirmButton = { Button(onClick = { whatsNewOpen = false; vm.closeWhatsNew() }) { Text("확인") } },
     )
 
+    vm.briefingDetail?.let { (b, items) -> BriefingDetailDialog(vm, b, items) }
     // 최신 브리핑 카드: 접으면 "언제·몇 건"만, 숨기면 맨 위에서 빠짐 (맨 아래 📚 모음에는 남음)
     val latest = vm.briefings.firstOrNull()
     when {
@@ -227,8 +228,18 @@ private fun BriefingTab(vm: JarvisViewModel) {
     TasksCard(vm)
     ParentCard(vm)
 
+    val ctx = LocalContext.current
     Button(
-        onClick = { vm.summarizeToday() },
+        onClick = {
+            vm.summarizeToday()
+            // 🔔 안내 후 앱을 뒤로 보내기 (알림이 꺼져 있으면 결과를 못 받으니 화면에 남음)
+            if (androidx.core.app.NotificationManagerCompat.from(ctx).areNotificationsEnabled()) {
+                android.widget.Toast.makeText(ctx, "정리를 시작했어요. 완료되면 알림으로 알려드릴게요 🔔", android.widget.Toast.LENGTH_LONG).show()
+                (ctx as? android.app.Activity)?.moveTaskToBack(true)
+            } else {
+                android.widget.Toast.makeText(ctx, "알림이 꺼져 있어서 완료 알림을 못 보내요. 이 화면에서 기다려 주세요.", android.widget.Toast.LENGTH_LONG).show()
+            }
+        },
         enabled = vm.hasModel && !vm.busy && !vm.bgRunning && vm.pendingCount > 0,
         modifier = Modifier.fillMaxWidth().height(56.dp),
     ) {
@@ -238,7 +249,7 @@ private fun BriefingTab(vm: JarvisViewModel) {
             else -> "새 알림이 없어요 · 모두 정리됨"
         }, fontWeight = FontWeight.Bold)
     }
-    if (!vm.bgRunning && vm.pendingCount >= 30) Text("🔔 30건이 넘으면 백그라운드에서 정리하고, 다 되면 알림으로 알려 드려요. 앱을 닫아도 돼요.",
+    if (!vm.bgRunning && vm.pendingCount > 0) Text("🔔 누르면 백그라운드에서 정리하고 앱은 닫혀요. 다 되면 알림이 오고, 누르면 세부 내역을 볼 수 있어요.",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     if (vm.busy || vm.bgRunning) {
         LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -358,6 +369,50 @@ private fun briefingIcon(b: Briefing) = when {
     else -> "📋"
 }
 
+/** 📄 브리핑 세부 내역: 요약 전체 + 이번에 정리한 원래 알림(앱·방별). 완료 알림을 누르면 바로 열림. */
+@Composable
+private fun BriefingDetailDialog(vm: JarvisViewModel, b: Briefing, items: List<NotiItem>) {
+    val fmt = remember { SimpleDateFormat("M/d(E) HH:mm", Locale.KOREA) }
+    val timeFmt = remember { SimpleDateFormat("HH:mm", Locale.KOREA) }
+    var showRaw by rememberSaveable { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = { vm.closeBriefingDetail() },
+        title = {
+            Column {
+                Text("${briefingIcon(b)} ${b.label}", fontWeight = FontWeight.Bold)
+                Text("${fmt.format(b.fromTime)} ~ ${timeFmt.format(b.time)} · 알림 ${b.count}건",
+                    style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        text = {
+            Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(b.text, style = MaterialTheme.typography.bodyLarge)
+                HorizontalDivider()
+                TextButton(onClick = { showRaw = !showRaw }) {
+                    Text(if (showRaw) "▾ 원래 알림 접기" else "▸ 원래 알림 ${items.size}건 보기")
+                }
+                AnimatedVisibility(visible = showRaw, enter = expandVertically(Motion.size) + fadeIn(Motion.fade),
+                    exit = shrinkVertically(Motion.size) + fadeOut(Motion.fadeFast)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items.groupBy { it.app to it.roomOrTitle }.forEach { (k, list) ->
+                            Column {
+                                Text("${k.first} · ${k.second} (${list.size})", fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.labelLarge)
+                                list.sortedBy { it.time }.forEach { n ->
+                                    val who = if (n.room.isNotEmpty() && n.title != n.room) "${n.title}: " else ""
+                                    Text("${timeFmt.format(n.time)} $who${n.text}", style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                        }
+                        if (items.isEmpty()) Text("원래 알림은 7일이 지나 지워졌어요.", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+        },
+        confirmButton = { Button(onClick = { vm.closeBriefingDetail() }) { Text("닫기") } },
+    )
+}
+
 /**
  * 브리핑 카드: 제목 줄(언제·몇 건)만 보이게 접을 수 있고, 숨기면 맨 위에서 빠짐.
  * 한 번 접으면 다시 열어도 접힌 채로 (보고 나면 접어 두기).
@@ -384,6 +439,9 @@ private fun BriefingCard(vm: JarvisViewModel, b: Briefing, primary: Boolean, onH
                     Spacer(Modifier.height(8.dp))
                     Text(b.text, style = MaterialTheme.typography.bodyLarge)
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        TextButton(onClick = { vm.openBriefingDetail(b) }) {
+                            Text("📄 세부 내역", color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        }
                         TextButton(onClick = { vm.toggleBriefing(b) }) {
                             Text("다 봤어요 · 접기", color = MaterialTheme.colorScheme.onPrimaryContainer)
                         }

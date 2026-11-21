@@ -100,19 +100,22 @@ object BriefingScheduler {
 
     // ── 미리 준비한 결과 (브리핑 시각에 꺼내 보여 줌) ──
     private fun readyPrefs(ctx: Context) = ctx.getSharedPreferences("briefing_ready", Context.MODE_PRIVATE)
-    fun saveReady(ctx: Context, slot: BriefingSlot, title: String, body: String) {
+    fun saveReady(ctx: Context, slot: BriefingSlot, title: String, body: String, briefingTime: Long = 0) {
         readyPrefs(ctx).edit().putString("${slot.name}_title", title).putString("${slot.name}_body", body)
+            .putLong("${slot.name}_bt", briefingTime)
             .putLong("${slot.name}_at", System.currentTimeMillis()).apply()
     }
+    data class Ready(val title: String, val body: String, val briefingTime: Long)
     /** 최근 1시간 안에 준비해 둔 결과를 꺼내고 지움. 없으면 null */
-    fun takeReady(ctx: Context, slot: BriefingSlot): Pair<String, String>? {
+    fun takeReady(ctx: Context, slot: BriefingSlot): Ready? {
         val p = readyPrefs(ctx)
         val at = p.getLong("${slot.name}_at", 0)
         val title = p.getString("${slot.name}_title", null)
         val body = p.getString("${slot.name}_body", null)
-        p.edit().remove("${slot.name}_at").remove("${slot.name}_title").remove("${slot.name}_body").apply()
+        val bt = p.getLong("${slot.name}_bt", 0)
+        p.edit().remove("${slot.name}_at").remove("${slot.name}_title").remove("${slot.name}_body").remove("${slot.name}_bt").apply()
         if (title == null || body == null || System.currentTimeMillis() - at > 60 * 60_000L) return null
-        return title to body
+        return Ready(title, body, bt)
     }
 }
 
@@ -139,7 +142,9 @@ class BriefingReceiver : BroadcastReceiver() {
                 when {
                     ready != null -> {
                         Notifications.ensureChannels(ctx)
-                        Notifications.notify(ctx, Notifications.ID_RESULT, Notifications.result(ctx, ready.first, ready.second))
+                        // ⏰ 정한 시각에 정기 브리핑 알림 (누르면 세부 내역)
+                        Notifications.notify(ctx, Notifications.idFor(ready.briefingTime),
+                            Notifications.result(ctx, ready.title, ready.body, ready.briefingTime))
                     }
                     // 아직 준비 중이면(요약이 길어짐) 끝나는 대로 바로 알리게 표시
                     BriefingService.preparing == slot -> BriefingService.showWhenDone = true
