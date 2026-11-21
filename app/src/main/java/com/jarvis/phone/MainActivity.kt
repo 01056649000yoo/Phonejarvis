@@ -247,12 +247,16 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     /** 지난 요약 이후 새로 온(아직 요약 안 한) 오늘 알림 수 */
     var pendingCount by mutableIntStateOf(0)
         private set
+    /** 아직 요약 안 한 오늘 알림 (요약하면 사라짐) */
+    var pendingItems by mutableStateOf<List<NotiItem>>(emptyList())
+        private set
 
     // ── 탭 안의 세부 화면 (목록 → 누르면 옆에서 밀려 들어오는 화면) ──
     enum class Page(val title: String, val tab: Tab) {
         APPS("🌱 알림 앱 정리", Tab.SETTINGS), TIMES("⏰ 브리핑 시각", Tab.SETTINGS), QUIET("🏫 수업·퇴근 모드", Tab.SETTINGS),
         SYSTEM("🤖 AI 모델·권한", Tab.SETTINGS), BACKUP("💾 백업·복원", Tab.SETTINGS),
         PARENTS("👪 학부모 방·연결", Tab.CLASS), KEYWORDS("⭐ 중요 키워드", Tab.CLASS),
+        TODAY_ALL("🗂 오늘 받은 알림 전체", Tab.BRIEFING),
     }
     /** 지금 열린 세부 화면 (null이면 탭의 첫 화면) */
     var page by mutableStateOf<Page?>(if (prefs.getBoolean("apps_setup_done", false)) null else Page.APPS)
@@ -635,9 +639,10 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
             val done = ParentAdvisor.handled(ctx)
             // 아직 요약하지 않은 새 알림 수 ("지금 정리하기" 버튼)
             val from = Briefings.pendingFrom(db)
-            val pending = items.count { it.time >= from }
+            val pendingList = items.filter { it.time >= from }
+            val pending = pendingList.size
             withContext(Dispatchers.Main) {
-                parentContacts = parents; handledKeys = done; pendingCount = pending
+                parentContacts = parents; handledKeys = done; pendingCount = pending; pendingItems = pendingList
                 tasks = taskList; students = names; studentCounts = counts
             }
             val last = db.lastBriefing()

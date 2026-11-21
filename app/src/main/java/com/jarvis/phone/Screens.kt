@@ -30,7 +30,16 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** 이번 버전에서 바뀐 점 한 줄 (버전 올릴 때 같이 고치기). */
-private const val WHATS_NEW = "새 구조: 📋 오늘(결과) · 🧒 우리 반(사람) · ⚙️ 설정(목록 메뉴) — 더 간단하게"
+private const val WHATS_NEW = "정리한 알림은 사라지고, 오늘 받은 알림 전체는 맨 아래에서 · 학부모 방 바로 고르기"
+
+/** 업데이트 내역 큰 창 (버전 올릴 때 같이 고치기) */
+private val WHATS_NEW_DETAIL = listOf(
+    "📋 오늘 탭이 더 깔끔해졌어요" to "정리(요약)한 알림은 카드에서 사라지고, 아직 정리 안 한 알림만 남아요. 오늘 받은 알림 전체는 맨 아래 '🗂 오늘 받은 알림 전체'에서 볼 수 있어요.",
+    "👪 학부모 방을 바로 지정해요" to "우리 반 → 👪 학부모 방·연결에서 카카오톡·문자 등 앱별 '방 고르기'를 바로 열어 👪를 누르면 돼요.",
+    "🌱 알림 앱 목록이 항상 보여요" to "설정 → 🌱 알림 앱 정리에 들어가면 앱 목록이 펼쳐져 있어요. 앱마다 스위치로 모으기·빼기를 바꿔요.",
+    "🆕 업데이트 내역" to "업데이트 뒤 처음 한 번만 잠깐 보이고 저절로 닫혀요. 눌러서 이렇게 자세히 볼 수 있어요.",
+    "🧭 지난 큰 변화 (v1.0)" to "아래 탭이 📋 오늘 · 🧒 우리 반 · ⚙️ 설정 세 개로 바뀌었고, 설정은 목록에서 세부 화면으로 들어가요.",
+)
 
 /**
  * 메인: 아래 탭 세 개
@@ -123,7 +132,7 @@ private fun Header(vm: JarvisViewModel, tab: JarvisViewModel.Tab) {
 private fun PageHeader(vm: JarvisViewModel, page: JarvisViewModel.Page) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         TextButton(onClick = { vm.back() }, contentPadding = PaddingValues(start = 0.dp, end = 8.dp)) {
-            Text("‹ " + if (page.tab == JarvisViewModel.Tab.CLASS) "우리 반" else "설정",
+            Text("‹ " + when (page.tab) { JarvisViewModel.Tab.CLASS -> "우리 반"; JarvisViewModel.Tab.BRIEFING -> "오늘"; else -> "설정" },
                 style = MaterialTheme.typography.titleMedium)
         }
     }
@@ -142,6 +151,7 @@ private fun PageContent(vm: JarvisViewModel, page: JarvisViewModel.Page) {
         JarvisViewModel.Page.BACKUP -> BackupCard(vm)
         JarvisViewModel.Page.PARENTS -> ParentsPage(vm)
         JarvisViewModel.Page.KEYWORDS -> KeywordCard(vm)
+        JarvisViewModel.Page.TODAY_ALL -> TodayAllPage(vm)
     }
 }
 
@@ -171,12 +181,35 @@ private fun BriefingTab(vm: JarvisViewModel) {
     val timeFmt = remember { SimpleDateFormat("HH:mm", Locale.KOREA) }
     val dayTimeFmt = remember { SimpleDateFormat("M/d HH:mm", Locale.KOREA) }
 
-    if (vm.showWhatsNew) Card(Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("🆕 v${vm.appVersion} $WHATS_NEW", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-            TextButton(onClick = { vm.closeWhatsNew() }) { Text("닫기") }
+    // 🆕 업데이트 내역: 업데이트 뒤 처음 한 번만, 8초 뒤 저절로 사라짐. 누르면 큰 창으로
+    var whatsNewOpen by rememberSaveable { mutableStateOf(false) }
+    if (vm.showWhatsNew) {
+        LaunchedEffect(Unit) { kotlinx.coroutines.delay(8_000); if (!whatsNewOpen) vm.closeWhatsNew() }
+    }
+    AnimatedVisibility(visible = vm.showWhatsNew, enter = expandVertically(Motion.size) + fadeIn(Motion.fade),
+        exit = shrinkVertically(Motion.size) + fadeOut(Motion.fadeFast)) {
+        Card(Modifier.fillMaxWidth().clickable { whatsNewOpen = true }) {
+            Row(Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("🆕 v${vm.appVersion} 업데이트 · $WHATS_NEW", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, maxLines = 2)
+                Text("자세히 ›", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+            }
         }
     }
+    if (whatsNewOpen) AlertDialog(
+        onDismissRequest = { whatsNewOpen = false; vm.closeWhatsNew() },
+        title = { Text("🆕 v${vm.appVersion} 바뀐 점") },
+        text = {
+            Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                WHATS_NEW_DETAIL.forEach { (title, body) ->
+                    Column {
+                        Text(title, fontWeight = FontWeight.Bold)
+                        Text(body, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+        },
+        confirmButton = { Button(onClick = { whatsNewOpen = false; vm.closeWhatsNew() }) { Text("확인") } },
+    )
 
     // 최신 브리핑 카드: 접으면 "언제·몇 건"만, 숨기면 맨 위에서 빠짐 (맨 아래 📚 모음에는 남음)
     val latest = vm.briefings.firstOrNull()
@@ -211,15 +244,15 @@ private fun BriefingTab(vm: JarvisViewModel) {
     if (!vm.hasModel) Text("AI 모델이 없어요. 설정 탭에서 받아 주세요.",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
 
-    // 원본은 접어 둠
-    if (vm.todayItems.isNotEmpty()) {
+    // 아직 정리(요약) 안 한 알림만: 지금 정리하기를 하면 사라짐. 오늘 전체는 맨 아래 메뉴에서
+    if (vm.pendingItems.isNotEmpty()) {
         var expanded by rememberSaveable { mutableStateOf(false) }
-        val apps = vm.todayItems.map { it.app }.distinct()
+        val apps = vm.pendingItems.map { it.app }.distinct()
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("오늘 모은 알림 ${vm.todayItems.size}건", fontWeight = FontWeight.Bold)
+                        Text("아직 정리 안 한 알림 ${vm.pendingItems.size}건", fontWeight = FontWeight.Bold)
                         Text(apps.take(3).joinToString(", ") + if (apps.size > 3) " 외 ${apps.size - 3}개 앱" else "",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
@@ -229,7 +262,7 @@ private fun BriefingTab(vm: JarvisViewModel) {
                 AnimatedVisibility(visible = expanded, enter = expandVertically(Motion.size) + fadeIn(Motion.fade),
                     exit = shrinkVertically(Motion.size) + fadeOut(Motion.fadeFast)) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        vm.todayItems.takeLast(30).reversed().forEach {
+                        vm.pendingItems.takeLast(30).reversed().forEach {
                             Text("${timeFmt.format(it.time)} [${it.app}] ${it.title}: ${it.text}",
                                 style = MaterialTheme.typography.bodySmall, maxLines = 2)
                         }
@@ -270,6 +303,47 @@ private fun BriefingTab(vm: JarvisViewModel) {
             }
         }
     }
+
+    // 🗂 맨 아래: 오늘 받은 알림 전체 (정리한 것까지 모두)
+    MenuGroup(listOf(
+        Triple("🗂 오늘 받은 알림 전체", "${vm.todayItems.size}건") { vm.open(JarvisViewModel.Page.TODAY_ALL) },
+    ))
+}
+
+/** 🗂 오늘 받은 알림 전체: 앱·방별로 묶어 최근 것부터 (정리한 알림 포함) */
+@Composable
+private fun TodayAllPage(vm: JarvisViewModel) {
+    val timeFmt = remember { SimpleDateFormat("HH:mm", Locale.KOREA) }
+    if (vm.todayItems.isEmpty()) {
+        Text("오늘 모은 알림이 아직 없어요.", style = MaterialTheme.typography.bodyMedium)
+        return
+    }
+    Text("오늘 ${vm.todayItems.size}건 · 정리 안 한 알림 ${vm.pendingItems.size}건", style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant)
+    vm.todayItems.groupBy { it.app to it.roomOrTitle }.entries
+        .sortedByDescending { e -> e.value.maxOf { it.time } }
+        .forEach { (key, list) ->
+            var open by rememberSaveable(key.first + key.second) { mutableStateOf(false) }
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.animateContentSize(Motion.size).clickable { open = !open }.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(key.second, fontWeight = FontWeight.Bold, maxLines = 1)
+                            Text("${key.first} · ${list.size}건 · 마지막 ${timeFmt.format(list.maxOf { it.time })}",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Text(if (open) "▾" else "▸")
+                    }
+                    val shown = if (open) list.takeLast(50).reversed() else list.takeLast(1)
+                    shown.forEach {
+                        val who = if (it.room.isNotEmpty() && it.title != it.room) "${it.title}: " else ""
+                        Text("${timeFmt.format(it.time)}  $who${it.text}", style = MaterialTheme.typography.bodyMedium,
+                            maxLines = if (open) 6 else 1)
+                    }
+                }
+            }
+        }
 }
 
 private fun briefingIcon(b: Briefing) = when {
@@ -380,7 +454,17 @@ private fun ParentsPage(vm: JarvisViewModel) {
                     TextButton(onClick = { vm.setParentRoom(pkg, room, false) }) { Text("빼기") }
                 }
             }
-            OutlinedButton(onClick = { vm.open(JarvisViewModel.Page.APPS) }) { Text("＋ 방 고르기에서 👪 지정하기") }
+            // ＋ 지정하기: 메시지 앱을 고르면 방 목록이 바로 열림 → 👪 누르기
+            val msgApps = vm.appRecs.map { it.stat }.filter { AppAdvisor.isMessaging(it) && it.pkg !in vm.excludedApps }
+            Text("＋ 방 고르기 (앱을 누르고 학부모 방에 👪를 눌러요)", style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
+            if (msgApps.isEmpty()) Text("아직 알림이 온 메시지 앱이 없어요. 카톡·문자 알림이 모이면 여기에 떠요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                msgApps.forEach { a ->
+                    OutlinedButton(onClick = { vm.openRooms(a.pkg, a.app) }) { Text("💬 ${a.app}") }
+                }
+            }
         }
     }
     Card(Modifier.fillMaxWidth()) {
@@ -561,7 +645,6 @@ private fun AppCleanupCard(vm: JarvisViewModel) {
             }
 
             // 한 번 적용한 뒤에는 새로 알림을 보낸 앱이 생길 때만 다시 물어봄
-            var showList by rememberSaveable { mutableStateOf(false) }
             val pending = if (vm.appsApplied) vm.newAppRecs else recs
             if (recs.isNotEmpty() && pending.isNotEmpty()) {
                 val drop = pending.count { !it.keep }
@@ -575,16 +658,11 @@ private fun AppCleanupCard(vm: JarvisViewModel) {
                 Text("또는 아래에서 앱마다 켜고 끄세요. 끈 앱은 모으지도, 요약하지도 않아요.",
                     style = MaterialTheme.typography.bodySmall)
             } else if (recs.isNotEmpty()) {
-                // ✅ 이미 정리 완료: 한 줄 요약만, 목록은 필요할 때 펼침
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("✅ 정리 완료 · 뺀 앱 ${vm.excludedApps.size}개 · 새 앱이 생기면 다시 알려 드려요",
-                        Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                    TextButton(onClick = { showList = !showList }) {
-                        Text(if (showList) "접기" else "앱 목록", color = Ssam.Chalk)
-                    }
-                }
+                // ✅ 이미 정리 완료: 추천 버튼 대신 한 줄. 앱 목록은 아래에 항상 보임 (여기가 알림 앱을 고르는 곳)
+                Text("✅ 정리 완료 · 뺀 앱 ${vm.excludedApps.size}개 · 아래에서 앱마다 켜고 끄세요",
+                    style = MaterialTheme.typography.bodyMedium)
             }
-            if (recs.isNotEmpty() && (pending.isNotEmpty() || showList)) {
+            if (recs.isNotEmpty()) {
 
                 // 그 밖의 앱은 접어 둠 (목록이 길어지지 않게). 눌러서 펼치기
                 var showOthers by rememberSaveable { mutableStateOf(false) }
