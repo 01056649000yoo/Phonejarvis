@@ -146,16 +146,40 @@ object Briefings {
         // ⭐ 키워드 알림: AI 없이 규칙으로 찾아 맨 위에 (놓치지 않게)
         val keywordPart = keywordSection(items, rules.keywords)
         // 👪 학부모 연락: 지정한 학부모 방의 연락을 분류해 맨 위에 (규칙, 즉시)
-        val parentPart = parentSection(ParentAdvisor.contacts(ctx, items))
+        val parentPart = if (People.isVisible(ctx, "parents")) parentSection(ParentAdvisor.contacts(ctx, items)) else ""
         // 📌 오늘·내일 마감 (할 일 목록에서, 끝내지 않은 것)
         items.forEach { runCatching { TaskExtractor.save(ctx, it) } }
         val taskPart = taskSection(db.tasks())
-        val text = taskPart + parentPart + keywordPart + summarizer.summarize(items, onStatus)
+        // 💼 캘린더·할 일·메일 같은 업무·일정 앱 알림: AI 요약에 섞지 않고 시간순으로 바로
+        val important = AppFilter.importantApps(ctx)
+        val workItems = items.filter { AppAdvisor.isWork(it.app, it.pkg) || it.pkg in important }
+        val workPart = workSection(workItems)
+        // 👥 직접 만든 묶음(교직원·가족 등)의 사람 연락: 묶음별로 바로
+        val (peoplePart, peopleItems) = People.section(People.customBook(ctx), items - workItems.toSet())
+        val rest = items - workItems.toSet() - peopleItems
+        val aiPart = if (rest.isEmpty()) "" else summarizer.summarize(rest, onStatus)
+        val text = taskPart + workPart + peoplePart + parentPart + keywordPart + aiPart
         val now = System.currentTimeMillis()
         // time = 이번 요약이 덮은 마지막 시각 (다음 요약은 이 다음부터)
         db.insertBriefing(Briefing(time = cutoff, fromTime = from, label = label, count = items.size, text = text))
         onStatus("완료 (${(now - start) / 1000}초)")
         return Outcome("$label · 알림 ${items.size}건", text, cutoff)
+    }
+
+    /** 💼 업무·일정 앱(캘린더·할 일·메일 등) 알림을 시간순으로. 없으면 빈 문자열. */
+    fun workSection(items: List<NotiItem>): String {
+        if (items.isEmpty()) return ""
+        val fmt = java.text.SimpleDateFormat("HH:mm", java.util.Locale.KOREA)
+        val list = items.distinctBy { it.app to (it.title + it.text) }.sortedBy { it.time }
+        return buildString {
+            append("💼 업무·일정 알림 (${list.size}건)\n")
+            list.takeLast(12).forEach { n ->
+                val body = n.text.replace('\n', ' ').take(60)
+                append("- ${fmt.format(n.time)} [${n.app}] ${n.title}" + (if (body.isNotBlank() && body != n.title) ": $body" else "") + "\n")
+            }
+            if (list.size > 12) append("  … 외 ${list.size - 12}건은 📄 세부 내역에서\n")
+            append("\n")
+        }
     }
 
     /** 오늘·내일 마감인 할 일 (지난 것 포함). 없으면 빈 문자열. */

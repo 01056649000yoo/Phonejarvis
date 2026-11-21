@@ -5,7 +5,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.material3.Typography
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 
 /** 쌤톡스 브랜드 색 (로고 디자인과 같음, res/values/colors.xml 과도 맞춤) */
 object Ssam {
@@ -41,8 +45,33 @@ private val Dark = darkColorScheme(
     outline = Color(0xFF7D8A83),
 )
 
+/**
+ * 🔤 쌤톡스 글자 단계 (앱 전체가 이것만 씀). 기본 Material보다 한 단계씩 크게, 한글이 답답하지 않게 줄 간격 넉넉히.
+ *   화면 큰 제목 headlineMedium 28 · 세부 화면 제목 headlineSmall 24 · 카드 제목 titleMedium 19 굵게
+ *   본문 bodyLarge 18 · 보통 bodyMedium 16 · 설명 bodySmall 14 · 버튼·칩 labelLarge 16
+ * 폰 설정의 글자 크기를 키우면 그만큼 같이 커짐.
+ */
+private val SsamType = Typography().run {
+    fun TextStyle.k(size: Int, line: Int, weight: FontWeight? = null) =
+        copy(fontSize = size.sp, lineHeight = line.sp, fontWeight = weight ?: fontWeight, letterSpacing = 0.sp)
+    Typography(
+        displayMedium = displayMedium.k(40, 48, FontWeight.Bold),
+        headlineMedium = headlineMedium.k(28, 36, FontWeight.Bold),
+        headlineSmall = headlineSmall.k(24, 32, FontWeight.Bold),
+        titleLarge = titleLarge.k(22, 30, FontWeight.Bold),
+        titleMedium = titleMedium.k(19, 27, FontWeight.Bold),
+        titleSmall = titleSmall.k(17, 24, FontWeight.SemiBold),
+        bodyLarge = bodyLarge.k(18, 27),
+        bodyMedium = bodyMedium.k(16, 24),
+        bodySmall = bodySmall.k(14, 21),
+        labelLarge = labelLarge.k(16, 22, FontWeight.SemiBold),
+        labelMedium = labelMedium.k(14, 20, FontWeight.Medium),
+        labelSmall = labelSmall.k(13, 18, FontWeight.Medium),
+    )
+}
+
 /** 폰 설정의 다크 모드를 따라 밝은(분필 크림)/어두운(밤 칠판) 테마. */
 @Composable
 fun SsamTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = if (isSystemInDarkTheme()) Dark else Light, content = content)
+    MaterialTheme(colorScheme = if (isSystemInDarkTheme()) Dark else Light, typography = SsamType, content = content)
 }

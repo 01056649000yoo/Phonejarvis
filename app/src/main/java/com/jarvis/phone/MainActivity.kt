@@ -162,7 +162,8 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
             val pkgs = stats.map { it.pkg }.toSet()
             if (pkgs == aiDoneFor && appRecs.isNotEmpty()) return@launch
             silentApps = withContext(Dispatchers.IO) { AppAdvisor.silentMessagingApps(ctx, stats) }
-            val rules = AppAdvisor.sortForDisplay(AppAdvisor.byRules(stats))
+            importantApps = AppFilter.importantApps(ctx)
+            val rules = AppAdvisor.sortForDisplay(AppAdvisor.byRules(stats), importantApps)
             appRecs = rules
             excludedApps = AppFilter.excluded(ctx)
             // 키워드 추천: 최근 7일 모은 알림(뺀 앱·방 제외)에서 규칙으로 바로
@@ -174,7 +175,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
             if (!summarizer.hasModel() || stats.isEmpty() || aiBusy) return@launch
             aiBusy = true
             try {
-                appRecs = AppAdvisor.sortForDisplay(AppAdvisor.byAi(ctx, rules))
+                appRecs = AppAdvisor.sortForDisplay(AppAdvisor.byAi(ctx, rules), importantApps)
                 keywordRecs = KeywordAdvisor.byAi(ctx, recent, keywordRecs)   // AI가 더 골라 줌
                 aiDoneFor = pkgs
             } finally { aiBusy = false }
@@ -187,7 +188,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     }.getOrDefault(pkg)
 
     // ── ＋ 앱 추가: 폰에 설치된 앱 중 목록에 없는 앱 ──
-    /** 앱 추가 창의 앱 하나. group: 0 메시지·SNS(추천) · 1 알림을 보내는 앱 · 2 그 밖의 앱 */
+    /** 앱 추가 창의 앱 하나. group: 0 메시지·SNS · 1 업무·일정 (둘 다 추천) · 2 알림을 보내는 앱 · 3 그 밖의 앱 */
     data class AddableApp(val pkg: String, val name: String, val group: Int)
     /** 앱 추가 창. null이면 닫힘 */
     var addableApps by mutableStateOf<List<AddableApp>?>(null)
@@ -209,13 +210,13 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
                         // 폰 기본 시스템 항목(내 파일·보안 폴더·설정 등)은 빼고 설치한 앱만. 단, 기본 문자 같은 메시지 앱은 남김
                         val system = info.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM != 0 &&
                             info.flags and android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP == 0
-                        if (system && !msg) return@mapNotNull null
+                        if (system && !msg && !AppAdvisor.isWork(name, pkg)) return@mapNotNull null
                         // 알림을 보내는 앱인지 (알림 권한을 요청하는 앱)
                         val notifies = runCatching {
                             pm.getPackageInfo(pkg, android.content.pm.PackageManager.GET_PERMISSIONS)
                                 .requestedPermissions?.contains("android.permission.POST_NOTIFICATIONS") == true
                         }.getOrDefault(false)
-                        AddableApp(pkg, name, if (msg) 0 else if (notifies) 1 else 2)
+                        AddableApp(pkg, name, when { msg -> 0; AppAdvisor.isWork(name, pkg) -> 1; notifies -> 2; else -> 3 })
                     }
                     .sortedWith(compareBy<AddableApp> { it.group }.thenBy { it.name })
             }
@@ -237,6 +238,17 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     fun dismissSilent(pkg: String) {
         AppFilter.dismissSilent(getApplication<Application>(), pkg)
         silentApps = silentApps.filterNot { it.first == pkg }
+    }
+
+    /** ⭐ 직접 고른 중요 앱 (업무·일정 묶음에 함께) */
+    var importantApps by mutableStateOf<Set<String>>(emptySet())
+        private set
+    fun setImportant(pkg: String, on: Boolean) {
+        val ctx = getApplication<Application>()
+        AppFilter.setImportant(ctx, pkg, on)
+        importantApps = AppFilter.importantApps(ctx)
+        excludedApps = AppFilter.excluded(ctx)
+        appRecs = AppAdvisor.sortForDisplay(appRecs, importantApps)
     }
 
     fun setAppKeep(pkg: String, keep: Boolean) {
@@ -337,12 +349,50 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     enum class Page(val title: String, val tab: Tab) {
         APPS("🌱 알림 앱 정리", Tab.SETTINGS), TIMES("⏰ 브리핑 시각", Tab.SETTINGS), QUIET("🏫 수업·퇴근 모드", Tab.SETTINGS),
         SYSTEM("🤖 AI 모델·권한", Tab.SETTINGS), BACKUP("💾 백업·복원", Tab.SETTINGS), STORAGE("🧹 저장 공간", Tab.SETTINGS),
-        PARENTS("👪 학부모 명부", Tab.CLASS), KEYWORDS("⭐ 중요 키워드", Tab.CLASS),
+        GROUP("👥 묶음", Tab.CLASS), KEYWORDS("⭐ 중요 키워드", Tab.CLASS),
         TODAY_ALL("🗂 오늘 받은 알림 전체", Tab.BRIEFING),
     }
     /** 지금 열린 세부 화면 (null이면 탭의 첫 화면) */
     var page by mutableStateOf<Page?>(if (prefs.getBoolean("apps_setup_done", false)) null else Page.APPS)
     fun open(p: Page) { tab = p.tab; page = p }
+
+    // ── 👥 사람들: 쓰는 사람이 만드는 묶음 ──
+    var groups by mutableStateOf(People.groups(app))
+        private set
+    /** 지금 열어 본 묶음 (Page.GROUP) */
+    var groupId by mutableStateOf("")
+        private set
+    val currentGroup: PeopleGroup? get() = groups.firstOrNull { it.id == groupId }
+    var groupMembers by mutableStateOf<Map<String, List<String>>>(emptyMap())
+        private set
+    private fun reloadGroups() {
+        val ctx = getApplication<Application>()
+        groups = People.groups(ctx)
+        groupMembers = groups.associate { it.id to People.members(ctx, it.id) }
+    }
+    fun openGroup(id: String) { reloadGroups(); groupId = id; open(Page.GROUP) }
+    fun addGroup(emoji: String, name: String) {
+        val g = People.addGroup(getApplication<Application>(), emoji, name) ?: return
+        reloadGroups(); status = "${g.title} 묶음을 만들었어요. 이름을 쭉 넣어 주세요."
+        openGroup(g.id)
+    }
+    fun renameGroup(id: String, emoji: String, name: String) { People.rename(getApplication<Application>(), id, emoji, name); reloadGroups() }
+    fun removeGroup(id: String) {
+        People.remove(getApplication<Application>(), id); reloadGroups()
+        if (groupId == id) page = null
+        refresh()
+    }
+    fun unhideGroup(id: String) { People.unhide(getApplication<Application>(), id); reloadGroups(); refresh() }
+    fun addMembers(id: String, raw: String): Int {
+        val added = People.addMembers(getApplication<Application>(), id, raw)
+        reloadGroups()
+        if (added.isNotEmpty()) { status = "👥 ${added.size}명 넣었어요. 이 이름이 보이는 알림을 이 묶음으로 모아요."; refresh() }
+        return added.size
+    }
+    fun removeMember(id: String, name: String) { People.removeMember(getApplication<Application>(), id, name); reloadGroups(); refresh() }
+    /** 오늘 탭: 묶음별 오늘 연락 (묶음, [(이름, 알림)]) */
+    var peopleToday by mutableStateOf<List<Pair<PeopleGroup, List<Pair<String, NotiItem>>>>>(emptyList())
+        private set
     fun selectTab(t: Tab) { tab = t; page = null }
     /** 뒤로: 세부 화면 → 탭 첫 화면 → 오늘 탭. 더 갈 곳이 없으면 false */
     fun back(): Boolean = when {
@@ -598,6 +648,33 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
             parentLinks = ParentBook.links(ctx)
         }
     }
+    /** 👪 이름 쭉 넣기: 아무 형식(쉼표·줄바꿈·띄어쓰기)이든 알아서 나눠 명부에 넣음. 넣은 사람 수를 돌려줌 */
+    fun addParentsRaw(raw: String): Int {
+        val ctx = getApplication<Application>()
+        val links = ParentBook.parse(raw, Students.names(ctx))
+        if (links.isEmpty()) return 0
+        // "이서윤 아버님"처럼 관계를 같이 쓴 학생은 우리 반 명부에도 추가
+        val newStudents = links.filter { it.relation.isNotBlank() && it.student !in Students.names(ctx) &&
+            it.student.length in 2..4 && it.student.all { c -> c in '가'..'힣' } }.map { it.student }.distinct()
+        if (newStudents.isNotEmpty()) { Students.add(ctx, newStudents.joinToString(",")); students = Students.names(ctx) }
+        links.forEach { ParentBook.add(ctx, it) }
+        parentLinks = ParentBook.links(ctx)
+        val people = links.map { it.student to it.relation }.distinct().size
+        recentSenders = recentSenders.filter { s -> links.none { it.match == s } }
+        status = "👪 ${people}명 넣었어요. 이제 어떤 앱이든 이 이름·번호가 보이면 자동으로 모아요."
+        backfillParents()
+        return people
+    }
+    private fun backfillParents() {
+        val ctx = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.IO) {
+            val names = Students.names(ctx)
+            db.since(System.currentTimeMillis() - 7 * 24L * 3600 * 1000).forEach { Students.log(ctx, names, it) }
+            val counts = db.studentCounts()
+            withContext(Dispatchers.Main) { studentCounts = counts; refresh() }
+        }
+    }
+
     fun addParentLink(student: String, relation: String, match: String) {
         val ctx = getApplication<Application>()
         val s = student.trim(); val mm = match.trim()
@@ -792,7 +869,10 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
             val rules = AppFilter.rules(ctx)
             val items = db.today().filter { rules.allows(it) }
             val names = Students.names(ctx)
-            val parents = ParentAdvisor.contacts(ctx, items)
+            val parents = if (People.isVisible(ctx, "parents")) ParentAdvisor.contacts(ctx, items) else emptyList()
+            val book = People.customBook(ctx)
+            val people = items.mapNotNull { n -> People.find(book, n)?.let { (g, name) -> Triple(g, name, n) } }
+                .groupBy { it.first.id }.map { (_, l) -> l.first().first to l.map { it.second to it.third } }
             // 오늘 알림에서 할 일 뽑기 (이미 있는 건 건너뜀) + 학생별 기록 채우기
             items.forEach { runCatching { TaskExtractor.save(ctx, it); Students.log(ctx, names, it) } }
             val taskList = db.tasks()
@@ -804,6 +884,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
             val pending = pendingList.size
             withContext(Dispatchers.Main) {
                 parentContacts = parents; handledKeys = done; pendingCount = pending; pendingItems = pendingList
+                peopleToday = people; reloadGroups()
                 tasks = taskList; students = names; studentCounts = counts
             }
             val last = db.lastBriefing()

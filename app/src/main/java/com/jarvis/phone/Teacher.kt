@@ -362,10 +362,14 @@ object AdFilter {
 
 // ───────────────────────── 👪 학부모 명부 (학생 ↔ 학부모 이름·번호) ─────────────────────────
 
-/** 학생 한 명의 학부모 연결: 관계(어머님/아버님/보호자)와 알아볼 이름·번호 */
+/**
+ * 학부모 한 명: student(학생 이름, 학생을 모르면 학부모 이름), relation(어머님/아버님/보호자, 모르면 ""),
+ * match(알림에서 알아볼 이름·번호).
+ */
 data class ParentLink(val student: String, val relation: String, val match: String) {
-    /** 화면·브리핑에 보일 이름. 세 글자 학생은 성 빼고 "민준 어머님" */
-    val label: String get() = (if (student.length == 3) student.substring(1) else student) + " " + relation
+    /** 화면·브리핑에 보일 이름. 세 글자 학생은 성 빼고 "민준 어머님", 관계를 모르면 이름만 */
+    val label: String get() = if (relation.isBlank()) student
+        else (if (student.length == 3) student.substring(1) else student) + " " + relation
 }
 
 /**
@@ -394,11 +398,73 @@ object ParentBook {
         prefs(ctx).edit().putStringSet("parent_links", s).apply()
     }
 
+    // ── 이름 쭉 넣기: 쉼표·줄바꿈·띄어쓰기 상관없이 알아서 나눔 ──
+    private val REL_WORDS = listOf(
+        "어머님" to "어머님", "어머니" to "어머님", "엄마" to "어머님", "맘" to "어머님",
+        "아버님" to "아버님", "아버지" to "아버님", "아빠" to "아버님",
+        "보호자" to "보호자", "할머니" to "보호자", "할아버지" to "보호자", "학부모님" to "", "학부모" to "",
+    )
+    private fun isPhone(w: String) = w.count { it.isDigit() } >= 8
+
+    /** "민준맘" → ("민준", "어머님"), "이서윤" → ("이서윤", null) */
+    private fun splitRelation(w: String): Pair<String, String?> {
+        REL_WORDS.forEach { (k, r) -> if (w.endsWith(k) && w.length > k.length) return w.removeSuffix(k) to r }
+        return w to null
+    }
+
+    /**
+     * 아무렇게나 넣은 이름 목록을 학부모 연결로 바꿈.
+     * 예) "민준맘, 이서윤 아버님 010-1234-5678
+박지호 김영희" →
+     *   민준(명부의 김민준) 어머님 [민준맘] · 이서윤 아버님 [이서윤 아버님, 010-1234-5678] · 박지호 [박지호] · 김영희 [김영희]
+     * 명부에 있는 학생 이름(성 빼고도)과 맞으면 그 학생의 학부모로, 아니면 넣은 이름 그대로 한 사람으로.
+     */
+    fun parse(raw: String, students: List<String>): List<ParentLink> {
+        class Entry(val words: MutableList<String>, var rel: String?, val phones: MutableList<String>)
+        val out = mutableListOf<ParentLink>()
+        raw.split(Regex("""[,
+;/·、，]+""")).forEach { piece ->
+            val entries = mutableListOf<Entry>()
+            piece.trim().split(Regex("""s+""")).filter { it.isNotBlank() }.forEach { w0 ->
+                val w = w0.trim('(', ')', '[', ']', '"', ''', '.', ':')
+                if (w.isEmpty()) return@forEach
+                val exactRel = REL_WORDS.firstOrNull { it.first == w }?.second
+                when {
+                    isPhone(w) -> {}   // 이름만 받음 (번호는 넣지 않음)
+                    exactRel != null && entries.isNotEmpty() -> entries.last().let { it.rel = exactRel; it.words.add(w) }
+                    exactRel != null -> {}   // 맨 앞의 "학부모" 같은 말은 건너뜀
+                    else -> { val (_, r) = splitRelation(w); entries.add(Entry(mutableListOf(w), r, mutableListOf())) }
+                }
+            }
+            entries.forEach { e ->
+                val text = e.words.joinToString(" ")
+                if (text.isEmpty() && e.phones.isEmpty()) return@forEach
+                val base = e.words.firstOrNull()?.let { splitRelation(it).first } ?: ""
+                // 명부의 학생과 맞추기: 성까지 같거나, 성 뺀 이름이 같으면
+                val student = students.firstOrNull { it == base || (it.length == 3 && it.substring(1) == base) }
+                val who = student ?: base.ifEmpty { e.phones.first() }
+                val rel = e.rel ?: ""
+                val matches = listOfNotNull(text.ifEmpty { null }) + e.phones
+                matches.forEach { out.add(ParentLink(who, rel, it)) }
+            }
+        }
+        return out.distinct()
+    }
+
     /** 비교용: 번호면 숫자 뒤 8자리, 이름이면 띄어쓰기·괄호 뺀 글자 */
     fun norm(s: String): String {
         val digits = s.filter { it.isDigit() }
         return if (digits.length >= 8 && digits.length * 2 >= s.count { !it.isWhitespace() }) digits.takeLast(8)
-        else s.filterNot { it.isWhitespace() || it in "()[]<>-" }
+        else canon(s.filterNot { it.isWhitespace() || it in "()[]<>-" })
+    }
+    /** "엄마·어머니·맘" → 어머님, "아빠·아버지" → 아버님 으로 통일 ("민준맘" = "민준 어머님") */
+    private fun canon(s: String): String = s
+        .replace("어머니", "어머님").replace("엄마", "어머님").replace("맘", "어머님")
+        .replace("아버지", "아버님").replace("아빠", "아버님")
+    /** 이 연결로 알아볼 글자들: 그대로, 그리고 "이서윤아버님"이면 성 뺀 "서윤아버님"도 */
+    private fun forms(l: ParentLink): List<String> {
+        val m = norm(l.match)
+        return if (l.student.length == 3 && m.startsWith(l.student) && m.length > 3) listOf(m, m.substring(1)) else listOf(m)
     }
 
     /** 이 알림을 보낸 사람(제목)·방이 연결된 학부모인지 */
@@ -409,11 +475,11 @@ object ParentBook {
     fun find(links: List<ParentLink>, n: NotiItem): ParentLink? {
         if (links.isEmpty()) return null
         val who = listOf(n.title, n.room).filter { it.isNotBlank() }.map(::norm)
-        links.firstOrNull { l -> val m = norm(l.match); m.length >= 2 && who.any { it == m || (m.length >= 3 && m in it) } }
+        links.firstOrNull { l -> forms(l).any { m -> m.length >= 2 && who.any { it == m || (m.length >= 3 && m in it) } } }
             ?.let { return it }
         if (n.text.isBlank()) return null
-        val body = n.text.filterNot { it.isWhitespace() || it in "()[]<>-" }
-        return links.firstOrNull { l -> val m = norm(l.match); m.length >= 3 && m in body }
+        val body = canon(n.text.filterNot { it.isWhitespace() || it in "()[]<>-" })
+        return links.firstOrNull { l -> forms(l).any { m -> m.length >= 3 && m in body } }
     }
 
     // 학급 소통 앱: 여기서 온 연락에 학부모 호칭이나 우리 반 학생 이름이 있으면 학부모 연락으로 봄
@@ -430,7 +496,7 @@ object ParentBook {
             .filter { it.room.isEmpty() && it.title.isNotBlank() && AppAdvisor.isMessaging(AppStat(it.pkg, it.app, 0, emptyList())) }
             .map { it.title }
             .distinct()
-            .filter { norm(it) !in linked }
+            .filter { norm(it) !in linked && it.count { c -> c.isDigit() } < 4 }   // 이름만 (번호로 뜨는 건 빼기)
             .take(12)
     }
 }

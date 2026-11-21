@@ -34,6 +34,14 @@ object AppFilter {
         prefs(ctx).edit().putStringSet("reviewed", reviewed(ctx) + pkgs).apply()
     }
 
+    // ── ⭐ 직접 고른 중요 앱 (업무·일정 묶음에 같이 보임) ──
+    fun importantApps(ctx: Context): Set<String> = prefs(ctx).getStringSet("important_apps", emptySet())!!.toSet()
+    fun setImportant(ctx: Context, pkg: String, on: Boolean) {
+        val s = importantApps(ctx)
+        prefs(ctx).edit().putStringSet("important_apps", if (on) s + pkg else s - pkg).apply()
+        if (on) setKeep(ctx, pkg, true)   // 중요 앱은 모으기로
+    }
+
     // ── "알림이 안 들어와요" 경고를 숨긴 앱 (안 쓰는 앱) ──
     fun silentDismissed(ctx: Context): Set<String> = prefs(ctx).getStringSet("silent_dismissed", emptySet())!!.toSet()
     fun dismissSilent(ctx: Context, pkg: String) {
@@ -89,19 +97,22 @@ object AppFilter {
         val apps: Set<String>, val rooms: Set<String>, val keywords: List<String>,
         val adFilter: Boolean = false, val parentRooms: Set<String> = emptySet(),
         val parentLinks: List<ParentLink> = emptyList(),
+        /** 👥 직접 만든 묶음의 이름들: 끈 방·광고처럼 보여도 놓치지 않음 */
+        val people: List<String> = emptyList(),
     ) {
         /** 광고로 걸러야 하는지: 학부모 방·키워드·학생 이름이 있으면 광고처럼 보여도 거르지 않음 */
         fun isBlockedAd(pkg: String, room: String, title: String, text: String): Boolean =
             adFilter && AdFilter.isAd(title, text) &&
                 !isLinkedParent(pkg, room, title, text) &&
                 !ParentAdvisor.isParent(parentRooms, pkg, room.ifEmpty { title }) &&
-                !hasKeyword(keywords, title, text, room)
+                !hasKeyword(keywords, title, text, room) && !hasKeyword(people, title, room)
 
         fun allows(pkg: String, room: String, title: String, text: String): Boolean {
             if (pkg in apps) return false
             if (isBlockedAd(pkg, room, title, text)) return false             // 🚫 광고
             if (isRoomExcluded(rooms, pkg, room.ifEmpty { title }))
-                return hasKeyword(keywords, title, text, room) || isLinkedParent(pkg, room, title, text)   // 명부의 학부모는 끈 방이라도 모음
+                return hasKeyword(keywords, title, text, room) || isLinkedParent(pkg, room, title, text) ||   // 명부의 학부모는 끈 방이라도 모음
+                    hasKeyword(people, title, room)                                                           // 👥 묶음의 사람이 보낸 것도
             return true
         }
         fun allows(n: NotiItem) = allows(n.pkg, n.room, n.title, n.text)
@@ -112,7 +123,7 @@ object AppFilter {
     // 학생 이름(성 뺀 이름 포함)도 중요 키워드처럼: 끈 방에서 와도 모으고 ⭐에 모임
     fun rules(ctx: Context) = Rules(
         excluded(ctx), excludedRooms(ctx), keywords(ctx) + Students.allTerms(Students.names(ctx)),
-        AdFilter.enabled(ctx), ParentAdvisor.parentRooms(ctx), ParentBook.links(ctx),
+        AdFilter.enabled(ctx), ParentAdvisor.parentRooms(ctx), ParentBook.links(ctx), People.allNames(ctx),
     )
 }
 
@@ -142,6 +153,14 @@ object AppAdvisor {
         "밴드", "band", "라인", "jp.naver.line", "텔레그램", "telegram", "whatsapp", "왓츠앱", "디스코드", "discord",
         "slack", "슬랙", "teams", "팀즈", "인스타", "instagram", "페이스북", "facebook", "스레드", "threads",
         "트위터", "twitter", "com.twitter", "하이클래스", "hiclass", "클래스팅", "classting", "알리미", "학교종이",
+    )
+
+    /** 업무·일정 앱 (메일, 할 일, 캘린더, 메모, 문서, 학교 업무). 메시지 앱 다음으로 위에 모아 보여 줌. */
+    private val WORK = listOf(
+        "gmail", "메일", "mail", "outlook", "아웃룩", "tasks", "할 일", "todo", "to do", "투두", "리마인더", "reminder",
+        "캘린더", "calendar", "일정", "keep", "킵", "메모", "notion", "노션", "drive", "드라이브", "docs", "문서",
+        "sheets", "시트", "classroom", "클래스룸", "zoom", "줌", "meet", "업무", "나이스", "neis", "쿨메신저",
+        "coolmessenger", "에듀파인", "edufine", "교육청", "학교", "school", "works", "웍스", "dooray", "두레이", "잔디", "jandi",
     )
 
     /** 교사들이 많이 쓰는 메시지 앱. 설치돼 있는데 알림이 0건이면 "알림이 안 들어와요"로 알려 줌. */
@@ -179,16 +198,25 @@ object AppAdvisor {
         }
     }
 
+    fun isWork(app: String, pkg: String): Boolean = (app + " " + pkg).lowercase().let { k -> WORK.any { it in k } }
+    /** 목록 묶음: 0 💬 메시지·SNS · 1 💼 업무·일정(+ ⭐ 직접 고른 중요 앱) · 2 📱 그 밖의 앱 */
+    fun group(s: AppStat, important: Set<String> = emptySet()): Int = when {
+        isMessaging(s) -> 0
+        isWork(s.app, s.pkg) || s.pkg in important -> 1
+        else -> 2
+    }
+
     fun isMessaging(s: AppStat): Boolean = isMessaging(s.app, s.pkg)
     fun isMessaging(app: String, pkg: String): Boolean = (app + " " + pkg).lowercase().let { k -> MESSAGING.any { it in k } }
 
-    /** 메시지·SNS 앱 먼저, 그 안에서는 알림 많은 순. */
-    fun sortForDisplay(recs: List<AppRec>): List<AppRec> =
-        recs.sortedWith(compareByDescending<AppRec> { isMessaging(it.stat) }.thenByDescending { it.stat.count })
+    /** 메시지·SNS → 업무·일정·중요 앱 → 그 밖의 앱, 묶음 안에서는 알림 많은 순. */
+    fun sortForDisplay(recs: List<AppRec>, important: Set<String> = emptySet()): List<AppRec> =
+        recs.sortedWith(compareBy<AppRec> { group(it.stat, important) }.thenByDescending { it.stat.count })
 
     fun byRules(stats: List<AppStat>): List<AppRec> = stats.map { s ->
         val key = (s.app + " " + s.pkg).lowercase()
         when {
+            isWork(s.app, s.pkg) -> AppRec(s, true, "업무·일정 (메일·할 일·캘린더)", false)
             DROP.any { it in key } -> AppRec(s, false, "쇼핑·광고·금융·시스템 알림", false)
             KEEP.any { it in key } -> AppRec(s, true, "학교·연락 관련", false)
             else -> AppRec(s, true, "판단이 어려워 일단 모아 둬요", false)
