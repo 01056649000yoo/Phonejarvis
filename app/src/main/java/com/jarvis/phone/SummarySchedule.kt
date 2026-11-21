@@ -4,47 +4,41 @@ import android.content.Context
 import java.util.Calendar
 
 /**
- * 🔕 모아 두기·요약 시간 (v1.7.0, 2026-11-21 선생님 결정)
- *  - 요약 때: 정한 시각 여러 개 · N시간마다(1시간 단위, 시간대) · 수업이 끝날 때마다 · 퇴근 모드가 끝날 때(출근)
- *  - 쉬는 날(토·일·공휴일·직접 넣은 날): 평일처럼 / 하루 종일 모아 두기 / 정한 시각 요약만 / 모두 쉬기
+ * 🔕 모아서 알림 (v1.8.0 단순화, 2026-11-21 선생님 결정)
+ *  - 켜면 모으는 앱 알림은 늘 바로 숨기고 모아 두었다가 정한 시각(여러 개)·N시간마다(1시간 단위, 시간대) 요약해서 알림
+ *  - 끄면 알림은 평소처럼, 요약은 직접 눌러서. 주말·공휴일에 쉴지 스위치 하나
  * 예약은 모든 규칙 중 가장 가까운 '다음 한 번'만 걸고, 요약이 끝나면 그다음을 건다(BriefingScheduler).
  * 계산(next)은 안드로이드에 기대지 않는 순수 코드라 맥미니에서 시험한다(SummaryScheduleTest).
  */
 object SummarySchedule {
 
-    enum class Kind { FIXED, INTERVAL, CLASS_END, QUIET_END }
+    enum class Kind { FIXED, INTERVAL }
 
-    /** 쉬는 날에 할 일 */
-    enum class RestMode(val title: String, val desc: String) {
-        LIKE_WEEKDAY("평일처럼", "퇴근 시간 밖은 모아 두고, 요약도 평일처럼 해요(수업 시간표는 쉬어요)."),
-        ALL_DAY("하루 종일 모아 두기", "하루 종일 모아 두었다가 요약 시간에 정리해요."),
-        FIXED_ONLY("정한 시각 요약만", "모아 두지 않고 알림은 평소처럼 와요. 정한 시각에만 요약해요."),
-        OFF("모두 쉬기", "모아 두지도, 요약하지도 않아요. 다음 평일에 한 번에 정리돼요."),
-    }
-
+    /**
+     * v1.8.0 (2026-11-21 선생님: "기능이 너무 많으면 불편 — 단순하게"):
+     *  digest 켜짐 = 모으는 앱 알림은 늘 바로 숨기고 모아 두었다가, 정한 시각·N시간마다 요약해서 알려 줌
+     *  digest 꺼짐 = 알림은 평소처럼, 요약은 직접 눌러서
+     *  restSkip = 주말·공휴일에는 모으지도 알리지도 않음
+     */
     data class Config(
+        val digest: Boolean,
         val times: List<Int>,              // 정한 시각(자정부터의 분)
         val intervalHours: Int,            // 0 = 끔, 1~4
         val intervalFrom: Int,
         val intervalTo: Int,
-        val afterClass: Boolean,
-        val afterQuiet: Boolean,
-        val restMode: RestMode,
+        val restSkip: Boolean,
     )
-
-    /** 하루의 정보(시간표·출근 시각은 QuietMode 설정) */
-    data class Day(val classEnds: List<Int>, val workStart: Int?)
 
     data class Run(val at: Long, val kind: Kind, val minute: Int)
 
     /** now 다음의 요약 한 번. isRest(그날 0시) 로 쉬는 날을 판단 */
-    fun next(now: Long, cfg: Config, day: Day, isRest: (Long) -> Boolean): Run? {
+    fun next(now: Long, cfg: Config, isRest: (Long) -> Boolean): Run? {
+        if (!cfg.digest) return null
         val start = startOfDay(now)
-        for (d in 0..8) {
+        for (d in 0..10) {
             val dayStart = addDays(start, d)
-            val rest = isRest(dayStart)
-            val runs = runsOfDay(cfg, day, rest)
-            runs.forEach { (m, kind) ->
+            if (cfg.restSkip && isRest(dayStart)) continue
+            runsOfDay(cfg).forEach { (m, kind) ->
                 val at = dayStart + m * 60_000L
                 if (at > now + 5_000) return Run(at, kind, m)
             }
@@ -53,17 +47,12 @@ object SummarySchedule {
     }
 
     /** 그날의 요약 시각들(분, 종류) — 같은 분이면 정한 시각을 남김 */
-    fun runsOfDay(cfg: Config, day: Day, rest: Boolean): List<Pair<Int, Kind>> {
-        if (rest && cfg.restMode == RestMode.OFF) return emptyList()
+    fun runsOfDay(cfg: Config): List<Pair<Int, Kind>> {
         val list = mutableListOf<Pair<Int, Kind>>()
         cfg.times.forEach { list += it to Kind.FIXED }
-        if (!rest || cfg.restMode == RestMode.LIKE_WEEKDAY || cfg.restMode == RestMode.ALL_DAY) {
-            if (cfg.intervalHours in 1..12 && cfg.intervalTo > cfg.intervalFrom) {
-                var m = cfg.intervalFrom + cfg.intervalHours * 60
-                while (m <= cfg.intervalTo) { list += m to Kind.INTERVAL; m += cfg.intervalHours * 60 }
-            }
-            if (!rest && cfg.afterClass) day.classEnds.forEach { list += it to Kind.CLASS_END }
-            if (cfg.afterQuiet && day.workStart != null && !(rest && cfg.restMode == RestMode.ALL_DAY)) list += day.workStart to Kind.QUIET_END
+        if (cfg.intervalHours in 1..12 && cfg.intervalTo > cfg.intervalFrom) {
+            var m = cfg.intervalFrom + cfg.intervalHours * 60
+            while (m <= cfg.intervalTo) { list += m to Kind.INTERVAL; m += cfg.intervalHours * 60 }
         }
         return list.filter { it.first in 0 until 24 * 60 }
             .sortedWith(compareBy<Pair<Int, Kind>> { it.first }.thenBy { it.second.ordinal })
@@ -77,13 +66,12 @@ object SummarySchedule {
         val p = prefs(ctx)
         migrate(ctx)
         return Config(
+            digest = p.getBoolean("digest", false),
             times = p.getString("times", "")!!.split(",").mapNotNull { it.toIntOrNull() }.distinct().sorted(),
             intervalHours = p.getInt("interval_h", 0),
             intervalFrom = p.getInt("interval_from", 8 * 60),
             intervalTo = p.getInt("interval_to", 18 * 60),
-            afterClass = p.getBoolean("after_class", false),
-            afterQuiet = p.getBoolean("after_quiet", false),
-            restMode = runCatching { RestMode.valueOf(p.getString("rest_mode", null)!!) }.getOrDefault(RestMode.ALL_DAY),
+            restSkip = p.getBoolean("rest_skip", false),
         )
     }
 
@@ -94,21 +82,23 @@ object SummarySchedule {
     }
     fun setTimes(ctx: Context, times: List<Int>) = update(ctx) { putString("times", times.distinct().sorted().joinToString(",")) }
 
-    /** v1.6 까지의 아침·저녁 두 칸·주말 설정을 새 설정으로 한 번 옮김 */
+    /** 예전 설정(아침·저녁 두 칸 → v1.7 규칙들)을 v1.8 로 한 번 옮김: 요약 시각이 있었으면 모아서 알림 켬 */
     private fun migrate(ctx: Context) {
         val p = prefs(ctx)
-        if (p.getBoolean("v17_migrated", false)) return
-        val times = buildList {
-            if (p.getBoolean("morning_on", false)) add(p.getInt("morning_min", 8 * 60))
-            if (p.getBoolean("evening_on", false)) add(p.getInt("evening_min", 21 * 60))
+        if (!p.getBoolean("v17_migrated", false)) {
+            val times = buildList {
+                if (p.getBoolean("morning_on", false)) add(p.getInt("morning_min", 8 * 60))
+                if (p.getBoolean("evening_on", false)) add(p.getInt("evening_min", 21 * 60))
+            }
+            p.edit().putString("times", times.joinToString(",")).putBoolean("v17_migrated", true)
+                .putBoolean("rest_skip", p.getBoolean("skip_weekend", false)).apply()
         }
-        val weekendQuiet = ctx.getSharedPreferences("quiet", Context.MODE_PRIVATE).getBoolean("weekend", true)
-        val mode = when {
-            p.getBoolean("skip_weekend", false) -> RestMode.OFF
-            weekendQuiet -> RestMode.ALL_DAY
-            else -> RestMode.LIKE_WEEKDAY
+        if (!p.getBoolean("v18_migrated", false)) {
+            val hasTimes = !p.getString("times", "").isNullOrBlank() || p.getInt("interval_h", 0) > 0
+            p.edit().putBoolean("digest", hasTimes)
+                .putBoolean("rest_skip", p.getBoolean("rest_skip", false) || p.getString("rest_mode", "") == "OFF")
+                .putBoolean("v18_migrated", true).apply()
         }
-        p.edit().putString("times", times.joinToString(",")).putString("rest_mode", mode.name).putBoolean("v17_migrated", true).apply()
     }
 
     // ── 날짜 계산 ──

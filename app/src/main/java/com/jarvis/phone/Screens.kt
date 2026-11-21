@@ -32,10 +32,12 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** 이번 버전에서 바뀐 점 한 줄 (버전 올릴 때 같이 고치기). */
-private const val WHATS_NEW = "🔕 모아 두기·요약 시간을 한 곳에 — 요약 시각 여러 개·N시간마다·수업 뒤, 공휴일도 쉬는 날"
+private const val WHATS_NEW = "🔕 모아서 알림 스위치 하나로 단순하게 — 켜면 모아 두었다가 정한 때 요약, 끄면 직접"
 
 /** 업데이트 내역 큰 창 (버전 올릴 때 같이 고치기) */
 private val WHATS_NEW_DETAIL = listOf(
+    "🔕 모아서 알림 하나로" to "설정이 너무 많아 단순하게 바꿨어요. 설정 → 🔕 모아서 알림을 켜면 모으는 앱 알림은 늘 도착하자마자 숨기고 모아 두었다가, 정한 시각·몇 시간마다 요약해서 알려 줘요. 끄면 알림은 평소처럼 오고 요약은 직접 눌러요. 수업 시간표·퇴근 모드는 없앴어요.",
+    "📚 알림이 많아도 빠짐없이" to "예전에는 대화방이 많으면 최근 10곳만 요약했어요. 이제 모든 대화방을 요약하고, 메시지가 30개가 넘는 방은 30개씩 나눠 요약한 뒤 합쳐요.",
     "🏠 위젯이 최신 요약으로 바뀌어요" to "위젯에서 📋 요약을 눌러 정리가 끝나도 예전 요약이 그대로 보이던 것을 고쳤어요. 이제 요약이 끝나면 위젯이 바로 새 요약으로 바뀌어요.",
     "🙈 카톡 묶음 알림도 숨겨요" to "카톡의 '새 메시지 N개' 묶음 알림이 상태바에 남던 것을 고쳤어요. 모아 두는 시간이 시작되면 그 전에 와 있던 모으는 앱 알림도 정리해요. 설정 → 🔕 모아 두기·요약 시간에서 숨기는 때를 '모아 두는 시간에만 / 언제나 / 숨기지 않음' 중에 골라요.",
     "🔕 모아 두기·요약 시간" to "설정 → 🔕 모아 두기·요약 시간 한 곳에서 다 정해요. ① 수업 시간·퇴근 후에는 모으기로 한 앱 알림을 도착하자마자 숨기고 모아 두고 ② 정한 시각(여러 개)·1시간 단위 간격·수업이 끝날 때마다·출근할 때 중 고른 때 요약해요. 새 알림이 없으면 알리지 않아요. 예전 아침·저녁 시각은 그대로 옮겨 왔어요.",
@@ -505,11 +507,10 @@ private fun SettingsTab(vm: JarvisViewModel) {
     val hm = { m: Int -> "%02d:%02d".format(m / 60, m % 60) }
     val fmt = remember { SimpleDateFormat("M/d", Locale.KOREA) }
     val sc = vm.schedule
-    val scheduleStatus = listOfNotNull(
+    val scheduleStatus = if (!sc.digest) "꺼짐 · 직접 눌러 요약" else listOfNotNull(
         sc.times.takeIf { it.isNotEmpty() }?.joinToString("·") { hm(it) },
         if (sc.intervalHours > 0) "${sc.intervalHours}시간마다" else null,
-        if (sc.afterClass) "수업 뒤" else null,
-    ).joinToString(" · ").ifEmpty { "요약 시간 없음" }
+    ).joinToString(" · ").ifEmpty { "켜짐 · 알릴 시간을 정해 주세요" }
     val quietStatus = listOfNotNull(
         if (QuietMode.classOn(ctx)) "수업 중 켜짐" else null,
         if (QuietMode.afterWorkOn(ctx)) "퇴근 ${hm(QuietMode.workEnd(ctx))}" else null,
@@ -518,7 +519,7 @@ private fun SettingsTab(vm: JarvisViewModel) {
 
     MenuGroup(listOf(
         Triple("🌱 알림 앱 정리", "뺀 앱 ${vm.excludedApps.size}개 · 광고 ${vm.adCount}건") { vm.open(JarvisViewModel.Page.APPS) },
-        Triple("🔕 모아 두기·요약 시간", scheduleStatus) { vm.open(JarvisViewModel.Page.SCHEDULE) },
+        Triple("🔕 모아서 알림", scheduleStatus) { vm.open(JarvisViewModel.Page.SCHEDULE) },
     ))
     // 👥 사람 묶음은 선택 사항: 안 만들어도 요약은 그대로 됨
     MenuGroup(listOf(
@@ -1278,73 +1279,6 @@ private fun ParentLinkSection(vm: JarvisViewModel, student: String) {
 
 // ───────────────────────── 🏫 수업 중 · 🌙 퇴근 모드 (설정) ─────────────────────────
 
-@Composable
-private fun QuietCard(vm: JarvisViewModel) {
-    val ctx = LocalContext.current
-    val rev = vm.quietRev   // 설정이 바뀌면 다시 그림 (이 값을 읽어 두면 바뀔 때 화면이 새로 그려짐)
-    if (rev < 0) return
-    val hm = { m: Int -> "%02d:%02d".format(m / 60, m % 60) }
-    fun pick(start: Int, onPick: (Int) -> Unit) =
-        TimePickerDialog(ctx, { _, h, m -> onPick(h * 60 + m) }, start / 60, start % 60, true).show()
-
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("🏫 수업 중 모드", style = MaterialTheme.typography.titleMedium)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("수업 시간에는 모으기로 한 앱의 알림을 도착하자마자 숨기고 모아 둬요(쉬는 날 빼고).",
-                    Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                Switch(checked = QuietMode.classOn(ctx), onCheckedChange = { on -> vm.quiet { putBoolean("class_on", on) } })
-            }
-            AnimatedVisibility(visible = QuietMode.classOn(ctx), enter = expandVertically(Motion.size) + fadeIn(Motion.fade), exit = shrinkVertically(Motion.size) + fadeOut(Motion.fadeFast)) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    val ranges = QuietMode.ranges(ctx)
-                    // ① 시간표 한 번에: 학교급 버튼
-                    Text("시간표 한 번에 넣기", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        QuietMode.PRESETS.forEach { (name, list) ->
-                            FilterChip(selected = ranges == list, onClick = { vm.applyPeriodPreset(list) }, label = { Text(name) })
-                        }
-                    }
-                    // ② 교시마다 시작·끝을 따로 눌러 바꾸기
-                    Text("교시마다 시각을 눌러 바꿔요 (시작을 바꾸면 끝도 같이 움직여요)",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    ranges.forEachIndexed { i, (s, e) ->
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("${i + 1}교시", Modifier.width(48.dp), fontWeight = FontWeight.Medium)
-                            AssistChip(onClick = { pick(s) { vm.setPeriodStart(i, it) } }, label = { Text(hm(s)) })
-                            Text("~")
-                            AssistChip(onClick = { pick(e) { vm.setPeriodEnd(i, it) } }, label = { Text(hm(e)) })
-                            Text("${e - s}분", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Spacer(Modifier.weight(1f))
-                            IconButton(onClick = { vm.removePeriod(i) }) { Text("✕") }
-                        }
-                    }
-                    OutlinedButton(onClick = { vm.addPeriod() }) { Text("＋ 교시 추가 (같은 길이, 쉬는 시간 10분 뒤)") }
-                }
-            }
-        }
-    }
-
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("🌙 퇴근 모드", style = MaterialTheme.typography.titleMedium)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("퇴근 후·출근 전에 온 알림을 숨기고 모아 뒀다가 요약 시간에 정리해요. 퇴근 후 학부모 연락에는 " +
-                     "\"근무시간 이후라 내일 확인드리겠습니다\" 답장을 먼저 추천해요.",
-                    Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                Switch(checked = QuietMode.afterWorkOn(ctx), onCheckedChange = { on -> vm.quiet { putBoolean("after_on", on) } })
-            }
-            AnimatedVisibility(visible = QuietMode.afterWorkOn(ctx), enter = expandVertically(Motion.size) + fadeIn(Motion.fade), exit = shrinkVertically(Motion.size) + fadeOut(Motion.fadeFast)) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    // 출근·퇴근: 자주 쓰는 시각 버튼 + ⌚ 직접 (브리핑 시각과 같은 방식)
-                    QuietTimeRow(vm, "🌅 출근", QuietMode.workStart(ctx), listOf(7 * 60 + 30, 8 * 60, 8 * 60 + 20, 8 * 60 + 30), "work_start")
-                    QuietTimeRow(vm, "🏠 퇴근", QuietMode.workEnd(ctx), listOf(16 * 60 + 30, 16 * 60 + 40, 17 * 60, 18 * 60), "work_end")
-                }
-            }
-        }
-    }
-
-}
 
 /** 💾 백업·복원: 자동 백업 상태 + 지금 백업 / 파일로 내보내기 / 파일에서 불러오기 */
 @Composable
@@ -1408,22 +1342,6 @@ private fun BackupCard(vm: JarvisViewModel) {
     }
 }
 
-/** 출근·퇴근 시각 한 줄: 자주 쓰는 시각 버튼 + ⌚ 직접 */
-@Composable
-private fun QuietTimeRow(vm: JarvisViewModel, label: String, value: Int, presets: List<Int>, key: String) {
-    val ctx = LocalContext.current
-    val hm = { m: Int -> "%02d:%02d".format(m / 60, m % 60) }
-    Text(label, fontWeight = FontWeight.Medium)
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        presets.forEach { p ->
-            FilterChip(selected = value == p, onClick = { vm.quiet { putInt(key, p) } }, label = { Text(hm(p)) })
-        }
-        val custom = value !in presets
-        FilterChip(selected = custom, onClick = {
-            TimePickerDialog(ctx, { _, h, m -> vm.quiet { putInt(key, h * 60 + m) } }, value / 60, value % 60, true).show()
-        }, label = { Text(if (custom) "⌚ ${hm(value)}" else "⌚ 직접") })
-    }
-}
 
 private fun roomLast(vm: JarvisViewModel, room: String) = vm.rooms.firstOrNull { it.name == room }?.last ?: 0L
 
@@ -1570,176 +1488,100 @@ fun appMaker(pkg: String): String {
     return "$maker 제공 · $pkg"
 }
 
-// ───────────────────────── 🔕 모아 두기·요약 시간 (v1.7.0) ─────────────────────────
+// ───────────────────────── 🔕 모아서 알림 (v1.8.0 단순화) ─────────────────────────
 
+/**
+ * 2026-11-21 선생님: "기능이 너무 많으면 오히려 불편 — 단순하게".
+ * 스위치 하나: 켜면 모으는 앱 알림은 늘 바로 숨기고 모아 두었다가 정한 때 요약해서 알림, 끄면 평소처럼 오고 요약은 직접.
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SchedulePage(vm: JarvisViewModel) {
+    val ctx = LocalContext.current
     val rev = vm.quietRev
     if (rev < 0) return
-    CollectGuideCard(vm)
-    Text("① 언제 모아 둘까", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
-    QuietCard(vm)
-    Text("② 언제 요약해서 보여 줄까", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
-    SummaryTimesCard(vm)
-    Text("③ 쉬는 날(토·일·공휴일)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
-    RestDaysCard(vm)
-    OutlinedButton(onClick = { vm.briefNow() }, enabled = vm.hasModel && !vm.busy, modifier = Modifier.fillMaxWidth()) {
-        Text("지금 요약 받아보기 (테스트)")
-    }
-}
-
-/** 지금 상태 한 줄 + 모아 두는 시간에 어떻게 되는지 정확한 안내 + 방해 금지 */
-@Composable
-private fun CollectGuideCard(vm: JarvisViewModel) {
-    val ctx = LocalContext.current
-    val state = QuietMode.state(ctx)
+    val sc = vm.schedule
     val dnd = vm.dndGranted()
+    val hm = { m: Int -> "%02d:%02d".format(m / 60, m % 60) }
+    fun pick(start: Int, onPick: (Int) -> Unit) = TimePickerDialog(ctx, { _, h, m -> onPick(h * 60 + m) }, start / 60, start % 60, true).show()
+
+    // 큰 스위치 하나
     Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(
         containerColor = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(when (state) {
-                QuietMode.State.CLASS -> "🔕 지금 수업 중 · 모아 두는 중"
-                QuietMode.State.AFTER_WORK -> "🔕 지금 퇴근 후·쉬는 날 · 모아 두는 중"
-                QuietMode.State.NONE -> "🔔 지금은 알림이 평소처럼 와요"
-            } + (if (state == QuietMode.State.NONE) "" else if (dnd && Dnd.autoOn(ctx)) " · 소리 꺼짐" else " · 소리는 남"),
-                style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text(vm.nextRunText(), style = MaterialTheme.typography.bodyMedium)
-        }
-    }
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("🔕 모아 두는 시간에는 이렇게 돼요", fontWeight = FontWeight.Bold)
-            listOf(
-                "요약으로 모으기로 한 앱(🌱 알림 앱 정리에서 켠 앱)의 알림은 도착하자마자 상태바에서 사라지고 쌤톡스에 모여요.",
-                "방해 금지를 자동으로 켜면 그 시간에는 소리·진동이 꺼져요. 권한이 없으면 알림은 숨겨지지만 소리는 한 번 나요 — 안드로이드는 알림이 울린 다음에야 다른 앱이 숨길 수 있어서예요.",
-                "모으지 않는 앱(빼기 한 앱)의 알림은 상태바에 그대로 남아요. 방해 금지가 켜져 있으면 소리만 나지 않아요.",
-                "전화·알람·재난 문자·인증번호는 언제나 그대로 와요.",
-                "모아 둔 알림은 ②에서 정한 때 요약해서 알려 드리고, 🔔 알림 탭에서 원문도 볼 수 있어요.",
-            ).forEach { Text("· $it", style = MaterialTheme.typography.bodySmall) }
-            HorizontalDivider(Modifier.padding(vertical = 4.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("🔕 방해 금지 자동 켜기", fontWeight = FontWeight.Medium)
-                    Text(if (dnd) "✅ 권한 있음 · 모아 두는 시간에 '쌤톡스 모아 두기' 모드를 켜요. 알람·즐겨찾기 연락처 전화·3분 안에 다시 건 전화만 울려요. 폰 설정 → 모드에서 더 고칠 수 있어요."
-                         else "권한이 필요해요. 켜면 폰 설정의 방해 금지 권한 화면으로 가요 — 쌤톡스를 허용하고 돌아오세요.",
-                        style = MaterialTheme.typography.bodySmall)
+                    Text("🔕 모아서 알림", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(if (sc.digest) "켜짐 · " + vm.nextRunText() else "꺼짐 · 알림은 평소처럼 오고, 요약은 📋 요약 탭에서 직접 눌러요.",
+                        style = MaterialTheme.typography.bodyMedium)
                 }
-                Switch(checked = Dnd.autoOn(ctx) && dnd, onCheckedChange = { on ->
-                    if (on && !dnd) ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
-                    vm.setDndAuto(on)
-                })
+                // 진한 카드 위라 켜짐 막대가 카드 색과 같아 점만 보이던 것 → 연두 막대
+                Switch(checked = sc.digest, onCheckedChange = { vm.setDigest(it) },
+                    colors = SwitchDefaults.colors(checkedTrackColor = Ssam.Sprout, checkedThumbColor = Ssam.Ink))
             }
-            Text("모으는 앱 알림을 상태바에서 숨기는 때", fontWeight = FontWeight.Medium)
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                QuietMode.Hide.entries.forEach { h ->
-                    FilterChip(selected = QuietMode.hideWhen(ctx) == h, onClick = { vm.setHideWhen(h) }, label = { Text(h.title) })
-                }
-            }
-            Text(when (QuietMode.hideWhen(ctx)) {
-                QuietMode.Hide.QUIET -> "수업 시간·퇴근 후에만 숨겨요. 그 밖의 시간에는 모으면서 상태바에도 그대로 둬요."
-                QuietMode.Hide.ALWAYS -> "언제든 모으는 앱 알림은 도착하자마자 숨기고 모아요. 알림은 쌤톡스 요약과 🔔 알림 탭에서만 봐요."
-                QuietMode.Hide.NEVER -> "모으기만 하고 상태바에는 그대로 둬요."
-            }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (sc.digest) Text(
+                "모으는 앱(🌱 알림 앱 정리에서 켠 앱)의 알림은 도착하자마자 상태바에서 사라지고 쌤톡스에 모여요. 아래 정한 때 한 번에 요약해서 알려 드려요. " +
+                "전화·알람·재난 문자·인증번호는 언제나 그대로 와요.",
+                style = MaterialTheme.typography.bodySmall)
         }
     }
-}
+    if (!sc.digest) return
 
-/** ② 요약 시간: 정한 시각 여러 개 · N시간마다 · 수업 끝날 때마다 · 출근할 때 */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun SummaryTimesCard(vm: JarvisViewModel) {
-    val ctx = LocalContext.current
-    val sc = vm.schedule
-    val hm = { m: Int -> "%02d:%02d".format(m / 60, m % 60) }
-    fun pick(start: Int, onPick: (Int) -> Unit) = TimePickerDialog(ctx, { _, h, m -> onPick(h * 60 + m) }, start / 60, start % 60, true).show()
+    // 언제 알려 줄까
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("⏰ 정한 시각", fontWeight = FontWeight.Bold)
-            Text("정한 시각 ${BriefingScheduler.LEAD_MINUTES}분 전에 미리 정리해 두고, 그 시각엔 결과만 바로 알려 드려요.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("⏰ 정한 시각에 알림", fontWeight = FontWeight.Bold)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 sc.times.forEach { m -> InputChip(selected = true, onClick = { vm.removeTime(m) }, label = { Text("${hm(m)}  ✕") }) }
                 AssistChip(onClick = { pick(if (sc.times.isEmpty()) 8 * 60 else 12 * 60) { vm.addTime(it) } }, label = { Text("＋ 시각 더하기") })
             }
-            if (sc.times.isEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                AssistChip(onClick = { vm.addTime(8 * 60); vm.addTime(17 * 60) }, label = { Text("아침 8:00 · 저녁 17:00 넣기") })
-            }
+            if (sc.times.isEmpty() && sc.intervalHours == 0) AssistChip(onClick = { vm.addTime(8 * 60); vm.addTime(17 * 60) },
+                label = { Text("아침 8:00 · 저녁 17:00 넣기") })
             HorizontalDivider(Modifier.padding(vertical = 4.dp))
-            Text("⏱ 일정 간격", fontWeight = FontWeight.Bold)
+            Text("⏱ 몇 시간마다 알림", fontWeight = FontWeight.Bold)
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf(0, 1, 2, 3, 4).forEach { h ->
-                    FilterChip(selected = sc.intervalHours == h, onClick = { vm.setInterval(h) },
-                        label = { Text(if (h == 0) "안 함" else "${h}시간마다") })
+                    FilterChip(selected = sc.intervalHours == h, onClick = { vm.setInterval(h) }, label = { Text(if (h == 0) "안 함" else "${h}시간마다") })
                 }
             }
-            if (sc.intervalHours > 0) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    AssistChip(onClick = { pick(sc.intervalFrom) { vm.setIntervalFrom(it) } }, label = { Text(hm(sc.intervalFrom)) })
-                    Text("~")
-                    AssistChip(onClick = { pick(sc.intervalTo) { vm.setIntervalTo(it) } }, label = { Text(hm(sc.intervalTo)) })
-                    Text("사이", style = MaterialTheme.typography.bodySmall)
-                }
-                if (sc.intervalHours == 1) Text("1시간마다는 배터리를 더 써요(요약 한 번에 약 1분).", style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.tertiary)
+            if (sc.intervalHours > 0) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                AssistChip(onClick = { pick(sc.intervalFrom) { vm.setIntervalFrom(it) } }, label = { Text(hm(sc.intervalFrom)) })
+                Text("~")
+                AssistChip(onClick = { pick(sc.intervalTo) { vm.setIntervalTo(it) } }, label = { Text(hm(sc.intervalTo)) })
+                Text("사이", style = MaterialTheme.typography.bodySmall)
             }
-            HorizontalDivider(Modifier.padding(vertical = 4.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("🏫 수업이 끝날 때마다", fontWeight = FontWeight.Medium)
-                    Text(if (QuietMode.classOn(ctx)) "쉬는 시간에 그 교시 동안 온 알림을 요약해요." else "① 수업 시간표를 켜야 쓸 수 있어요.",
-                        style = MaterialTheme.typography.bodySmall)
-                }
-                Switch(checked = sc.afterClass, onCheckedChange = { vm.setAfterClass(it) }, enabled = QuietMode.classOn(ctx))
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("🌅 출근할 때(밤사이 알림)", fontWeight = FontWeight.Medium)
-                    Text(if (QuietMode.afterWorkOn(ctx)) "출근 시각(${hm(QuietMode.workStart(ctx))})에 밤사이 온 알림을 요약해요." else "① 퇴근 모드를 켜야 쓸 수 있어요.",
-                        style = MaterialTheme.typography.bodySmall)
-                }
-                Switch(checked = sc.afterQuiet, onCheckedChange = { vm.setAfterQuiet(it) }, enabled = QuietMode.afterWorkOn(ctx))
-            }
-            Text("새 알림이 없으면 요약도, 알림도 하지 않아요. 간격·수업 뒤 요약은 알림 하나를 새 내용으로 바꿔 보여 줘요.",
+            Text("새 알림이 없으면 알리지 않아요. 알림이 많으면 30개씩 나눠 요약한 뒤 합쳐서 알려 드려요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
-}
 
-/** ③ 쉬는 날: 무엇을 할지 + 공휴일·직접 넣은 날 */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun RestDaysCard(vm: JarvisViewModel) {
-    val ctx = LocalContext.current
-    val sc = vm.schedule
+    // 소리·쉬는 날
     Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            SummarySchedule.RestMode.entries.forEach { mode ->
-                Row(Modifier.fillMaxWidth().clickable { vm.setRestMode(mode) }, verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(selected = sc.restMode == mode, onClick = { vm.setRestMode(mode) })
-                    Column(Modifier.weight(1f)) {
-                        Text(mode.title, fontWeight = FontWeight.Medium)
-                        Text(mode.desc, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("🔇 소리도 끄기(방해 금지)", fontWeight = FontWeight.Medium)
+                    Text(if (dnd) "✅ 켜 두면 모으는 동안 소리·진동이 꺼져요. 알람·즐겨찾기 연락처 전화·3분 안에 다시 건 전화만 울려요."
+                         else "숨기기만 하면 알림이 울린 다음에 사라져서 소리는 나요. 켜면 폰 설정의 방해 금지 권한 화면으로 가요 — 쌤톡스를 허용하고 돌아오세요.",
+                        style = MaterialTheme.typography.bodySmall)
                 }
+                Switch(checked = Dnd.autoOn(ctx) && dnd, onCheckedChange = { on ->
+                    if (on && !dnd) runCatching { ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)) }
+                    vm.setDndAuto(on)
+                })
             }
-            HorizontalDivider(Modifier.padding(vertical = 4.dp))
-            Text("📅 다가오는 쉬는 날 (공휴일·대체공휴일 포함)", fontWeight = FontWeight.Bold)
-            Text("재량휴업일처럼 쉬는 날은 ＋로 넣고, 학교에 가는 공휴일은 눌러서 빼요.", style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            val upcoming = remember(vm.restAdded, vm.quietRev) { RestDays.upcoming(ctx) }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                upcoming.forEach { (ymd, name) ->
-                    InputChip(selected = true, onClick = { vm.removeRestDay(ymd) },
-                        label = { Text("${ymd / 100 % 100}/${ymd % 100} $name  ✕") })
+            HorizontalDivider()
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("📅 주말·공휴일엔 쉬기", fontWeight = FontWeight.Medium)
+                    Text("켜면 토·일·공휴일(대체공휴일 포함)에는 모으지 않고 알림이 평소처럼 와요.", style = MaterialTheme.typography.bodySmall)
                 }
-                AssistChip(onClick = {
-                    val c = java.util.Calendar.getInstance()
-                    android.app.DatePickerDialog(ctx, { _, y, mo, d -> vm.addRestDay(y * 10000 + (mo + 1) * 100 + d) },
-                        c.get(java.util.Calendar.YEAR), c.get(java.util.Calendar.MONTH), c.get(java.util.Calendar.DAY_OF_MONTH)).show()
-                }, label = { Text("＋ 쉬는 날 넣기") })
+                Switch(checked = sc.restSkip, onCheckedChange = { vm.setRestSkip(it) })
             }
-            if (upcoming.isEmpty()) Text("앞으로 60일 안에 평일 쉬는 날이 없어요.", style = MaterialTheme.typography.bodySmall)
         }
+    }
+    OutlinedButton(onClick = { vm.briefNow() }, enabled = vm.hasModel && !vm.busy, modifier = Modifier.fillMaxWidth()) {
+        Text("지금 요약 받아보기 (테스트)")
     }
 }
 

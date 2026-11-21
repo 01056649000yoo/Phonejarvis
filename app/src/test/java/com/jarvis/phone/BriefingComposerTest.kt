@@ -46,13 +46,17 @@ class BriefingComposerTest {
         assertEquals("", none.ask); assertFalse(none.needReply)
     }
 
-    @Test fun 대화방이_많으면_최근_방만_모델로_나머지는_이름만() = runBlocking {
-        val items = (1..14).map { i -> kakao("방$i", "사람$i", "긴 이야기 ".repeat(10) + i) }
+    @Test fun 대화방이_많아도_모두_요약하고_30개가_넘는_방은_나눠_요약해_합친다() = runBlocking {
+        val many = (1..14).map { i -> kakao("방$i", "사람$i", "긴 이야기 ".repeat(10) + i) }
+        val big = (1..65).map { i -> kakao("큰방", "사람${i % 5}", "회의 이야기 $i " + "가".repeat(20)) }
         var calls = 0
-        val r = BriefingComposer.compose(items, ask = { calls++; "요점: 이야기\n요청: 없음\n답장: 아님" })
-        assertEquals(BriefingComposer.MAX_ROOMS, calls)
-        assertTrue(r.people.contains("그 밖의 방: ") && r.people.contains("방1 1건"))
-        assertTrue(r.people.contains("최근 ${BriefingComposer.MAX_ROOMS} 곳만"))
+        val r = BriefingComposer.compose(many + big, ask = { p ->
+            calls++
+            if ("큰방" in p) "요점: 큰방 덩어리 $calls\n요청: 자료 올려 주세요\n답장: 필요" else "요점: 이야기\n요청: 없음\n답장: 아님"
+        })
+        assertEquals(14 + 3, calls)                                   // 작은 방 14곳 + 큰방 65개 → 30·30·5 세 덩어리
+        assertFalse(r.people.contains("그 밖의 방: 방"))                // 빠진 방 없음
+        assertTrue(r.people.contains("큰방") && r.people.contains("자료 올려 주세요"))
     }
 
     @Test fun 중지하면_거기까지_정리하고_나머지는_이름만() = runBlocking {

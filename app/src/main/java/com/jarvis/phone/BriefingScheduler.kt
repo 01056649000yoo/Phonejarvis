@@ -22,13 +22,8 @@ object BriefingScheduler {
     /** 정한 시각보다 이만큼 먼저 백그라운드에서 요약을 돌려 둠 (모델 불러오기 + 최대 5분 요약) */
     const val LEAD_MINUTES = 15
 
-    fun day(ctx: Context) = SummarySchedule.Day(
-        classEnds = if (QuietMode.classOn(ctx)) QuietMode.ranges(ctx).map { it.second } else emptyList(),
-        workStart = if (QuietMode.afterWorkOn(ctx)) QuietMode.workStart(ctx) else null,
-    )
-
     fun nextRun(ctx: Context, now: Long = System.currentTimeMillis()): SummarySchedule.Run? =
-        SummarySchedule.next(now, SummarySchedule.config(ctx), day(ctx)) { RestDays.isRest(ctx, it) }
+        SummarySchedule.next(now, SummarySchedule.config(ctx)) { RestDays.isRest(ctx, it) }
 
     /** 다음 요약 한 번(그리고 정한 시각이면 15분 전 미리 준비)을 예약 */
     fun scheduleAll(ctx: Context) {
@@ -73,8 +68,6 @@ object BriefingScheduler {
         return when (kind) {
             SummarySchedule.Kind.FIXED -> when { minute < 11 * 60 -> "🌅 아침 요약"; minute >= 16 * 60 -> "🌙 저녁 요약"; else -> "📋 $hm 요약" }
             SummarySchedule.Kind.INTERVAL -> "⏱ $hm 요약"
-            SummarySchedule.Kind.CLASS_END -> "🏫 수업 뒤 요약"
-            SummarySchedule.Kind.QUIET_END -> "🌅 밤사이 요약"
         }
     }
 

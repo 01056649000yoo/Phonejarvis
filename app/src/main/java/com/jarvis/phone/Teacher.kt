@@ -206,8 +206,8 @@ object QuietMode {
     fun hideInShade(ctx: Context) = hideWhen(ctx) != Hide.NEVER
     /** 모으는 앱 알림을 상태바에서 숨기는 때(2026-11-21: '언제나' 추가). 예전 'hide' 스위치를 끈 사람은 NEVER */
     enum class Hide(val title: String) { QUIET("모아 두는 시간에만"), ALWAYS("언제나"), NEVER("숨기지 않음") }
-    fun hideWhen(ctx: Context): Hide = runCatching { Hide.valueOf(prefs(ctx).getString("hide_when", null)!!) }
-        .getOrElse { if (prefs(ctx).getBoolean("hide", true)) Hide.QUIET else Hide.NEVER }
+    /** v1.8.0: 모아서 알림이 켜져 있으면 모으는 때(=늘) 숨김, 꺼져 있으면 숨기지 않음 */
+    fun hideWhen(ctx: Context): Hide = Hide.QUIET
 
     fun update(ctx: Context, block: android.content.SharedPreferences.Editor.() -> Unit) {
         prefs(ctx).edit().apply(block).apply()
@@ -233,32 +233,28 @@ object QuietMode {
 
     private fun minuteOf(c: Calendar) = c.get(Calendar.HOUR_OF_DAY) * 60 + c.get(Calendar.MINUTE)
 
-    /** v1.7.0: 쉬는 날(토·일·공휴일·직접 넣은 날)은 '쉬는 날' 설정을 따른다(SummarySchedule.RestMode) */
+    /**
+     * v1.8.0: '모아서 알림'이 켜져 있으면 늘 모으는 중(AFTER_WORK) — 주말·공휴일 쉬기를 켰으면 그날은 평소처럼.
+     * (예전 수업 시간·퇴근 모드는 없앰. 이름 State 는 그대로 둠)
+     */
     fun state(ctx: Context, now: Long = System.currentTimeMillis()): State {
-        val c = Calendar.getInstance().apply { timeInMillis = now }
-        val m = minuteOf(c)
-        if (RestDays.isRest(ctx, now)) {
-            return when (SummarySchedule.config(ctx).restMode) {
-                SummarySchedule.RestMode.ALL_DAY -> if (classOn(ctx) || afterWorkOn(ctx)) State.AFTER_WORK else State.NONE
-                SummarySchedule.RestMode.LIKE_WEEKDAY -> if (afterWorkOn(ctx) && (m < workStart(ctx) || m >= workEnd(ctx))) State.AFTER_WORK else State.NONE
-                else -> State.NONE
-            }
-        }
-        if (classOn(ctx) && ranges(ctx).any { (s, e) -> m >= s && m < e }) return State.CLASS
-        if (afterWorkOn(ctx) && (m < workStart(ctx) || m >= workEnd(ctx))) return State.AFTER_WORK
-        return State.NONE
+        val cfg = SummarySchedule.config(ctx)
+        if (!cfg.digest) return State.NONE
+        if (cfg.restSkip && RestDays.isRest(ctx, now)) return State.NONE
+        return State.AFTER_WORK
     }
 
-    /** 이 시각이 퇴근 후(또는 쉬는 날)인지: 학부모 답장 추천에 씀 */
-    fun isAfterWork(ctx: Context, time: Long): Boolean = state(ctx, time) == State.AFTER_WORK
+    /** 근무 시간 밖(평일 08:00 전·17:00 뒤, 쉬는 날)인지 — 학부모 답장 추천("근무시간 이후라…")에만 씀 */
+    fun isAfterWork(ctx: Context, time: Long): Boolean {
+        if (RestDays.isRest(ctx, time)) return true
+        val m = Calendar.getInstance().apply { timeInMillis = time }.let { minuteOf(it) }
+        return m < workStart(ctx) || m >= workEnd(ctx)
+    }
 
     /** 다음 경계 시각(수업 시작·끝, 출근·퇴근, 자정) */
     private fun nextBoundary(ctx: Context, now: Long): Long? {
-        val marks = buildList {
-            if (classOn(ctx)) ranges(ctx).forEach { (s, e) -> add(s); add(e) }
-            if (afterWorkOn(ctx)) { add(workStart(ctx)); add(workEnd(ctx)) }
-            if (classOn(ctx) || afterWorkOn(ctx)) add(0)   // 자정: 쉬는 날이 시작·끝날 때
-        }.distinct()
+        // 모아서 알림을 켰으면 자정(쉬는 날이 시작·끝날 때)마다 상태를 다시 봄
+        val marks = if (SummarySchedule.config(ctx).digest) listOf(0) else emptyList()
         if (marks.isEmpty()) return null
         val day = Calendar.getInstance().apply {
             timeInMillis = now; set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
@@ -295,11 +291,11 @@ object QuietMode {
         // 🔕 방해 금지: 권한이 있고 '자동 켜기'가 켜져 있을 때만. 쌤톡스 전용 모드를 켜고 끔(선생님이 직접 켠 방해 금지는 건드리지 않음)
         if (cur != State.NONE) Dnd.on(ctx) else Dnd.off(ctx)
         // 모아 두는 시간이 시작되면 그 전에 와 있던 모으는 앱 알림도 상태바에서 정리
-        if (cur != State.NONE && hideWhen(ctx) == Hide.QUIET) NotificationCollectorService.instance?.sweep()
+        if (cur != State.NONE) NotificationCollectorService.instance?.sweep()
 
         // 수업이 끝나면: 수업 중 모은 알림 수를 한 번 알려 줌 (AI 없이, 바로)
         // (수업 끝날 때마다 요약을 켰으면 요약이 대신 알려 주므로 건너뜀)
-        if (prev == State.CLASS && cur != State.CLASS && !SummarySchedule.config(ctx).afterClass) {
+        if (prev == State.CLASS && cur != State.CLASS) {
             val since = p.getLong("since", System.currentTimeMillis() - periodLen(ctx) * 60_000L)
             val rules = AppFilter.rules(ctx)
             val items = NotificationDb.get(ctx).since(since).filter { rules.allows(it) }

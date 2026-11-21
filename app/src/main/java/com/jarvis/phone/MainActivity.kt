@@ -61,11 +61,12 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     fun setInterval(h: Int) = editSchedule { putInt("interval_h", h) }
     fun setIntervalFrom(m: Int) = editSchedule { putInt("interval_from", m) }
     fun setIntervalTo(m: Int) = editSchedule { putInt("interval_to", m) }
-    fun setAfterClass(on: Boolean) = editSchedule { putBoolean("after_class", on) }
-    fun setAfterQuiet(on: Boolean) = editSchedule { putBoolean("after_quiet", on) }
-    fun setRestMode(mode: SummarySchedule.RestMode) = editSchedule { putString("rest_mode", mode.name) }
-    fun addRestDay(ymd: Int) { RestDays.add(getApplication<Application>(), ymd); reloadSchedule() }
-    fun removeRestDay(ymd: Int) { RestDays.remove(getApplication<Application>(), ymd); reloadSchedule() }
+    fun setDigest(on: Boolean) {
+        editSchedule { putBoolean("digest", on) }
+        // 켜자마자 지금 상태바에 남은 모으는 앱 알림도 정리
+        if (on) NotificationCollectorService.instance?.sweep()
+    }
+    fun setRestSkip(on: Boolean) = editSchedule { putBoolean("rest_skip", on) }
     fun setDndAuto(on: Boolean) { Dnd.setAuto(getApplication<Application>(), on); quietRev++ }
     fun setHideWhen(h: QuietMode.Hide) {
         quiet { putString("hide_when", h.name) }
@@ -363,7 +364,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     // ── 탭 안의 세부 화면 (목록 → 누르면 옆에서 밀려 들어오는 화면) ──
     /** 세부 화면. parent 가 있으면 뒤로 가기가 그 화면으로 (사람 묶음 → 묶음 하나) */
     enum class Page(val title: String, val tab: Tab, val parent: Page? = null) {
-        APPS("🌱 알림 앱 정리", Tab.SETTINGS), SCHEDULE("🔕 모아 두기·요약 시간", Tab.SETTINGS),
+        APPS("🌱 알림 앱 정리", Tab.SETTINGS), SCHEDULE("🔕 모아서 알림", Tab.SETTINGS),
         SYSTEM("🤖 AI 모델·권한", Tab.SETTINGS), BACKUP("💾 백업·복원", Tab.SETTINGS), STORAGE("🧹 저장 공간", Tab.SETTINGS),
         PEOPLE("👥 사람 묶음", Tab.SETTINGS),
         GROUP("👥 묶음", Tab.SETTINGS, PEOPLE), KEYWORDS("⭐ 중요 키워드", Tab.SETTINGS, PEOPLE),

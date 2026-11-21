@@ -26,8 +26,8 @@ object BriefingComposer {
     /** 모델이 돌려준 세 줄(또는 규칙으로 만든 값) */
     data class RoomSummary(val conv: Conversation, val point: String, val ask: String, val needReply: Boolean, val byModel: Boolean)
 
-    const val MAX_ROOMS = 10          // 모델을 부르는 대화방 수 상한(나머지는 한 줄로)
-    const val ROOM_CHARS = 1500       // 대화방 하나에서 모델에 넣는 글자 상한(최근 메시지부터 채움)
+    const val CHUNK = 30              // 대화방 하나에서 모델에 한 번에 넣는 메시지 수 — 넘으면 30개씩 나눠 요약한 뒤 합침(2026-11-21 선생님)
+    const val ROOM_CHARS = 2400       // 한 번에 넣는 글자 상한(최근 메시지부터 채움)
     const val SHORT_CHARS = 60        // 이보다 짧은 메시지 하나뿐인 방은 모델 없이
 
     private val AD = Regex("^\\(광고\\)")
@@ -145,7 +145,7 @@ object BriefingComposer {
 
     /**
      * 전체 흐름. [ask] 는 모델 한 번 부르기, [stopReason] 은 멈춰야 하면 까닭(중지·시간 초과), 아니면 null.
-     * 모델은 최근 대화방부터 MAX_ROOMS 곳까지만 부르고, 멈추면 거기까지 정리한 것과 나머지 방 이름만 보여 준다.
+     * 대화방마다 30개씩 나눠 모델에 묻고 합친다(모든 방). 멈추면 거기까지 정리한 것과 나머지 방 이름만 보여 준다.
      */
     /** 사람 메시지 칸(답장할 연락·사람에게 온 메시지)과 앱 알림 칸을 따로 돌려준다 — 브리핑에서 놓는 자리가 달라서 */
     data class Result(val people: String, val apps: String) {
@@ -163,23 +163,38 @@ object BriefingComposer {
         val rooms = mutableListOf<RoomSummary>()
         val leftover = mutableListOf<Conversation>()
         var cut: String? = null
-        val needModel = convs.count { direct(it) == null }.coerceAtMost(MAX_ROOMS)
+        // 모델에 묻는 횟수(진행 표시용): 대화방마다 30개씩 나눈 덩어리 수
+        val total = convs.filter { direct(it) == null }.sumOf { (it.items.size + CHUNK - 1) / CHUNK }
         var asked = 0
         for (conv in convs) {
             direct(conv)?.let { rooms += it; continue }
-            if (cut == null) cut = stopReason()
-            if (cut != null || asked >= MAX_ROOMS) { leftover += conv; continue }
-            asked++
-            onStatus("요약 중… 대화방 $asked/$needModel")
-            rooms += parse(conv, ask(prompt(conv)))
+            val parts = mutableListOf<RoomSummary>()
+            for (chunk in conv.items.chunked(CHUNK)) {
+                if (cut == null) cut = stopReason()
+                if (cut != null) break
+                asked++
+                onStatus("요약 중… $asked/$total")
+                val part = Conversation(conv.app, conv.room, chunk)
+                parts += parse(part, ask(prompt(part)))
+            }
+            if (parts.isEmpty()) { leftover += conv; continue }
+            rooms += merge(conv, parts)
         }
         // 방 순서는 최근에 온 것부터
         rooms.sortByDescending { it.conv.last }
         val notes = buildList {
-            if (cut != null) add("$cut 대화방 ${leftover.size}곳은 이름만 적었어요.")
-            else if (leftover.isNotEmpty()) add("대화방이 많아 최근 $MAX_ROOMS 곳만 요약했어요.")
+            if (cut != null && leftover.isNotEmpty()) add("$cut 대화방 ${leftover.size}곳은 이름만 적었어요.")
+            else if (cut != null) add(cut!!)
         }
         return Result(render(rooms, leftover, notes), appSection(apps.filterNot { AD.containsMatchIn(it.title) || AD.containsMatchIn(it.text) }))
+    }
+
+    /** 한 대화방을 30개씩 나눠 요약한 것들을 하나로: 요점·요청은 이어 붙이고(같은 말은 한 번), 하나라도 답장 필요면 필요 */
+    fun merge(conv: Conversation, parts: List<RoomSummary>): RoomSummary {
+        if (parts.size == 1) return parts[0].copy(conv = conv)
+        val point = parts.map { it.point }.filter { it.isNotBlank() }.distinct().joinToString(" / ")
+        val ask = parts.map { it.ask }.filter { it.isNotBlank() }.distinct().joinToString(", ")
+        return RoomSummary(conv, point.take(240), ask.take(200), parts.any { it.needReply }, byModel = true)
     }
 
     /** 사람 메시지 요약 → 화면 글 */

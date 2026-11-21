@@ -112,6 +112,6 @@ class Summarizer private constructor(private val ctx: Context) {
 
         const val MODEL_NAME = "model.litertlm"
         // 요약 한 번에 쓰는 최대 시간. 넘으면 그때까지 정리한 부분만 보여 줌 (멈추지 않는 문제 방지)
-        private const val MAX_MILLIS = 5 * 60_000L
+        private const val MAX_MILLIS = 10 * 60_000L   // 30개씩 나눠 모든 대화방을 요약하므로 넉넉히(v1.8.0)
     }
 }
