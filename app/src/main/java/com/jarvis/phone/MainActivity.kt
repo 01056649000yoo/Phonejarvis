@@ -62,7 +62,9 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     fun setIntervalFrom(m: Int) = editSchedule { putInt("interval_from", m) }
     fun setIntervalTo(m: Int) = editSchedule { putInt("interval_to", m) }
     fun setDigest(on: Boolean) {
-        editSchedule { putBoolean("digest", on) }
+        // 알릴 시간이 하나도 없이 켜면 모아 두기만 하고 알리지 않으니 아침 8:00·저녁 17:00 을 넣어 둠
+        val empty = schedule.times.isEmpty() && schedule.intervalHours == 0
+        editSchedule { putBoolean("digest", on); if (on && empty) putString("times", "${8 * 60},${17 * 60}") }
         // 켜자마자 지금 상태바에 남은 모으는 앱 알림도 정리
         if (on) NotificationCollectorService.instance?.sweep()
     }
