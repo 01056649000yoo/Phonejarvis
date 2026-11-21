@@ -1,5 +1,7 @@
 package com.jarvis.phone
 
+import androidx.core.graphics.drawable.toBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import android.Manifest
 import android.app.TimePickerDialog
 import android.content.Intent
@@ -34,6 +36,8 @@ private const val WHATS_NEW = "🏠 홈 화면 위젯 — 앱을 열지 않고 �
 
 /** 업데이트 내역 큰 창 (버전 올릴 때 같이 고치기) */
 private val WHATS_NEW_DETAIL = listOf(
+    "📱 앱 아이콘이 보여요" to "설정 → 🌱 알림 앱 정리의 목록과 ＋ 앱 추가 창에 앱 아이콘이 같이 나와요. 이름이 같은 앱(캘린더 두 개 등)은 아래에 'Google 제공'·'삼성 제공'처럼 만든 곳을 적어 구분해요. 앱 추가 버튼도 크게 위로 올렸어요.",
+    "👪 학부모 명부가 짧아졌어요" to "한 사람씩 줄로 세우던 명부를 이름 칩으로 옆으로 이어 붙였어요. 이름을 누르면 작은 창에서 연결한 이름·번호를 보고 빼거나 지울 수 있어요.",
     "🏠 홈 화면 위젯" to "홈 화면을 길게 누르고 → 위젯 → 쌤톡스 요약을 놓으세요. 가장 최근 요약이 위젯 안에 그대로 보이고(길면 위젯 안에서 올려 보기), 📋 요약을 누르면 지금까지 온 알림을 바로 정리해 위젯이 저절로 바뀌어요. 버튼 옆 숫자는 아직 요약 안 한 알림 수예요. ⚙️를 누르면 앱 설정이 열려요.",
     "🤖 봇·채널 알림은 사람 메시지에서 빼요" to "텔레그램 봇(자비스 등)·카카오톡 채널 알림톡(배송·결제)·카카오톡 자체 안내가 '사람에게 온 메시지'에 섞이던 것을 고쳤어요. 이런 알림은 📦 앱 알림에 '보낸 이: 내용'으로 보여요. 쌤톡스 자기 알림(요약 중·완료)도 더는 모으지 않아요.",
     "👥 사람 묶음을 내 맘대로" to "학생·학부모 묶음이 고정으로 있지 않아요. 설정 → 👥 사람 묶음에서 교직원·가족·학부모·동학년처럼 필요한 목록만 만들고, 이모지 24가지와 이름으로 꾸미세요. 어떤 묶음이든 지울 수 있어요(넣어 둔 이름도 같이 지워지고 모은 알림은 남아요). 예전 학생·학부모 묶음은 비어 있으면 저절로 없어지고, 이름이 들어 있으면 남아 있어요.",
@@ -880,12 +884,13 @@ private fun AppCleanupCard(vm: JarvisViewModel) {
                     Modifier.padding(10.dp), style = MaterialTheme.typography.bodySmall,
                 )
             }
-            // ＋ 앱 추가: 기본은 모든 앱을 모으고, 뺄 앱만 끔. 목록에 없는 앱은 여기서 추가
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("모든 앱 알림을 기본으로 모아요. 아래 목록에서 뺄 앱만 끄고, 목록에 없는 앱은 추가하세요.",
-                    Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                OutlinedButton(onClick = { vm.openAddApps() }) { Text("＋ 앱 추가", color = Ssam.Chalk) }
+            // ＋ 앱 추가: 기본은 모든 앱을 모으고, 뺄 앱만 끔. 목록에 없는 앱은 여기서 추가(2026-11-21 선생님: 눈에 안 띈다 → 꽉 찬 버튼)
+            Button(onClick = { vm.openAddApps() }, modifier = Modifier.fillMaxWidth().height(52.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Ssam.Sprout, contentColor = Ssam.Ink)) {
+                Text("＋ 목록에 없는 앱 추가하기", fontWeight = FontWeight.Bold)
             }
+            Text("모든 앱 알림을 기본으로 모아요. 아래 목록에서 뺄 앱만 끄고, 목록에 없는 앱은 위 버튼으로 추가하세요.",
+                style = MaterialTheme.typography.bodySmall)
             vm.addableApps?.let { list -> AddAppDialog(vm, list) }
             // 🚫 광고 자동 거르기 (문자·카톡의 광고성 메시지)
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -966,7 +971,8 @@ private fun AppCleanupCard(vm: JarvisViewModel) {
                     }
                     if (g == 2 && !showOthers) return@forEachIndexed
                     val keepNow = r.stat.pkg !in vm.excludedApps
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        AppIcon(r.stat.pkg, 32.dp)
                         Column(Modifier.weight(1f)) {
                             Text("${r.stat.app} · " + if (r.stat.count > 0) "${r.stat.count}건" else "최근 7일 0건",
                                 fontWeight = FontWeight.Medium)
@@ -1068,6 +1074,7 @@ private fun RetentionRow(title: String, hint: String, choices: List<Int>, value:
 private fun AddAppDialog(vm: JarvisViewModel, apps: List<JarvisViewModel.AddableApp>) {
     var q by rememberSaveable { mutableStateOf("") }
     var showOthers by rememberSaveable { mutableStateOf(false) }
+    val sameName = remember(apps) { apps.groupingBy { it.name }.eachCount() }
     AlertDialog(
         onDismissRequest = { vm.closeAddApps() },
         title = { Text("＋ 앱 추가") },
@@ -1094,9 +1101,15 @@ private fun AddAppDialog(vm: JarvisViewModel, apps: List<JarvisViewModel.Addable
                         } else Text(titles[g], fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 8.dp))
                         list.forEach { a ->
-                            Row(Modifier.fillMaxWidth().clickable { vm.addApp(a.pkg, a.name) }.padding(vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically) {
-                                Text(a.name, Modifier.weight(1f))
+                            Row(Modifier.fillMaxWidth().clickable { vm.addApp(a.pkg, a.name) }.padding(vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                AppIcon(a.pkg, 36.dp)
+                                Column(Modifier.weight(1f)) {
+                                    Text(a.name)
+                                    // 이름이 같은 앱(캘린더 둘 등)은 만든 곳으로 가른다
+                                    if (sameName.getOrDefault(a.name, 0) > 1) Text(appMaker(a.pkg), style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
                                 Text("＋ 추가", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
                             }
                         }
@@ -1610,3 +1623,29 @@ internal object Motion {
     val size = spring<IntSize>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)
     val offset = spring<IntOffset>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)
 }
+
+/** 폰에 깔린 앱의 실제 아이콘(없으면 📱). 한 번 그린 것은 다시 읽지 않음 */
+@Composable
+fun AppIcon(pkg: String, size: androidx.compose.ui.unit.Dp) {
+    val ctx = LocalContext.current
+    val bmp = remember(pkg) {
+        runCatching { ctx.packageManager.getApplicationIcon(pkg).toBitmap(96, 96).asImageBitmap() }.getOrNull()
+    }
+    if (bmp != null) androidx.compose.foundation.Image(bmp, contentDescription = null, modifier = Modifier.size(size))
+    else Box(Modifier.size(size), contentAlignment = Alignment.Center) { Text("📱") }
+}
+
+/** 이름이 같은 앱을 가르는 '만든 곳' (com.google.android.calendar → Google · 캘린더) */
+fun appMaker(pkg: String): String {
+    val maker = when {
+        pkg.startsWith("com.google.") -> "Google"
+        pkg.startsWith("com.samsung.") || pkg.startsWith("com.sec.") -> "삼성"
+        pkg.startsWith("com.microsoft.") -> "Microsoft"
+        pkg.startsWith("com.naver.") || pkg.startsWith("com.nhn.") -> "네이버"
+        pkg.startsWith("com.kakao.") -> "카카오"
+        pkg.startsWith("com.lge.") -> "LG"
+        else -> pkg.split('.').getOrNull(1)?.replaceFirstChar { it.uppercase() } ?: pkg
+    }
+    return "$maker 제공 · $pkg"
+}
+
