@@ -6,6 +6,9 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.material3.Typography
+import androidx.compose.material3.Shapes
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -25,24 +28,34 @@ private val Light = lightColorScheme(
     primary = Ssam.Board, onPrimary = Ssam.Chalk,
     primaryContainer = Ssam.Board, onPrimaryContainer = Ssam.Chalk,
     secondary = Color(0xFF4F7A45), onSecondary = Color.White,
+    // 하단 메뉴의 고른 칸·칩: 기본 보라 대신 새싹 연두 (2026-11-22 깔끔하고 눈에 띄게)
+    secondaryContainer = Color(0xFFD6EDCB), onSecondaryContainer = Color(0xFF1C3A22),
     tertiary = Color(0xFFB4553A), onTertiary = Color.White,
-    background = Ssam.Chalk, onBackground = Ssam.Ink,
-    surface = Ssam.Chalk, onSurface = Ssam.Ink,
-    surfaceVariant = Color(0xFFEAE3D2), onSurfaceVariant = Color(0xFF4A5A51),
-    surfaceContainer = Color(0xFFFFFCF4), surfaceContainerHighest = Color(0xFFEAE3D2),
-    outline = Color(0xFF8A9690),
+    tertiaryContainer = Color(0xFFFBE0D6), onTertiaryContainer = Color(0xFF5A2312),
+    background = Color(0xFFF3EDDF), onBackground = Ssam.Ink,
+    surface = Color(0xFFF3EDDF), onSurface = Ssam.Ink,
+    surfaceVariant = Color(0xFFEDE7D8), onSurfaceVariant = Color(0xFF4A5A51),
+    // 카드는 크림 바탕 위 흰 종이처럼 (예전 베이지 카드는 바탕과 섞여 흐릿했음)
+    surfaceContainerLowest = Color.White, surfaceContainerLow = Color(0xFFFFFDF8),
+    surfaceContainer = Color(0xFFFFFCF4), surfaceContainerHigh = Color(0xFFFFFDF8),
+    surfaceContainerHighest = Color(0xFFFFFEFA),
+    outline = Color(0xFF8A9690), outlineVariant = Color(0xFFE3DCCB),
 )
 
 private val Dark = darkColorScheme(
     primary = Ssam.Sprout, onPrimary = Color(0xFF10301F),
     primaryContainer = Ssam.Board, onPrimaryContainer = Ssam.Chalk,
     secondary = Color(0xFFB9D9AE), onSecondary = Color(0xFF1E3A1A),
+    secondaryContainer = Color(0xFF345A3C), onSecondaryContainer = Color(0xFFD6EDCB),
     tertiary = Ssam.Blush, onTertiary = Color(0xFF4A1A0C),
+    tertiaryContainer = Color(0xFF5A2E22), onTertiaryContainer = Color(0xFFFBE0D6),
     background = Ssam.Night, onBackground = Color(0xFFE6ECE8),
     surface = Ssam.Night, onSurface = Color(0xFFE6ECE8),
     surfaceVariant = Color(0xFF2A322E), onSurfaceVariant = Color(0xFFB9C6BE),
-    surfaceContainer = Color(0xFF232A26), surfaceContainerHighest = Color(0xFF2E3632),
-    outline = Color(0xFF7D8A83),
+    surfaceContainerLowest = Color(0xFF151A17), surfaceContainerLow = Color(0xFF1F2622),
+    surfaceContainer = Color(0xFF232A26), surfaceContainerHigh = Color(0xFF29312D),
+    surfaceContainerHighest = Color(0xFF2B332F),
+    outline = Color(0xFF7D8A83), outlineVariant = Color(0xFF39433E),
 )
 
 /**
@@ -70,8 +83,32 @@ private val SsamType = Typography().run {
     )
 }
 
+/** 모서리: 카드 20, 창 28 — 둥글고 부드럽게 */
+private val SsamShapes = Shapes(
+    extraSmall = RoundedCornerShape(8.dp), small = RoundedCornerShape(12.dp),
+    medium = RoundedCornerShape(20.dp), large = RoundedCornerShape(24.dp), extraLarge = RoundedCornerShape(28.dp),
+)
+
 /** 폰 설정의 다크 모드를 따라 밝은(분필 크림)/어두운(밤 칠판) 테마. */
 @Composable
 fun SsamTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = if (isSystemInDarkTheme()) Dark else Light, typography = SsamType, content = content)
+    MaterialTheme(colorScheme = if (isSystemInDarkTheme()) Dark else Light, typography = SsamType, shapes = SsamShapes, content = content)
+}
+
+/**
+ * 쌤톡스 카드 (2026-11-22): 흰 종이 + 옅은 테두리 한 줄. 이 패키지의 `Card(...)` 는 모두 이것을 씀
+ * (같은 패키지 함수가 material3.* 보다 먼저 잡힘). 색을 따로 준 카드(진한 요약 카드 등)는 테두리 없이.
+ */
+@Composable
+fun Card(
+    modifier: androidx.compose.ui.Modifier = androidx.compose.ui.Modifier,
+    colors: androidx.compose.material3.CardColors = androidx.compose.material3.CardDefaults.cardColors(),
+    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
+) {
+    val plain = colors == androidx.compose.material3.CardDefaults.cardColors()
+    androidx.compose.material3.Card(
+        modifier, shape = MaterialTheme.shapes.medium, colors = colors,
+        border = if (plain) androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant) else null,
+        content = content,
+    )
 }

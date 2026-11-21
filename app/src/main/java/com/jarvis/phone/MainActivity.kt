@@ -165,8 +165,12 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         private set
     private var aiDoneFor: Set<String> = emptySet()
 
-    /** 앱 목록과 규칙 추천을 바로 보여 주고, 모델이 있으면 AI 추천으로 다시 다듬음 (앱 목록이 바뀌었을 때만). */
-    fun loadApps() {
+    /**
+     * 앱 목록과 규칙 추천을 바로 보여 주고, ai=true 이고 모델이 있으면 AI 추천으로 다시 다듬음 (앱 목록이 바뀌었을 때만).
+     * AI(3.7GB 모델을 GPU에 올림)는 🌱 알림 앱 정리 화면을 열었을 때만 — 예전엔 앱을 열 때마다 돌아
+     * 화면과 GPU를 다퉈 하단 메뉴가 멈춘 듯 보였다(2026-11-22).
+     */
+    fun loadApps(ai: Boolean = false) {
         val ctx = getApplication<Application>()
         viewModelScope.launch {
             // 최근 7일 알림을 보낸 앱 + 예전에 알림을 보낸 앱(뺀 앱 포함) + 직접 추가한 앱 → 한 번 빼도 목록에서 사라지지 않음
@@ -190,7 +194,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
                 db.since(System.currentTimeMillis() - 7 * 24L * 3600 * 1000).filter { r.allows(it) }
             }
             keywordRecs = KeywordAdvisor.byRules(recent)
-            if (!summarizer.hasModel() || stats.isEmpty() || aiBusy) return@launch
+            if (!ai || !summarizer.hasModel() || stats.isEmpty() || aiBusy || BriefingService.active) return@launch
             aiBusy = true
             try {
                 appRecs = AppAdvisor.sortForDisplay(AppAdvisor.byAi(ctx, rules), importantApps)
@@ -249,7 +253,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         addableApps = addableApps?.filterNot { it.pkg == pkg }
         status = "＋ $name 추가! 이제 이 앱 알림이 오면 모아요."
         aiDoneFor = emptySet()
-        loadApps()
+        loadApps(ai = true)
     }
 
     /** "안 써요": 이 앱은 알림이 안 들어와도 다시 경고하지 않음 */
@@ -373,7 +377,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     }
     /** 지금 열린 세부 화면 (null이면 탭의 첫 화면) */
     var page by mutableStateOf<Page?>(if (prefs.getBoolean("apps_setup_done", false)) null else Page.APPS)
-    fun open(p: Page) { tab = p.tab; page = p }
+    fun open(p: Page) { tab = p.tab; page = p; if (p == Page.APPS) loadApps(ai = true) }
 
     // ── 👥 사람들: 쓰는 사람이 만드는 묶음 ──
     var groups by mutableStateOf(People.groups(app))
@@ -879,7 +883,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         reloadSchedule()
         // 모델 받기 단계에 있으면(권한 설정에서 돌아온 경우 포함) 다운로드 폴더를 다시 찾아봄
         if (!onboardingDone && onboardingStep == 2) scanDownloads()
-        if (onboardingDone) loadApps()
+        if (onboardingDone) loadApps(ai = page == Page.APPS)
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { Storage.autoClean(ctx) }   // 🧹 보관 기간이 지난 기록 자동 정리 (6시간에 한 번)
             val use = runCatching { Storage.usage(ctx) }.getOrNull()

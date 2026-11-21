@@ -28,14 +28,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** 이번 버전에서 바뀐 점 한 줄 (버전 올릴 때 같이 고치기). */
-private const val WHATS_NEW = "🔕 모아서 알림 스위치 하나로 단순하게 — 켜면 모아 두었다가 정한 때 요약, 끄면 직접"
+private const val WHATS_NEW = "하단 메뉴 멈춤 고침 · 화면을 더 깔끔하게 — 지금 정리하기 버튼이 맨 위로"
 
 /** 업데이트 내역 큰 창 (버전 올릴 때 같이 고치기) */
 private val WHATS_NEW_DETAIL = listOf(
+    "🐢 하단 메뉴가 멈추던 것" to "앱을 열 때마다 알림 앱 추천을 하려고 큰 AI 모델을 불러오느라 화면이 버벅였어요. 이제 AI 추천은 설정 → 🌱 알림 앱 정리를 열었을 때만, 정리 중이 아닐 때만 해요. 앱 아이콘은 한 번 읽으면 모아 두고, 탭은 더 가볍게 바뀌어요.",
+    "✨ 더 깔끔한 화면" to "카드를 흰 종이처럼 또렷하게, 하단 메뉴의 고른 탭은 새싹 연두로 바꿨어요. 가장 많이 쓰는 '지금 정리하기' 버튼은 요약 탭 맨 위로 올렸고, 알림 탭의 아직 요약 안 한 알림은 최근 3건만 보이게 접어 두었어요(더 보기로 펼침).",
     "🔕 모아서 알림 하나로" to "설정이 너무 많아 단순하게 바꿨어요. 설정 → 🔕 모아서 알림을 켜면 모으는 앱 알림은 늘 도착하자마자 숨기고 모아 두었다가, 정한 시각·몇 시간마다 요약해서 알려 줘요. 끄면 알림은 평소처럼 오고 요약은 직접 눌러요. 수업 시간표·퇴근 모드는 없앴어요.",
     "📚 알림이 많아도 빠짐없이" to "예전에는 대화방이 많으면 최근 10곳만 요약했어요. 이제 모든 대화방을 요약하고, 메시지가 30개가 넘는 방은 30개씩 나눠 요약한 뒤 합쳐요.",
     "🏠 위젯이 최신 요약으로 바뀌어요" to "위젯에서 📋 요약을 눌러 정리가 끝나도 예전 요약이 그대로 보이던 것을 고쳤어요. 이제 요약이 끝나면 위젯이 바로 새 요약으로 바뀌어요.",
@@ -83,17 +86,26 @@ fun JarvisScreen(vm: JarvisViewModel) {
     androidx.activity.compose.BackHandler(enabled = vm.page != null || vm.tab != JarvisViewModel.Tab.BRIEFING) { vm.back() }
     Scaffold(
         bottomBar = {
-            NavigationBar {
+            // 하단 메뉴: 흰 바탕 + 위 옅은 줄, 고른 칸은 새싹 연두 알약·굵은 글자
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest, tonalElevation = 0.dp) {
                 listOf(
                     Triple(JarvisViewModel.Tab.BRIEFING, "📋", "요약"),
                     Triple(JarvisViewModel.Tab.ALERTS, "🔔", "알림"),
                     Triple(JarvisViewModel.Tab.HISTORY, "📚", "지난 요약"),
                     Triple(JarvisViewModel.Tab.SETTINGS, "⚙️", "설정"),
                 ).forEach { (t, icon, label) ->
+                    val sel = vm.tab == t
                     NavigationBarItem(
-                        selected = vm.tab == t,
-                        onClick = { vm.selectTab(t) },
-                        icon = { Text(icon) }, label = { Text(label) },
+                        selected = sel,
+                        onClick = { if (!sel || vm.page != null) vm.selectTab(t) },   // 같은 탭을 또 누르면 아무것도 안 함
+                        icon = { Text(icon, fontSize = 22.sp) },
+                        label = { Text(label, fontWeight = if (sel) FontWeight.ExtraBold else FontWeight.Medium) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
+                        ),
                     )
                 }
             }
@@ -114,7 +126,7 @@ fun JarvisScreen(vm: JarvisViewModel) {
                         (slideInHorizontally(Motion.offset) { -it / 4 } + fadeIn(Motion.fade)) togetherWith
                             (slideOutHorizontally(Motion.offset) { it } + fadeOut(Motion.fadeFast))
                     else ->                                                        // 탭 바꾸기
-                        (fadeIn(Motion.fade) + scaleIn(Motion.fade, initialScale = 0.985f)) togetherWith fadeOut(Motion.fadeFast)
+                        fadeIn(tween(140)) togetherWith fadeOut(tween(90))
                 }
             },
             modifier = Modifier.padding(inner),
@@ -243,23 +255,7 @@ private fun BriefingTab(vm: JarvisViewModel) {
         confirmButton = { Button(onClick = { whatsNewOpen = false; vm.closeWhatsNew() }) { Text("확인") } },
     )
 
-    vm.briefingDetail?.let { (b, items) -> BriefingDetailDialog(vm, b, items) }
-    // 최신 브리핑 카드: 접으면 "언제·몇 건"만, 숨기면 맨 위에서 빠짐 (맨 아래 📚 모음에는 남음)
-    val latest = vm.briefings.firstOrNull()
-    when {
-        latest != null && latest.time.toString() !in vm.hiddenBriefings ->
-            BriefingCard(vm, latest, primary = true, onHide = { vm.hideBriefing(latest) })
-        latest == null -> Card(Modifier.fillMaxWidth()) {
-            Text("아직 브리핑이 없어요. 아래 버튼을 누르거나, 설정에서 정한 시각을 기다리세요.",
-                Modifier.padding(16.dp), style = MaterialTheme.typography.bodyMedium)
-        }
-        else -> {}
-    }
-
-    TasksCard(vm)
-    if (vm.groups.any { it.id == "parents" && !it.hidden }) ParentCard(vm)
-    PeopleCard(vm)
-
+    // 가장 많이 쓰는 '지금 정리하기'는 맨 위에 (예전엔 할 일 목록 아래에 묻혀 안 보였음)
     val ctx = LocalContext.current
     Button(
         onClick = {
@@ -292,6 +288,23 @@ private fun BriefingTab(vm: JarvisViewModel) {
     if (vm.status.isNotEmpty()) Text(vm.status, style = MaterialTheme.typography.bodySmall)
     if (!vm.hasModel) Text("AI 모델이 없어요. 설정 탭에서 받아 주세요.",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
+    vm.briefingDetail?.let { (b, items) -> BriefingDetailDialog(vm, b, items) }
+    // 최신 브리핑 카드: 접으면 "언제·몇 건"만, 숨기면 맨 위에서 빠짐 (맨 아래 📚 모음에는 남음)
+    val latest = vm.briefings.firstOrNull()
+    when {
+        latest != null && latest.time.toString() !in vm.hiddenBriefings ->
+            BriefingCard(vm, latest, primary = true, onHide = { vm.hideBriefing(latest) })
+        latest == null -> Card(Modifier.fillMaxWidth()) {
+            Text("아직 브리핑이 없어요. 위 버튼을 누르거나, 설정에서 정한 시각을 기다리세요.",
+                Modifier.padding(16.dp), style = MaterialTheme.typography.bodyMedium)
+        }
+        else -> {}
+    }
+
+    TasksCard(vm)
+    if (vm.groups.any { it.id == "parents" && !it.hidden }) ParentCard(vm)
+    PeopleCard(vm)
+
 }
 
 // ───────────────────────── 🔔 알림 탭: 모은 알림 원본 ─────────────────────────
@@ -301,9 +314,12 @@ private fun AlertsTab(vm: JarvisViewModel) {
     val timeFmt = remember { SimpleDateFormat("HH:mm", Locale.KOREA) }
     // 아직 요약 안 한 알림: 요약 탭에서 '지금 정리하기'를 하면 사라짐
     if (vm.pendingItems.isNotEmpty()) {
-        var expanded by rememberSaveable { mutableStateOf(true) }
+        var expanded by rememberSaveable { mutableStateOf(false) }
         val apps = vm.pendingItems.map { it.app }.distinct()
-        Card(Modifier.fillMaxWidth()) {
+        // 아직 요약 안 한 알림은 연두 카드로 눈에 띄게
+        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -312,12 +328,12 @@ private fun AlertsTab(vm: JarvisViewModel) {
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                     }
-                    TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "접기" else "원본 보기") }
+                    TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "접기" else "더 보기") }
                 }
-                AnimatedVisibility(visible = expanded, enter = expandVertically(Motion.size) + fadeIn(Motion.fade),
-                    exit = shrinkVertically(Motion.size) + fadeOut(Motion.fadeFast)) {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        vm.pendingItems.takeLast(30).reversed().forEach {
+                // 접어 두면 최근 3건만, 펼치면 30건
+                Column(Modifier.animateContentSize(Motion.size), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    run {
+                        vm.pendingItems.takeLast(if (expanded) 30 else 3).reversed().forEach {
                             Text("${timeFmt.format(it.time)} [${it.app}] ${it.title}: ${it.text}",
                                 style = MaterialTheme.typography.bodySmall, maxLines = 2)
                         }
@@ -382,9 +398,11 @@ private fun TodayAllPage(vm: JarvisViewModel) {
     }
     Text("오늘 ${vm.todayItems.size}건 · 정리 안 한 알림 ${vm.pendingItems.size}건", style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant)
-    vm.todayItems.groupBy { it.app to it.roomOrTitle }.entries
-        .sortedByDescending { e -> e.value.maxOf { it.time } }
-        .forEach { (key, list) ->
+    val rooms = remember(vm.todayItems) {
+        vm.todayItems.groupBy { it.app to it.roomOrTitle }.entries
+            .map { it.key to it.value }.sortedByDescending { (_, l) -> l.maxOf { it.time } }
+    }
+    rooms.forEach { (key, list) ->
             var open by rememberSaveable(key.first + key.second) { mutableStateOf(false) }
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.animateContentSize(Motion.size).clickable { open = !open }.padding(14.dp),
@@ -1467,11 +1485,20 @@ internal object Motion {
 @Composable
 fun AppIcon(pkg: String, size: androidx.compose.ui.unit.Dp) {
     val ctx = LocalContext.current
-    val bmp = remember(pkg) {
-        runCatching { ctx.packageManager.getApplicationIcon(pkg).toBitmap(96, 96).asImageBitmap() }.getOrNull()
+    // 아이콘 읽기는 앱마다 수 ms — 목록이 길면 화면이 멈칫해서 한 번 읽은 것은 모아 두고, 처음 읽기는 화면 밖(IO)에서
+    val bmp by produceState(IconCache.peek(pkg), pkg) {
+        if (value == null) value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { IconCache.load(ctx, pkg) }
     }
-    if (bmp != null) androidx.compose.foundation.Image(bmp, contentDescription = null, modifier = Modifier.size(size))
+    if (bmp != null) androidx.compose.foundation.Image(bmp!!, contentDescription = null, modifier = Modifier.size(size))
     else Box(Modifier.size(size), contentAlignment = Alignment.Center) { Text("📱") }
+}
+
+private object IconCache {
+    private val map = android.util.LruCache<String, androidx.compose.ui.graphics.ImageBitmap>(80)
+    fun peek(pkg: String) = map.get(pkg)
+    fun load(ctx: android.content.Context, pkg: String) = runCatching {
+        ctx.packageManager.getApplicationIcon(pkg).toBitmap(96, 96).asImageBitmap()
+    }.getOrNull()?.also { map.put(pkg, it) }
 }
 
 /** 이름이 같은 앱을 가르는 '만든 곳' (com.google.android.calendar → Google · 캘린더) */
