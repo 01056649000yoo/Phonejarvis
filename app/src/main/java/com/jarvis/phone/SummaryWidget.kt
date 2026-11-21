@@ -18,6 +18,14 @@ import androidx.glance.appwidget.lazy.LazyColumn
 import androidx.glance.appwidget.lazy.items
 import androidx.glance.appwidget.provideContent
 import androidx.glance.appwidget.updateAll
+import androidx.glance.appwidget.GlanceAppWidgetManager
+import androidx.glance.appwidget.state.updateAppWidgetState
+import androidx.glance.currentState
+import androidx.glance.state.GlanceStateDefinition
+import androidx.glance.state.PreferencesGlanceStateDefinition
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.compose.runtime.remember
 import androidx.glance.background
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Column
@@ -52,9 +60,16 @@ class SummaryWidget : GlanceAppWidget() {
         return State(db.lastBriefing(), pending, BriefingService.active)
     }
 
+    // 위젯은 한 번 뜬 동안(세션) provideGlance 를 다시 부르지 않는다 — 처음 읽은 요약을 계속 그리던 것(2026-11-21 선생님:
+    // "요약을 눌러도 위젯에 최신 요약이 안 됨"). 새로 그리라고 할 때마다 위젯 상태의 '판 번호'를 올리고, 그 번호가 바뀌면 다시 읽는다.
+    override val stateDefinition: GlanceStateDefinition<*> = PreferencesGlanceStateDefinition
+
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val state = load(context)
-        provideContent { GlanceTheme { Content(context, state) } }
+        provideContent {
+            val rev = currentState<Preferences>()[REV] ?: 0L
+            val state = remember(rev) { load(context) }
+            GlanceTheme { Content(context, state) }
+        }
     }
 
     @Composable
@@ -122,8 +137,19 @@ class SummaryWidget : GlanceAppWidget() {
         const val EXTRA_OPEN_TAB = "open_tab"
         @Volatile private var lastNotiRefresh = 0L
 
-        /** 위젯 다시 그리기(요약 시작·끝, 앱 열 때) */
-        suspend fun refresh(ctx: Context) { runCatching { SummaryWidget().updateAll(ctx.applicationContext) } }
+        private val REV = longPreferencesKey("rev")
+
+        /** 위젯 다시 그리기(요약 시작·끝, 앱 열 때) — 판 번호를 올려 최신 요약을 다시 읽게 */
+        suspend fun refresh(ctx: Context) {
+            runCatching {
+                val app = ctx.applicationContext
+                val now = System.currentTimeMillis()
+                GlanceAppWidgetManager(app).getGlanceIds(SummaryWidget::class.java).forEach { id ->
+                    updateAppWidgetState(app, id) { it[REV] = now }
+                }
+                SummaryWidget().updateAll(app)
+            }
+        }
 
         /** 새 알림이 올 때: 위젯 '요약 N' 숫자를 10분에 한 번까지만 */
         suspend fun refreshForNewNoti(ctx: Context) {
