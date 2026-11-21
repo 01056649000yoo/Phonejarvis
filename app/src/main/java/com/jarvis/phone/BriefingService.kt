@@ -81,6 +81,7 @@ class BriefingService : Service() {
             } finally {
                 // 백그라운드에서 수 GB 모델을 계속 들고 있지 않도록 내림
                 runCatching { Summarizer.get(this@BriefingService).release() }
+                runCatching { Backup.autoBackup(this@BriefingService) }   // 💾 하루 한 번 자동 백업
                 if (wake.isHeld) wake.release()
                 running = false
                 preparing = null

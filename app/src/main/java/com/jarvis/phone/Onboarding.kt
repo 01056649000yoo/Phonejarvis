@@ -59,6 +59,15 @@ private class OpenInDownloads : ActivityResultContracts.OpenDocument() {
         )
 }
 
+/** 파일 선택 화면을 '다운로드/쌤톡스'(자동 백업 폴더)에서 바로 열기. */
+class OpenInBackupFolder : ActivityResultContracts.OpenDocument() {
+    override fun createIntent(context: Context, input: Array<String>): Intent =
+        super.createIntent(context, input).putExtra(
+            DocumentsContract.EXTRA_INITIAL_URI,
+            Uri.parse("content://com.android.externalstorage.documents/document/primary%3ADownload%2F" + Uri.encode("쌤톡스")),
+        )
+}
+
 private const val STEPS = 4
 
 /**
@@ -129,7 +138,26 @@ private fun WelcomeStep(vm: JarvisViewModel) {
     }
     Text("처음 한 번만 설정하면 돼요: 폰 진단 → AI 모델 받기 → 권한 허용 (약 10분)",
         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    // 💾 예전에 쓰던 설정 불러오기 (다시 설치했을 때)
+    LaunchedEffect(Unit) { vm.checkBackup() }
+    val restorePicker = rememberLauncherForActivityResult(OpenInBackupFolder()) { uri -> if (uri != null) vm.restoreBackup(uri) }
+    val found = vm.foundBackup
+    if (found != null) {
+        val fmt = remember { java.text.SimpleDateFormat("M/d HH:mm", java.util.Locale.KOREA) }
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("💾 지난 설정을 찾았어요", fontWeight = FontWeight.Bold)
+                Text("${fmt.format(found.first)} 저장 · ${found.second}", style = MaterialTheme.typography.bodyMedium)
+                Button(onClick = { vm.restoreBackup(null) }) { Text("불러오기") }
+            }
+        }
+    }
+    if (vm.status.startsWith("💾") || vm.status.startsWith("불러오지")) Text(vm.status, style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.primary)
     PrimaryButton("시작하기") { vm.onboardingStep = 1 }
+    TextButton(onClick = { restorePicker.launch(arrayOf("application/json", "*/*")) }, modifier = Modifier.fillMaxWidth()) {
+        Text("💾 예전에 쓰던 설정 불러오기 (백업 파일)")
+    }
     // 모델 파일을 이미 다운로드 폴더에 받아 둔 경우: 진단·다운로드를 건너뛰고 바로 가져오기로
     TextButton(onClick = { vm.onboardingStep = 2 }, modifier = Modifier.fillMaxWidth()) {
         Text("모델 파일을 이미 받아 뒀어요 → 바로 가져오기")

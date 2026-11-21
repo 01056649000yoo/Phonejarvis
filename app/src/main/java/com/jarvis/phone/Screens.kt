@@ -24,7 +24,7 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** 이번 버전에서 바뀐 점 한 줄 (버전 올릴 때 같이 고치기). */
-private const val WHATS_NEW = "👪 학부모 명부로 문자·카톡·밴드 연락 자동 정리 · 브리핑 접기·숨기기, 맨 아래 📚 브리핑 모음 · 📦 미리 준비 · 🚫 광고 거르기"
+private const val WHATS_NEW = "💾 백업·복원: 하루 한 번 자동 백업, 앱을 다시 깔아도 첫 화면에서 설정 그대로 불러오기"
 
 /** 메인: 아래 탭 두 개 — 브리핑(결과만 보기) / 설정(내 방식대로). */
 @Composable
@@ -321,6 +321,7 @@ private fun TimesCard(vm: JarvisViewModel) {
 @Composable
 private fun BasicSettings(vm: JarvisViewModel) {
     val ctx = LocalContext.current
+    BackupCard(vm)
     SetupCard(
         done = vm.listenerEnabled, title = "알림 접근 권한",
         desc = if (vm.listenerEnabled) "허용됨" else "다른 앱의 알림을 읽으려면 허용이 필요해요",
@@ -757,6 +758,36 @@ private fun QuietCard(vm: JarvisViewModel) {
             if (!dnd) OutlinedButton(onClick = {
                 ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
             }) { Text("방해 금지 권한 허용하기") }
+        }
+    }
+}
+
+/** 💾 백업·복원: 자동 백업 상태 + 지금 백업 / 파일로 내보내기 / 파일에서 불러오기 */
+@Composable
+private fun BackupCard(vm: JarvisViewModel) {
+    val fmt = remember { SimpleDateFormat("M/d(E) HH:mm", Locale.KOREA) }
+    val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) vm.exportBackup(uri)
+    }
+    val importer = rememberLauncherForActivityResult(OpenInBackupFolder()) { uri -> if (uri != null) vm.restoreBackup(uri) }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("💾 백업·복원", fontWeight = FontWeight.Bold)
+            Text("앱을 지웠다 다시 깔아도 명부·학부모 연결·키워드·방·브리핑 시각·시간표가 그대로 돌아와요. " +
+                 "메시지 내용과 학생별 기록은 넣지 않아요. 백업 파일도 폰 밖으로 나가지 않아요.",
+                style = MaterialTheme.typography.bodySmall)
+            Text(
+                if (vm.lastBackup > 0) "마지막 백업: ${fmt.format(vm.lastBackup)} · 하루 한 번 다운로드/쌤톡스 폴더에 자동 저장"
+                else "아직 백업이 없어요. '모든 파일 접근'이 켜져 있으면 하루 한 번 자동으로 저장해요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
+            )
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { vm.backupNow() }) { Text("지금 백업") }
+                OutlinedButton(onClick = { export.launch("쌤톡스_백업.json") }) { Text("파일로 내보내기") }
+                OutlinedButton(onClick = { importer.launch(arrayOf("application/json", "*/*")) }) { Text("파일에서 불러오기") }
+            }
+            if (vm.status.startsWith("💾") || vm.status.startsWith("불러오지") || vm.status.startsWith("백업"))
+                Text(vm.status, style = MaterialTheme.typography.bodySmall)
         }
     }
 }

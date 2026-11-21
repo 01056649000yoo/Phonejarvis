@@ -241,6 +241,52 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     var section by mutableStateOf(Section.APPS)
     fun openSettings(s: Section) { section = s; tab = Tab.SETTINGS }
 
+    // ── 💾 백업·복원 ──
+    var lastBackup by mutableStateOf(Backup.lastBackupTime(app))
+        private set
+    /** 다운로드/쌤톡스에서 찾은 백업 (저장 시각, 요약) */
+    var foundBackup by mutableStateOf<Pair<Long, String>?>(null)
+        private set
+    fun checkBackup() {
+        viewModelScope.launch { foundBackup = withContext(Dispatchers.IO) { Backup.found() } }
+    }
+    fun backupNow() {
+        val ctx = getApplication<Application>()
+        viewModelScope.launch {
+            val ok = withContext(Dispatchers.IO) { Backup.saveToDownloads(ctx) }
+            lastBackup = Backup.lastBackupTime(ctx)
+            status = if (ok) "💾 다운로드/쌤톡스 폴더에 백업했어요." else "백업하려면 '모든 파일 접근'이 필요해요. '파일로 내보내기'를 쓰면 권한 없이 저장할 수 있어요."
+        }
+    }
+    fun exportBackup(uri: Uri) {
+        val ctx = getApplication<Application>()
+        viewModelScope.launch {
+            val ok = withContext(Dispatchers.IO) { Backup.exportTo(ctx, uri) }
+            lastBackup = Backup.lastBackupTime(ctx)
+            status = if (ok) "💾 백업 파일을 저장했어요." else "백업 파일을 저장하지 못했어요."
+        }
+    }
+    /** uri가 null이면 다운로드/쌤톡스에서 찾은 백업을 불러옴 */
+    fun restoreBackup(uri: Uri?) {
+        val ctx = getApplication<Application>()
+        viewModelScope.launch {
+            val r = withContext(Dispatchers.IO) { if (uri == null) Backup.restoreFromDownloads(ctx) else Backup.restoreFrom(ctx, uri) }
+            status = r.fold({ "💾 설정을 불러왔어요 · $it" }, { "불러오지 못했어요: ${it.message}" })
+            if (r.isSuccess) reloadAll()
+        }
+    }
+    /** 복원 뒤 화면 상태를 저장된 설정으로 다시 읽기 */
+    private fun reloadAll() {
+        val ctx = getApplication<Application>()
+        students = Students.names(ctx); keywords = AppFilter.keywords(ctx)
+        excludedApps = AppFilter.excluded(ctx); excludedRooms = AppFilter.excludedRooms(ctx)
+        parentRooms = ParentAdvisor.parentRooms(ctx); parentLinks = ParentBook.links(ctx)
+        adFilterOn = AdFilter.enabled(ctx); skipWeekend = BriefingSlot.skipWeekend(ctx)
+        slots = readSlots(); quietRev++
+        foundBackup = null
+        refresh()
+    }
+
     // ── 📋 브리핑 카드 접기·숨기기, 📚 브리핑 모음 ──
     var briefings by mutableStateOf<List<Briefing>>(emptyList())
         private set
@@ -470,12 +516,14 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         hasModel = summarizer.hasModel()
         notiPermission = NotificationManagerCompat.from(ctx).areNotificationsEnabled()
         adCount = AdFilter.countToday(ctx)
+        lastBackup = Backup.lastBackupTime(ctx)
         slots = readSlots()
         // 모델 받기 단계에 있으면(권한 설정에서 돌아온 경우 포함) 다운로드 폴더를 다시 찾아봄
         if (!onboardingDone && onboardingStep == 2) scanDownloads()
         if (onboardingDone) loadApps()
         viewModelScope.launch(Dispatchers.IO) {
             db.purgeOld()
+            runCatching { Backup.autoBackup(ctx) }   // 💾 하루 한 번 자동 백업
             val rules = AppFilter.rules(ctx)
             val items = db.today().filter { rules.allows(it) }
             val names = Students.names(ctx)
