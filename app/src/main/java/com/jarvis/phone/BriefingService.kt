@@ -41,8 +41,10 @@ class BriefingService : Service() {
         }
         Notifications.ensureChannels(this)
         // 미리 준비(브리핑 15분 전)면 결과를 알리지 않고 저장만 → 브리핑 시각에 바로 보여 줌
-        val prepareSlot = intent?.getStringExtra(EXTRA_PREPARE)?.let { runCatching { BriefingSlot.valueOf(it) }.getOrNull() }
-        val title = if (prepareSlot != null) "브리핑 미리 준비 중" else "쌤톡스가 알림을 정리하는 중"
+        val prepare = intent?.getBooleanExtra(EXTRA_PREPARE, false) == true
+        val auto = intent?.getBooleanExtra(EXTRA_AUTO, false) == true
+        val rolling = intent?.getBooleanExtra(EXTRA_ROLLING, false) == true
+        val title = if (prepare) "요약 미리 준비 중" else "쌤톡스가 알림을 정리하는 중"
         ServiceCompat.startForeground(
             this, Notifications.ID_PROGRESS, Notifications.progress(this, "브리핑 준비 중…", title = title),
             if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0,
@@ -51,7 +53,7 @@ class BriefingService : Service() {
         running = true
         active = true
         AppScope.main.launch { SummaryWidget.refresh(this@BriefingService) }   // 🏠 위젯에 '요약 중…'
-        preparing = prepareSlot
+        preparing = prepare
         showWhenDone = false
 
         val label = intent?.getStringExtra(EXTRA_LABEL) ?: "브리핑"
@@ -66,9 +68,15 @@ class BriefingService : Service() {
                     Notifications.notify(this@BriefingService, Notifications.ID_PROGRESS,
                         Notifications.progress(this@BriefingService, s, title = title))
                 }
-                if (prepareSlot != null && !showWhenDone) {
-                    // 미리 준비 완료: 저장해 두었다가 브리핑 시각에 알림
-                    BriefingScheduler.saveReady(this@BriefingService, prepareSlot, result.title, result.body, result.time)
+                if (auto && result.time == 0L) {
+                    // 예약 요약인데 새 알림이 없음 → 조용히 넘어감(자주 요약해도 귀찮지 않게)
+                } else if (prepare && !showWhenDone) {
+                    // 미리 준비 완료: 저장해 두었다가 정한 시각에 알림
+                    BriefingScheduler.saveReady(this@BriefingService, result.title, result.body, result.time)
+                } else if (rolling) {
+                    // 간격·수업 끝 요약: 알림 하나를 새 내용으로 바꿔 보여 줌(쌓이지 않게)
+                    Notifications.notify(this@BriefingService, Notifications.ID_ROLLING,
+                        Notifications.result(this@BriefingService, result.title, result.body, result.time))
                 } else {
                     // 일반 실행이거나, 준비가 길어져 브리핑 시각이 이미 지난 경우 → 바로 알림
                     Notifications.notify(this@BriefingService, Notifications.idFor(result.time),
@@ -88,7 +96,8 @@ class BriefingService : Service() {
                 if (wake.isHeld) wake.release()
                 running = false
                 active = false
-                preparing = null
+                preparing = false
+                runCatching { BriefingScheduler.scheduleAll(this@BriefingService) }   // 그다음 요약
                 runCatching { SummaryWidget.refresh(this@BriefingService) }   // 🏠 위젯에 새 요약
                 ServiceCompat.stopForeground(this@BriefingService, ServiceCompat.STOP_FOREGROUND_REMOVE)
                 stopSelf()
@@ -102,13 +111,15 @@ class BriefingService : Service() {
     companion object {
         const val EXTRA_LABEL = "label"
         const val EXTRA_PREPARE = "prepare"
+        const val EXTRA_AUTO = "auto"
+        const val EXTRA_ROLLING = "rolling"
         const val ACTION_STOP = "com.jarvis.phone.STOP_BRIEFING"
 
         /** 백그라운드 정리가 도는 중인지 (화면에서 "정리 중" 표시용) */
         @Volatile var active = false
             private set
         /** 지금 미리 준비 중인 브리핑 (없으면 null) */
-        @Volatile var preparing: BriefingSlot? = null
+        @Volatile var preparing: Boolean = false
             private set
         /** 준비가 브리핑 시각을 넘겼으면 끝나는 대로 바로 알림 */
         @Volatile var showWhenDone = false
@@ -247,6 +258,8 @@ object Notifications {
     /** 브리핑마다 다른 알림 번호 → 아침 브리핑을 저녁 브리핑이 덮어쓰지 않음 */
     fun idFor(briefingTime: Long): Int = if (briefingTime > 0) 1000 + ((briefingTime / 1000) % 100_000).toInt() else ID_RESULT
     const val ID_QUIET = 3
+    /** 간격·수업 끝 요약: 같은 알림을 새 내용으로 바꿈 */
+    const val ID_ROLLING = 4
 
     fun ensureChannels(ctx: Context) {
         val nm = ctx.getSystemService(NotificationManager::class.java)

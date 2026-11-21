@@ -202,7 +202,6 @@ object QuietMode {
     fun afterWorkOn(ctx: Context) = prefs(ctx).getBoolean("after_on", false)
     fun workStart(ctx: Context) = prefs(ctx).getInt("work_start", 8 * 60)
     fun workEnd(ctx: Context) = prefs(ctx).getInt("work_end", 17 * 60)
-    fun weekendQuiet(ctx: Context) = prefs(ctx).getBoolean("weekend", true)
     /** 수업이 끝날 때 "수업 중 알림 N건" 알림 */
     fun hideInShade(ctx: Context) = prefs(ctx).getBoolean("hide", true)
 
@@ -228,31 +227,33 @@ object QuietMode {
         "고등 50분" to listOf(hm(8, 40) to hm(9, 30), hm(9, 40) to hm(10, 30), hm(10, 40) to hm(11, 30), hm(11, 40) to hm(12, 30), hm(13, 20) to hm(14, 10), hm(14, 20) to hm(15, 10), hm(15, 20) to hm(16, 10)),
     )
 
-    private fun isWeekend(c: Calendar) = c.get(Calendar.DAY_OF_WEEK).let { it == Calendar.SATURDAY || it == Calendar.SUNDAY }
     private fun minuteOf(c: Calendar) = c.get(Calendar.HOUR_OF_DAY) * 60 + c.get(Calendar.MINUTE)
 
+    /** v1.7.0: 쉬는 날(토·일·공휴일·직접 넣은 날)은 '쉬는 날' 설정을 따른다(SummarySchedule.RestMode) */
     fun state(ctx: Context, now: Long = System.currentTimeMillis()): State {
         val c = Calendar.getInstance().apply { timeInMillis = now }
         val m = minuteOf(c)
-        if (classOn(ctx) && !isWeekend(c) && ranges(ctx).any { (s, e) -> m >= s && m < e }) return State.CLASS
-        if (afterWorkOn(ctx) && (isWeekend(c) && weekendQuiet(ctx) || (!isWeekend(c) && (m < workStart(ctx) || m >= workEnd(ctx)))))
-            return State.AFTER_WORK
+        if (RestDays.isRest(ctx, now)) {
+            return when (SummarySchedule.config(ctx).restMode) {
+                SummarySchedule.RestMode.ALL_DAY -> if (classOn(ctx) || afterWorkOn(ctx)) State.AFTER_WORK else State.NONE
+                SummarySchedule.RestMode.LIKE_WEEKDAY -> if (afterWorkOn(ctx) && (m < workStart(ctx) || m >= workEnd(ctx))) State.AFTER_WORK else State.NONE
+                else -> State.NONE
+            }
+        }
+        if (classOn(ctx) && ranges(ctx).any { (s, e) -> m >= s && m < e }) return State.CLASS
+        if (afterWorkOn(ctx) && (m < workStart(ctx) || m >= workEnd(ctx))) return State.AFTER_WORK
         return State.NONE
     }
 
-    /** 이 시각이 퇴근 후(또는 주말)인지: 학부모 답장 추천에 씀 */
-    fun isAfterWork(ctx: Context, time: Long): Boolean {
-        if (!afterWorkOn(ctx)) return false
-        val c = Calendar.getInstance().apply { timeInMillis = time }
-        val m = minuteOf(c)
-        return if (isWeekend(c)) weekendQuiet(ctx) else m < workStart(ctx) || m >= workEnd(ctx)
-    }
+    /** 이 시각이 퇴근 후(또는 쉬는 날)인지: 학부모 답장 추천에 씀 */
+    fun isAfterWork(ctx: Context, time: Long): Boolean = state(ctx, time) == State.AFTER_WORK
 
     /** 다음 경계 시각(수업 시작·끝, 출근·퇴근, 자정) */
     private fun nextBoundary(ctx: Context, now: Long): Long? {
         val marks = buildList {
             if (classOn(ctx)) ranges(ctx).forEach { (s, e) -> add(s); add(e) }
-            if (afterWorkOn(ctx)) { add(workStart(ctx)); add(workEnd(ctx)); add(0) }
+            if (afterWorkOn(ctx)) { add(workStart(ctx)); add(workEnd(ctx)) }
+            if (classOn(ctx) || afterWorkOn(ctx)) add(0)   // 자정: 쉬는 날이 시작·끝날 때
         }.distinct()
         if (marks.isEmpty()) return null
         val day = Calendar.getInstance().apply {
@@ -287,20 +288,12 @@ object QuietMode {
             if (cur != State.NONE && prev == State.NONE) putLong("since", System.currentTimeMillis())
         }.apply()
 
-        // 방해 금지: 권한이 있을 때만. 선생님이 직접 켠 방해 금지는 건드리지 않음.
-        val nm = ctx.getSystemService(NotificationManager::class.java)
-        if (nm.isNotificationPolicyAccessGranted) {
-            if (cur != State.NONE && nm.currentInterruptionFilter == NotificationManager.INTERRUPTION_FILTER_ALL) {
-                nm.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_PRIORITY)
-                p.edit().putBoolean("we_set_dnd", true).apply()
-            } else if (cur == State.NONE && p.getBoolean("we_set_dnd", false)) {
-                nm.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL)
-                p.edit().putBoolean("we_set_dnd", false).apply()
-            }
-        }
+        // 🔕 방해 금지: 권한이 있고 '자동 켜기'가 켜져 있을 때만. 쌤톡스 전용 모드를 켜고 끔(선생님이 직접 켠 방해 금지는 건드리지 않음)
+        if (cur != State.NONE) Dnd.on(ctx) else Dnd.off(ctx)
 
         // 수업이 끝나면: 수업 중 모은 알림 수를 한 번 알려 줌 (AI 없이, 바로)
-        if (prev == State.CLASS && cur != State.CLASS) {
+        // (수업 끝날 때마다 요약을 켰으면 요약이 대신 알려 주므로 건너뜀)
+        if (prev == State.CLASS && cur != State.CLASS && !SummarySchedule.config(ctx).afterClass) {
             val since = p.getLong("since", System.currentTimeMillis() - periodLen(ctx) * 60_000L)
             val rules = AppFilter.rules(ctx)
             val items = NotificationDb.get(ctx).since(since).filter { rules.allows(it) }
@@ -314,6 +307,66 @@ object QuietMode {
             }
             if (cur == State.NONE) p.edit().remove("since").apply()
         }
+    }
+}
+
+/**
+ * 🔕 모아 두는 시간의 방해 금지 (v1.7.0).
+ * 안드로이드 '모드'(AutomaticZenRule)로 "쌤톡스 모아 두기" 모드를 만들어 켜고 끈다 — 알람·즐겨찾기 연락처 전화·같은 사람이
+ * 3분 안에 다시 건 전화만 울림. 폰 설정의 모드 목록에도 보여서 선생님이 더 고칠 수 있다.
+ * 모드를 못 만드는 폰이면 예전처럼 폰 방해 금지(중요 알림만)를 통째로 켰다 끈다. 권한은 사용자가 직접 한 번 허용해야 한다.
+ */
+object Dnd {
+    private fun prefs(ctx: Context) = ctx.getSharedPreferences("quiet", Context.MODE_PRIVATE)
+    private val CONDITION = android.net.Uri.parse("condition://com.jarvis.phone/collect")
+    fun autoOn(ctx: Context) = prefs(ctx).getBoolean("dnd_auto", true)
+    fun granted(ctx: Context) = ctx.getSystemService(NotificationManager::class.java).isNotificationPolicyAccessGranted
+
+    private fun ruleId(ctx: Context, nm: NotificationManager): String? {
+        prefs(ctx).getString("zen_rule", null)?.let { id -> if (runCatching { nm.getAutomaticZenRule(id) }.getOrNull() != null) return id }
+        return runCatching {
+            val policy = android.service.notification.ZenPolicy.Builder()
+                .allowAlarms(true).allowMedia(true)
+                .allowCalls(android.service.notification.ZenPolicy.PEOPLE_TYPE_STARRED).allowRepeatCallers(true)
+                .allowMessages(android.service.notification.ZenPolicy.PEOPLE_TYPE_NONE)
+                .allowConversations(android.service.notification.ZenPolicy.CONVERSATION_SENDERS_NONE)
+                .allowReminders(false).allowEvents(false).allowSystem(false).build()
+            val rule = android.app.AutomaticZenRule("쌤톡스 모아 두기", null,
+                android.content.ComponentName(ctx, MainActivity::class.java), CONDITION, policy,
+                NotificationManager.INTERRUPTION_FILTER_PRIORITY, true)
+            nm.addAutomaticZenRule(rule).also { prefs(ctx).edit().putString("zen_rule", it).apply() }
+        }.getOrNull()
+    }
+
+    fun on(ctx: Context) {
+        val nm = ctx.getSystemService(NotificationManager::class.java)
+        if (!autoOn(ctx) || !nm.isNotificationPolicyAccessGranted) return
+        val id = ruleId(ctx, nm)
+        val ok = id != null && runCatching {
+            nm.setAutomaticZenRuleState(id, android.service.notification.Condition(CONDITION, "모아 두는 중", android.service.notification.Condition.STATE_TRUE))
+        }.isSuccess
+        if (!ok && nm.currentInterruptionFilter == NotificationManager.INTERRUPTION_FILTER_ALL) {
+            nm.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_PRIORITY)
+            prefs(ctx).edit().putBoolean("we_set_dnd", true).apply()
+        }
+    }
+
+    fun off(ctx: Context) {
+        val nm = ctx.getSystemService(NotificationManager::class.java)
+        if (!nm.isNotificationPolicyAccessGranted) return
+        prefs(ctx).getString("zen_rule", null)?.let { id ->
+            runCatching { nm.setAutomaticZenRuleState(id, android.service.notification.Condition(CONDITION, "꺼짐", android.service.notification.Condition.STATE_FALSE)) }
+        }
+        if (prefs(ctx).getBoolean("we_set_dnd", false)) {
+            nm.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL)
+            prefs(ctx).edit().putBoolean("we_set_dnd", false).apply()
+        }
+    }
+
+    /** 자동 켜기 스위치. 끄면 지금 켜 둔 모드도 끔 */
+    fun setAuto(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean("dnd_auto", enabled).apply()
+        if (enabled && QuietMode.state(ctx) != QuietMode.State.NONE) on(ctx) else if (!enabled) off(ctx)
     }
 }
 

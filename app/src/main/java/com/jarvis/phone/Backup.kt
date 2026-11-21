@@ -10,7 +10,7 @@ import java.io.File
 /**
  * 💾 백업·복원: 앱을 지웠다 다시 깔아도 내 설정이 그대로.
  *
- * - 넣는 것: 학생·학부모 명부, 학부모 방, 앱·방 끄기, 키워드, 광고 거르기, 브리핑 시각·주말 쉬기, 수업·퇴근 시간표
+ * - 넣는 것: 학생·학부모 명부, 학부모 방, 앱·방 끄기, 키워드, 광고 거르기, 요약 시간·쉬는 날, 수업·퇴근 시간표
  * - 넣지 않는 것: 메시지 내용, 학생별 기록, AI 모델 (개인정보·용량)
  * - 자동 백업: 하루 한 번 다운로드/쌤톡스/쌤톡스_백업.json ('모든 파일 접근' 권한이 있을 때). 앱을 지워도 남음
  * - 수동: 원하는 곳으로 내보내기 / 파일에서 불러오기 (권한 없이도 됨)
@@ -70,7 +70,7 @@ object Backup {
         ParentBook.links(ctx).size.takeIf { it > 0 }?.let { "학부모 연결 $it" },
         AppFilter.keywords(ctx).size.takeIf { it > 0 }?.let { "키워드 $it" },
         AppFilter.excluded(ctx).size.takeIf { it > 0 }?.let { "뺀 앱 $it" },
-        BriefingSlot.entries.count { it.isEnabled(ctx) }.takeIf { it > 0 }?.let { "자동 브리핑 ${it}개" },
+        SummarySchedule.config(ctx).times.size.takeIf { it > 0 }?.let { "요약 시각 ${it}개" },
     ).joinToString(" · ").ifEmpty { "기본 설정" }
 
     // ── 저장 ──

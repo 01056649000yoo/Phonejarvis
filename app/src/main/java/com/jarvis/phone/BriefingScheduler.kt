@@ -9,58 +9,39 @@ import android.os.Build
 import androidx.core.content.ContextCompat
 import java.util.Calendar
 
-/** 아침·저녁 브리핑 시간 설정. 시간은 자정부터의 분(예: 08:00 = 480). */
-enum class BriefingSlot(val label: String, val defaultMinute: Int, val presets: List<Int>) {
-    MORNING("🌅 아침 브리핑 (조회)", 8 * 60, listOf(7 * 60 + 30, 8 * 60, 8 * 60 + 30, 9 * 60)),
-    EVENING("🌙 저녁 브리핑 (종례)", 21 * 60, listOf(16 * 60 + 30, 17 * 60, 18 * 60, 21 * 60));
-
-    private val key get() = name.lowercase()
-
-    fun isEnabled(ctx: Context) = prefs(ctx).getBoolean("${key}_on", false)
-    fun minute(ctx: Context) = prefs(ctx).getInt("${key}_min", defaultMinute)
-
-    fun save(ctx: Context, enabled: Boolean, minute: Int) {
-        prefs(ctx).edit().putBoolean("${key}_on", enabled).putInt("${key}_min", minute).apply()
-        BriefingScheduler.schedule(ctx, this)
-    }
-
-    companion object {
-        private fun prefs(ctx: Context) = ctx.getSharedPreferences("briefing", Context.MODE_PRIVATE)
-
-        /** 주말(토·일)에는 자동 브리핑 쉬기 */
-        fun skipWeekend(ctx: Context) = prefs(ctx).getBoolean("skip_weekend", false)
-        fun setSkipWeekend(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("skip_weekend", on).apply()
-        fun isWeekendNow() = Calendar.getInstance().get(Calendar.DAY_OF_WEEK).let { it == Calendar.SATURDAY || it == Calendar.SUNDAY }
-    }
-}
-
 /**
- * 정확한 시각 알람(AlarmManager)으로 브리핑을 예약.
+ * 정확한 시각 알람(AlarmManager)으로 요약을 예약 (v1.7.0: 규칙이 여러 개라 '다음 한 번'만 예약).
  * 정확한 알람은 백그라운드에서도 포그라운드 서비스를 시작할 수 있는 예외라서,
- * 폰이 잠겨 있어도 정해진 시각에 모델을 돌릴 수 있다.
+ * 폰이 잠겨 있어도 정해진 시각에 모델을 돌릴 수 있다. 요약이 끝나면(그리고 알람이 울리면) 그다음을 다시 건다.
  */
 object BriefingScheduler {
     const val ACTION_BRIEFING = "com.jarvis.phone.ACTION_BRIEFING"
     const val ACTION_PREPARE = "com.jarvis.phone.ACTION_PREPARE"
-    const val EXTRA_SLOT = "slot"
-    /** 브리핑 시각보다 이만큼 먼저 백그라운드에서 요약을 돌려 둠 (모델 불러오기 + 최대 5분 요약) */
+    const val EXTRA_KIND = "kind"
+    const val EXTRA_MINUTE = "minute"
+    /** 정한 시각보다 이만큼 먼저 백그라운드에서 요약을 돌려 둠 (모델 불러오기 + 최대 5분 요약) */
     const val LEAD_MINUTES = 15
 
-    fun scheduleAll(ctx: Context) = BriefingSlot.entries.forEach { schedule(ctx, it) }
+    fun day(ctx: Context) = SummarySchedule.Day(
+        classEnds = if (QuietMode.classOn(ctx)) QuietMode.ranges(ctx).map { it.second } else emptyList(),
+        workStart = if (QuietMode.afterWorkOn(ctx)) QuietMode.workStart(ctx) else null,
+    )
 
-    /** 브리핑 시각(결과 보여 주기)과 그 15분 전(미리 준비) 두 알람을 예약. */
-    fun schedule(ctx: Context, slot: BriefingSlot) {
+    fun nextRun(ctx: Context, now: Long = System.currentTimeMillis()): SummarySchedule.Run? =
+        SummarySchedule.next(now, SummarySchedule.config(ctx), day(ctx)) { RestDays.isRest(ctx, it) }
+
+    /** 다음 요약 한 번(그리고 정한 시각이면 15분 전 미리 준비)을 예약 */
+    fun scheduleAll(ctx: Context) {
         val am = ctx.getSystemService(AlarmManager::class.java)
-        val show = pendingIntent(ctx, slot, ACTION_BRIEFING)
-        val prep = pendingIntent(ctx, slot, ACTION_PREPARE)
+        val run = nextRun(ctx)
+        val show = pendingIntent(ctx, ACTION_BRIEFING, run)
+        val prep = pendingIntent(ctx, ACTION_PREPARE, run)
         am.cancel(show); am.cancel(prep)
-        if (!slot.isEnabled(ctx)) return
-
-        val at = nextTrigger(slot.minute(ctx))
-        set(am, at, show)
-        // 준비 시각이 이미 지났으면(예: 브리핑 10분 전에 설정을 바꿈) 준비 없이 그 시각에 바로 요약
-        val prepAt = at - LEAD_MINUTES * 60_000L
-        if (prepAt > System.currentTimeMillis() + 5_000) set(am, prepAt, prep)
+        run ?: return
+        set(am, run.at, show)
+        // 정한 시각만 미리 준비. 준비 시각이 이미 지났으면 그 시각에 바로 요약
+        val prepAt = run.at - LEAD_MINUTES * 60_000L
+        if (run.kind == SummarySchedule.Kind.FIXED && prepAt > System.currentTimeMillis() + 5_000) set(am, prepAt, prep)
     }
 
     private fun set(am: AlarmManager, at: Long, pi: PendingIntent) {
@@ -71,49 +52,44 @@ object BriefingScheduler {
     fun canExact(am: AlarmManager) =
         Build.VERSION.SDK_INT < Build.VERSION_CODES.S || am.canScheduleExactAlarms()
 
-    /** 다음 해당 시각. 이미 지났으면 내일. */
-    fun nextTrigger(minuteOfDay: Int, now: Long = System.currentTimeMillis()): Long {
-        val c = Calendar.getInstance().apply {
-            timeInMillis = now
-            set(Calendar.HOUR_OF_DAY, minuteOfDay / 60); set(Calendar.MINUTE, minuteOfDay % 60)
-            set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-        }
-        if (c.timeInMillis <= now + 5_000) c.add(Calendar.DAY_OF_YEAR, 1)
-        return c.timeInMillis
-    }
-
-    private fun pendingIntent(ctx: Context, slot: BriefingSlot, action: String): PendingIntent =
+    private fun pendingIntent(ctx: Context, action: String, run: SummarySchedule.Run?): PendingIntent =
         PendingIntent.getBroadcast(
-            ctx, slot.ordinal + if (action == ACTION_PREPARE) 10 else 0,
-            Intent(ctx, BriefingReceiver::class.java).setAction(action).putExtra(EXTRA_SLOT, slot.name),
+            ctx, if (action == ACTION_PREPARE) 10 else 0,
+            Intent(ctx, BriefingReceiver::class.java).setAction(action)
+                .putExtra(EXTRA_KIND, run?.kind?.name).putExtra(EXTRA_MINUTE, run?.minute ?: 0),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
-    /** 브리핑 서비스 시작. prepareSlot이 있으면 결과를 알리지 않고 저장만 (미리 준비). */
-    fun startNow(ctx: Context, label: String, prepareSlot: BriefingSlot? = null) {
+    /** auto: 예약으로 돈 요약(새 알림이 없으면 알리지 않음), rolling: 알림 하나를 새 내용으로 바꿔 보여 줌(간격·수업 끝) */
+    fun startNow(ctx: Context, label: String, prepare: Boolean = false, auto: Boolean = false, rolling: Boolean = false) {
         val i = Intent(ctx, BriefingService::class.java).putExtra(BriefingService.EXTRA_LABEL, label)
-        if (prepareSlot != null) i.putExtra(BriefingService.EXTRA_PREPARE, prepareSlot.name)
+            .putExtra(BriefingService.EXTRA_PREPARE, prepare).putExtra(BriefingService.EXTRA_AUTO, auto)
+            .putExtra(BriefingService.EXTRA_ROLLING, rolling)
         ContextCompat.startForegroundService(ctx, i)
     }
 
-    fun labelOf(slot: BriefingSlot) = if (slot == BriefingSlot.MORNING) "아침 브리핑" else "저녁 브리핑"
+    fun labelOf(kind: SummarySchedule.Kind, minute: Int): String {
+        val hm = "%02d:%02d".format(minute / 60, minute % 60)
+        return when (kind) {
+            SummarySchedule.Kind.FIXED -> when { minute < 11 * 60 -> "🌅 아침 요약"; minute >= 16 * 60 -> "🌙 저녁 요약"; else -> "📋 $hm 요약" }
+            SummarySchedule.Kind.INTERVAL -> "⏱ $hm 요약"
+            SummarySchedule.Kind.CLASS_END -> "🏫 수업 뒤 요약"
+            SummarySchedule.Kind.QUIET_END -> "🌅 밤사이 요약"
+        }
+    }
 
-    // ── 미리 준비한 결과 (브리핑 시각에 꺼내 보여 줌) ──
+    // ── 미리 준비한 결과 (정한 시각에 꺼내 보여 줌) ──
     private fun readyPrefs(ctx: Context) = ctx.getSharedPreferences("briefing_ready", Context.MODE_PRIVATE)
-    fun saveReady(ctx: Context, slot: BriefingSlot, title: String, body: String, briefingTime: Long = 0) {
-        readyPrefs(ctx).edit().putString("${slot.name}_title", title).putString("${slot.name}_body", body)
-            .putLong("${slot.name}_bt", briefingTime)
-            .putLong("${slot.name}_at", System.currentTimeMillis()).apply()
+    fun saveReady(ctx: Context, title: String, body: String, briefingTime: Long = 0) {
+        readyPrefs(ctx).edit().putString("title", title).putString("body", body)
+            .putLong("bt", briefingTime).putLong("at", System.currentTimeMillis()).apply()
     }
     data class Ready(val title: String, val body: String, val briefingTime: Long)
     /** 최근 1시간 안에 준비해 둔 결과를 꺼내고 지움. 없으면 null */
-    fun takeReady(ctx: Context, slot: BriefingSlot): Ready? {
+    fun takeReady(ctx: Context): Ready? {
         val p = readyPrefs(ctx)
-        val at = p.getLong("${slot.name}_at", 0)
-        val title = p.getString("${slot.name}_title", null)
-        val body = p.getString("${slot.name}_body", null)
-        val bt = p.getLong("${slot.name}_bt", 0)
-        p.edit().remove("${slot.name}_at").remove("${slot.name}_title").remove("${slot.name}_body").remove("${slot.name}_bt").apply()
+        val at = p.getLong("at", 0); val title = p.getString("title", null); val body = p.getString("body", null); val bt = p.getLong("bt", 0)
+        p.edit().clear().apply()
         if (title == null || body == null || System.currentTimeMillis() - at > 60 * 60_000L) return null
         return Ready(title, body, bt)
     }
@@ -121,34 +97,36 @@ object BriefingScheduler {
 
 /**
  * 알람 도착.
- * - 준비 알람(15분 전): 백그라운드에서 조용히 요약해 결과를 저장
- * - 브리핑 알람(정한 시각): 준비해 둔 결과를 바로 알림으로. 없으면(폰이 꺼져 있었거나 실패) 그때 요약
- * 재부팅·시간 변경 시 알람 다시 등록.
+ * - 준비 알람(정한 시각 15분 전): 백그라운드에서 조용히 요약해 결과를 저장
+ * - 요약 알람: 정한 시각이면 준비해 둔 결과를 바로 알림(없으면 그때 요약), 간격·수업 끝·출근이면 그때 요약
+ * 울릴 때마다 그다음 요약을 다시 예약. 재부팅·시간 변경·앱 업데이트 때 알람 다시 등록.
  */
 class BriefingReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
-        val slot = runCatching { BriefingSlot.valueOf(intent.getStringExtra(BriefingScheduler.EXTRA_SLOT)!!) }.getOrNull()
-        val restDay = BriefingSlot.skipWeekend(ctx) && BriefingSlot.isWeekendNow()   // 주말엔 쉬기
+        val kind = runCatching { SummarySchedule.Kind.valueOf(intent.getStringExtra(BriefingScheduler.EXTRA_KIND)!!) }.getOrNull()
+        val minute = intent.getIntExtra(BriefingScheduler.EXTRA_MINUTE, 0)
         when (intent.action) {
             BriefingScheduler.ACTION_PREPARE -> {
-                if (slot != null && slot.isEnabled(ctx) && !restDay)
-                    BriefingScheduler.startNow(ctx, BriefingScheduler.labelOf(slot), prepareSlot = slot)
+                if (kind != null) BriefingScheduler.startNow(ctx, BriefingScheduler.labelOf(kind, minute), prepare = true, auto = true)
             }
             BriefingScheduler.ACTION_BRIEFING -> {
-                slot ?: return
-                BriefingScheduler.schedule(ctx, slot)        // 내일 같은 시각 (준비 알람 포함)
-                if (!slot.isEnabled(ctx) || restDay) return
-                val ready = BriefingScheduler.takeReady(ctx, slot)
+                BriefingScheduler.scheduleAll(ctx)        // 그다음 요약 (준비 알람 포함)
+                kind ?: return
+                val label = BriefingScheduler.labelOf(kind, minute)
+                if (kind != SummarySchedule.Kind.FIXED) {
+                    BriefingScheduler.startNow(ctx, label, auto = true, rolling = true); return
+                }
+                val ready = BriefingScheduler.takeReady(ctx)
                 when {
                     ready != null -> {
                         Notifications.ensureChannels(ctx)
-                        // ⏰ 정한 시각에 정기 브리핑 알림 (누르면 세부 내역)
+                        // ⏰ 정한 시각에 요약 알림 (누르면 세부 내역)
                         Notifications.notify(ctx, Notifications.idFor(ready.briefingTime),
                             Notifications.result(ctx, ready.title, ready.body, ready.briefingTime))
                     }
                     // 아직 준비 중이면(요약이 길어짐) 끝나는 대로 바로 알리게 표시
-                    BriefingService.preparing == slot -> BriefingService.showWhenDone = true
-                    else -> BriefingScheduler.startNow(ctx, BriefingScheduler.labelOf(slot))
+                    BriefingService.preparing -> BriefingService.showWhenDone = true
+                    else -> BriefingScheduler.startNow(ctx, label, auto = true)
                 }
             }
             else -> { BriefingScheduler.scheduleAll(ctx); QuietMode.tick(ctx) }   // BOOT_COMPLETED, 시간/시간대 변경, 앱 업데이트

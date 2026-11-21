@@ -449,7 +449,7 @@ private fun PermissionStep(vm: JarvisViewModel) {
         else ctx.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
             .putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName))
     }
-    Text("권한을 켠 뒤부터 오는 알림이 모여요. 아침·저녁 자동 브리핑 시각은 메인 화면에서 정할 수 있어요.",
+    Text("권한을 켠 뒤부터 오는 알림이 모여요. 요약 시간(아침·저녁·N시간마다·수업 뒤)과 수업 중 모아 두기는 설정 → 🔕 모아 두기·요약 시간에서 정해요.",
         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     PrimaryButton(if (vm.listenerEnabled && vm.notiPermission) "쌤톡스 시작하기" else "나중에 하고 시작하기") {
         vm.finishOnboarding()

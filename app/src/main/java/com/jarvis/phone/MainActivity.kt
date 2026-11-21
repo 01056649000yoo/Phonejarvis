@@ -44,26 +44,34 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var lastBriefing by mutableStateOf<Briefing?>(null)
         private set
-    var slots by mutableStateOf(readSlots())
+    // ── 🔕 모아 두기·요약 시간 (v1.7.0) ──
+    var schedule by mutableStateOf(SummarySchedule.config(app))
         private set
-
-    data class SlotState(val slot: BriefingSlot, val on: Boolean, val minute: Int)
-
-    private fun readSlots(): List<SlotState> {
+    var restAdded by mutableStateOf(RestDays.added(app))
+        private set
+    private fun reloadSchedule() {
         val ctx = getApplication<Application>()
-        return BriefingSlot.entries.map { SlotState(it, it.isEnabled(ctx), it.minute(ctx)) }
+        schedule = SummarySchedule.config(ctx); restAdded = RestDays.added(ctx); quietRev++
     }
-
-    /** 주말(토·일)에는 자동 브리핑 쉬기 */
-    var skipWeekend by mutableStateOf(BriefingSlot.skipWeekend(app))
-        private set
-    fun updateSkipWeekend(on: Boolean) {
-        BriefingSlot.setSkipWeekend(getApplication<Application>(), on); skipWeekend = on
+    private fun editSchedule(block: android.content.SharedPreferences.Editor.() -> Unit) {
+        SummarySchedule.update(getApplication<Application>(), block); reloadSchedule()
     }
-
-    fun setSlot(slot: BriefingSlot, on: Boolean, minute: Int) {
-        slot.save(getApplication<Application>(), on, minute)
-        slots = readSlots()
+    fun addTime(m: Int) { SummarySchedule.setTimes(getApplication<Application>(), schedule.times + m); reloadSchedule() }
+    fun removeTime(m: Int) { SummarySchedule.setTimes(getApplication<Application>(), schedule.times - m); reloadSchedule() }
+    fun setInterval(h: Int) = editSchedule { putInt("interval_h", h) }
+    fun setIntervalFrom(m: Int) = editSchedule { putInt("interval_from", m) }
+    fun setIntervalTo(m: Int) = editSchedule { putInt("interval_to", m) }
+    fun setAfterClass(on: Boolean) = editSchedule { putBoolean("after_class", on) }
+    fun setAfterQuiet(on: Boolean) = editSchedule { putBoolean("after_quiet", on) }
+    fun setRestMode(mode: SummarySchedule.RestMode) = editSchedule { putString("rest_mode", mode.name) }
+    fun addRestDay(ymd: Int) { RestDays.add(getApplication<Application>(), ymd); reloadSchedule() }
+    fun removeRestDay(ymd: Int) { RestDays.remove(getApplication<Application>(), ymd); reloadSchedule() }
+    fun setDndAuto(on: Boolean) { Dnd.setAuto(getApplication<Application>(), on); quietRev++ }
+    /** 다음 요약 시각 한 줄(설정 위 상태 줄) */
+    fun nextRunText(): String {
+        val run = BriefingScheduler.nextRun(getApplication<Application>()) ?: return "요약 시간이 없어요"
+        val fmt = java.text.SimpleDateFormat("M/d(E) HH:mm", java.util.Locale.KOREA)
+        return "다음 요약 ${fmt.format(run.at)} · ${BriefingScheduler.labelOf(run.kind, run.minute)}"
     }
 
     /** "지금 브리핑 받아보기": 예약 브리핑과 똑같은 경로(포그라운드 서비스)로 바로 실행. */
@@ -350,7 +358,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     // ── 탭 안의 세부 화면 (목록 → 누르면 옆에서 밀려 들어오는 화면) ──
     /** 세부 화면. parent 가 있으면 뒤로 가기가 그 화면으로 (사람 묶음 → 묶음 하나) */
     enum class Page(val title: String, val tab: Tab, val parent: Page? = null) {
-        APPS("🌱 알림 앱 정리", Tab.SETTINGS), TIMES("⏰ 브리핑 시각", Tab.SETTINGS), QUIET("🏫 수업·퇴근 모드", Tab.SETTINGS),
+        APPS("🌱 알림 앱 정리", Tab.SETTINGS), SCHEDULE("🔕 모아 두기·요약 시간", Tab.SETTINGS),
         SYSTEM("🤖 AI 모델·권한", Tab.SETTINGS), BACKUP("💾 백업·복원", Tab.SETTINGS), STORAGE("🧹 저장 공간", Tab.SETTINGS),
         PEOPLE("👥 사람 묶음", Tab.SETTINGS),
         GROUP("👥 묶음", Tab.SETTINGS, PEOPLE), KEYWORDS("⭐ 중요 키워드", Tab.SETTINGS, PEOPLE),
@@ -505,8 +513,8 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         students = Students.names(ctx); keywords = AppFilter.keywords(ctx)
         excludedApps = AppFilter.excluded(ctx); excludedRooms = AppFilter.excludedRooms(ctx)
         parentRooms = ParentAdvisor.parentRooms(ctx); parentLinks = ParentBook.links(ctx)
-        adFilterOn = AdFilter.enabled(ctx); skipWeekend = BriefingSlot.skipWeekend(ctx)
-        slots = readSlots(); quietRev++
+        adFilterOn = AdFilter.enabled(ctx)
+        reloadSchedule()
         foundBackup = null
         refresh()
     }
@@ -860,7 +868,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         // 백업 찾기를 누르고 권한을 켜러 갔다가 돌아왔으면 바로 찾기
         if (backupNeedsAccess && ModelFinder.hasAccess()) findBackups()
         lastBackup = Backup.lastBackupTime(ctx)
-        slots = readSlots()
+        reloadSchedule()
         // 모델 받기 단계에 있으면(권한 설정에서 돌아온 경우 포함) 다운로드 폴더를 다시 찾아봄
         if (!onboardingDone && onboardingStep == 2) scanDownloads()
         if (onboardingDone) loadApps()
