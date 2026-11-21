@@ -22,7 +22,7 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** 이번 버전에서 바뀐 점 한 줄 (버전 올릴 때 같이 고치기). */
-private const val WHATS_NEW = "설정 탭에서 AI가 알림 앱 정리를 추천해요 · 요약 중지 버튼 · 요약은 오늘 알림만, 최대 5분"
+private const val WHATS_NEW = "맨 위 ⚙️ 설정 버튼으로 언제든 설정에 갈 수 있어요 · AI 알림 앱 정리 · 요약 중지 버튼"
 
 /** 메인: 아래 탭 두 개 — 브리핑(결과만 보기) / 설정(내 방식대로). */
 @Composable
@@ -63,12 +63,18 @@ fun JarvisScreen(vm: JarvisViewModel) {
 private fun Header(vm: JarvisViewModel) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         SsamLogo(44.dp)
-        Column {
+        Column(Modifier.weight(1f)) {
             Text("쌤톡스", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary)
             Text("선생님을 위한 디지털 디톡스 · v${vm.appVersion}", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        // 아래 탭이 안 보이는 기기에서도 언제든 설정 ↔ 브리핑으로 갈 수 있게 맨 위에도 버튼
+        val inSettings = vm.tab == JarvisViewModel.Tab.SETTINGS
+        FilledTonalButton(
+            onClick = { vm.tab = if (inSettings) JarvisViewModel.Tab.BRIEFING else JarvisViewModel.Tab.SETTINGS },
+            contentPadding = PaddingValues(horizontal = 14.dp),
+        ) { Text(if (inSettings) "📋 브리핑" else "⚙️ 설정") }
     }
 }
 
