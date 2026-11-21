@@ -19,6 +19,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -398,12 +399,26 @@ fun JarvisScreen(vm: JarvisViewModel) {
             }
         }
 
-        // 수집된 원본 (최근 30건)
+        // 수집된 원본: 디톡스 취지에 맞게 기본은 접어 두고 한 줄 요약만. 필요할 때만 펼침.
         if (vm.todayItems.isNotEmpty()) {
-            Text("오늘 수집된 알림 (최근 30건)", fontWeight = FontWeight.Bold)
-            vm.todayItems.takeLast(30).reversed().forEach {
-                Text("${timeFmt.format(it.time)} [${it.app}] ${it.title}: ${it.text}",
-                    style = MaterialTheme.typography.bodySmall, maxLines = 2)
+            var expanded by rememberSaveable { mutableStateOf(false) }
+            val apps = vm.todayItems.map { it.app }.distinct()
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("오늘 모은 알림 ${vm.todayItems.size}건", fontWeight = FontWeight.Bold)
+                            Text(apps.take(3).joinToString(", ") + if (apps.size > 3) " 외 ${apps.size - 3}개 앱" else "",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                        }
+                        TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "접기" else "원본 보기") }
+                    }
+                    if (expanded) vm.todayItems.takeLast(30).reversed().forEach {
+                        Text("${timeFmt.format(it.time)} [${it.app}] ${it.title}: ${it.text}",
+                            style = MaterialTheme.typography.bodySmall, maxLines = 2)
+                    }
+                }
             }
         }
     }
