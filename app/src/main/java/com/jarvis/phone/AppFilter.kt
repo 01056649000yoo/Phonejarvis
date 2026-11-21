@@ -34,6 +34,12 @@ object AppFilter {
         prefs(ctx).edit().putStringSet("reviewed", reviewed(ctx) + pkgs).apply()
     }
 
+    // ── "알림이 안 들어와요" 경고를 숨긴 앱 (안 쓰는 앱) ──
+    fun silentDismissed(ctx: Context): Set<String> = prefs(ctx).getStringSet("silent_dismissed", emptySet())!!.toSet()
+    fun dismissSilent(ctx: Context, pkg: String) {
+        prefs(ctx).edit().putStringSet("silent_dismissed", silentDismissed(ctx) + pkg).apply()
+    }
+
     // ── ＋ 직접 추가한 앱 (아직 알림이 안 와도 목록에 보이게) ──
     fun addedApps(ctx: Context): Set<String> = prefs(ctx).getStringSet("added_apps", emptySet())!!.toSet()
     fun addApp(ctx: Context, pkg: String) {
@@ -150,11 +156,21 @@ object AppAdvisor {
     )
 
     /** 설치돼 있지만 최근 알림이 하나도 없는 메시지 앱 (패키지 → 이름). */
+    /**
+     * 알림이 0건인 메시지 앱 경고: 선생님이 실제로 쓰는 앱만 (카톡, 기본 문자 앱, ＋로 직접 추가한 앱).
+     * 깔려만 있고 안 쓰는 앱(밴드 등)은 보여 주지 않고, "안 써요"를 누른 앱도 다시 묻지 않음.
+     */
     fun silentMessagingApps(ctx: Context, stats: List<AppStat>): List<Pair<String, String>> {
-        val seen = stats.map { it.pkg }.toSet()
-        return KNOWN_MESSAGING.filter { (pkg, _) ->
-            pkg !in seen && runCatching { ctx.packageManager.getPackageInfo(pkg, 0) }.isSuccess
-        }.map { (pkg, label) ->
+        val seen = stats.filter { it.count > 0 }.map { it.pkg }.toSet()
+        val sms = runCatching { android.provider.Telephony.Sms.getDefaultSmsPackage(ctx) }.getOrNull()
+        val added = AppFilter.addedApps(ctx)
+        val dismissed = AppFilter.silentDismissed(ctx)
+        val excluded = AppFilter.excluded(ctx)
+        val used = (listOf("com.kakao.talk") + listOfNotNull(sms) + added).distinct()
+        return used.filter { pkg ->
+            pkg !in seen && pkg !in dismissed && pkg !in excluded &&
+                runCatching { ctx.packageManager.getPackageInfo(pkg, 0) }.isSuccess
+        }.map { pkg -> pkg to (KNOWN_MESSAGING[pkg] ?: pkg) }.map { (pkg, label) ->
             // 폰에 표시되는 실제 이름이 있으면 그걸 씀
             val shown = runCatching {
                 ctx.packageManager.getApplicationLabel(ctx.packageManager.getApplicationInfo(pkg, 0)).toString()

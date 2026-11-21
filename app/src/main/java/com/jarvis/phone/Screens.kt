@@ -30,10 +30,12 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** 이번 버전에서 바뀐 점 한 줄 (버전 올릴 때 같이 고치기). */
-private const val WHATS_NEW = "🧹 오래된 기록 자동 정리 · ＋ 알림 앱 추가 · 예전 방도 모두 고르기"
+private const val WHATS_NEW = "안 쓰는 앱은 더 이상 \"알림 설정 열기\"로 묻지 않아요 · 🧹 오래된 기록 자동 정리"
 
 /** 업데이트 내역 큰 창 (버전 올릴 때 같이 고치기) */
 private val WHATS_NEW_DETAIL = listOf(
+    "＋ 앱 추가 목록이 깔끔해졌어요" to "내 파일·보안 폴더 같은 폰 기본 항목은 빼고 설치한 앱만 보여요. ⭐ 메시지·SNS 앱이 맨 위, 그다음 🔔 알림을 보내는 앱, 그 밖의 앱은 접어 둬요.",
+    "🙅 안 쓰는 앱은 조용히" to "깔려만 있고 안 쓰는 앱(밴드 등)은 더 이상 \"알림이 안 들어와요 · 설정 열기\"로 보여 주지 않아요. 카톡·기본 문자 앱·직접 추가한 앱만 확인하고, '안 써요'를 누르면 다시 묻지 않아요.",
     "🧹 오래된 기록은 저절로 지워요" to "설정 → 🧹 저장 공간에서 받은 알림(3일~30일)·브리핑 모음(7일~90일)·학생 기록(3개월~1년) 보관 기간을 고를 수 있어요. 기간이 지나면 앱을 열지 않아도 저절로 지워지고, 일주일에 한 번 파일 크기까지 줄여서 앱이 무거워지지 않아요.",
     "＋ 알림 앱 추가" to "설정 → 🌱 알림 앱 정리에서 '＋ 앱 추가'를 누르면 폰에 깔린 앱 중 목록에 없는 앱을 골라 넣을 수 있어요. 한 번 뺀 앱도 이제 목록에서 사라지지 않아 언제든 다시 켤 수 있어요.",
     "💬 방 고르기가 편해졌어요" to "한 번이라도 알림이 온 방은 7일이 지나도 모두 목록에 남아요. 아직 알림이 안 온 방은 방 이름을 직접 넣어 미리 켜고 끌 수 있어요. (카톡 방 목록은 다른 앱이 읽을 수 없어서 이름으로 넣어요)",
@@ -736,10 +738,13 @@ private fun AppCleanupCard(vm: JarvisViewModel) {
                             else "이 앱의 알림이 꺼져 있으면 쌤톡스도 모을 수 없어요.",
                             style = MaterialTheme.typography.bodySmall,
                         )
-                        OutlinedButton(onClick = {
-                            ctx.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                                .putExtra(Settings.EXTRA_APP_PACKAGE, pkg))
-                        }) { Text("$name 알림 설정 열기", color = Ssam.Chalk) }
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            OutlinedButton(onClick = {
+                                ctx.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                                    .putExtra(Settings.EXTRA_APP_PACKAGE, pkg))
+                            }) { Text("알림 설정 열기", color = Ssam.Chalk) }
+                            TextButton(onClick = { vm.dismissSilent(pkg) }) { Text("안 써요 · 숨기기", color = Ssam.Chalk) }
+                        }
                     }
                 }
                 if (!vm.listenerEnabled) Text("쌤톡스의 '알림 접근' 권한도 꺼져 있어요. 아래 기본 설정에서 켜 주세요.",
@@ -875,8 +880,9 @@ private fun RetentionRow(title: String, hint: String, choices: List<Int>, value:
 
 /** ＋ 앱 추가: 폰에 설치된 앱 중 아직 목록에 없는 앱 (메시지 앱 먼저) */
 @Composable
-private fun AddAppDialog(vm: JarvisViewModel, apps: List<Pair<String, String>>) {
+private fun AddAppDialog(vm: JarvisViewModel, apps: List<JarvisViewModel.AddableApp>) {
     var q by rememberSaveable { mutableStateOf("") }
+    var showOthers by rememberSaveable { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = { vm.closeAddApps() },
         title = { Text("＋ 앱 추가") },
@@ -887,14 +893,27 @@ private fun AddAppDialog(vm: JarvisViewModel, apps: List<Pair<String, String>>) 
                 OutlinedTextField(value = q, onValueChange = { q = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                     placeholder = { Text("앱 이름 찾기") })
                 Column(Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())) {
-                    val shown = apps.filter { q.isBlank() || q.trim() in it.second }
+                    // 찾는 중이면 전부에서, 아니면 추천(메시지·SNS → 알림 보내는 앱) 먼저, 그 밖의 앱은 접어 둠
+                    val searching = q.isNotBlank()
+                    val shown = apps.filter { !searching || q.trim() in it.name }
                     if (apps.isEmpty()) Text("앱 목록을 불러오는 중이에요…", Modifier.padding(vertical = 12.dp))
                     else if (shown.isEmpty()) Text("찾는 앱이 없어요.", Modifier.padding(vertical = 12.dp))
-                    shown.forEach { (pkg, name) ->
-                        Row(Modifier.fillMaxWidth().clickable { vm.addApp(pkg, name) }.padding(vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically) {
-                            Text((if (AppAdvisor.isMessaging(name, pkg)) "💬 " else "📱 ") + name, Modifier.weight(1f))
-                            Text("＋ 추가", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
+                    val titles = listOf("⭐ 추천 · 💬 메시지·SNS", "🔔 알림을 보내는 앱", "📱 그 밖의 앱")
+                    shown.groupBy { it.group }.toSortedMap().forEach { (g, list) ->
+                        if (g == 2 && !searching) {
+                            TextButton(onClick = { showOthers = !showOthers }, contentPadding = PaddingValues(0.dp)) {
+                                Text("${titles[g]} ${list.size}개 " + if (showOthers) "▾ 접기" else "▸ 펼치기",
+                                    fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+                            }
+                            if (!showOthers) return@forEach
+                        } else Text(titles[g], fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 8.dp))
+                        list.forEach { a ->
+                            Row(Modifier.fillMaxWidth().clickable { vm.addApp(a.pkg, a.name) }.padding(vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically) {
+                                Text(a.name, Modifier.weight(1f))
+                                Text("＋ 추가", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
+                            }
                         }
                     }
                 }

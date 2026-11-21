@@ -187,8 +187,10 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     }.getOrDefault(pkg)
 
     // ── ＋ 앱 추가: 폰에 설치된 앱 중 목록에 없는 앱 ──
-    /** 앱 추가 창: (패키지, 이름). null이면 닫힘 */
-    var addableApps by mutableStateOf<List<Pair<String, String>>?>(null)
+    /** 앱 추가 창의 앱 하나. group: 0 메시지·SNS(추천) · 1 알림을 보내는 앱 · 2 그 밖의 앱 */
+    data class AddableApp(val pkg: String, val name: String, val group: Int)
+    /** 앱 추가 창. null이면 닫힘 */
+    var addableApps by mutableStateOf<List<AddableApp>?>(null)
         private set
     fun openAddApps() {
         val ctx = getApplication<Application>()
@@ -200,8 +202,22 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
                 pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)
                     .map { it.activityInfo.packageName }.distinct()
                     .filter { it != ctx.packageName && it !in listed }
-                    .map { it to labelOf(it) }
-                    .sortedWith(compareByDescending<Pair<String, String>> { AppAdvisor.isMessaging(it.second, it.first) }.thenBy { it.second })
+                    .mapNotNull { pkg ->
+                        val info = runCatching { pm.getApplicationInfo(pkg, 0) }.getOrNull() ?: return@mapNotNull null
+                        val name = pm.getApplicationLabel(info).toString()
+                        val msg = AppAdvisor.isMessaging(name, pkg)
+                        // 폰 기본 시스템 항목(내 파일·보안 폴더·설정 등)은 빼고 설치한 앱만. 단, 기본 문자 같은 메시지 앱은 남김
+                        val system = info.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM != 0 &&
+                            info.flags and android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP == 0
+                        if (system && !msg) return@mapNotNull null
+                        // 알림을 보내는 앱인지 (알림 권한을 요청하는 앱)
+                        val notifies = runCatching {
+                            pm.getPackageInfo(pkg, android.content.pm.PackageManager.GET_PERMISSIONS)
+                                .requestedPermissions?.contains("android.permission.POST_NOTIFICATIONS") == true
+                        }.getOrDefault(false)
+                        AddableApp(pkg, name, if (msg) 0 else if (notifies) 1 else 2)
+                    }
+                    .sortedWith(compareBy<AddableApp> { it.group }.thenBy { it.name })
             }
         }
     }
@@ -211,10 +227,16 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         AppFilter.addApp(ctx, pkg)
         excludedApps = AppFilter.excluded(ctx)
         reviewedApps = AppFilter.reviewed(ctx)
-        addableApps = addableApps?.filterNot { it.first == pkg }
+        addableApps = addableApps?.filterNot { it.pkg == pkg }
         status = "＋ $name 추가! 이제 이 앱 알림이 오면 모아요."
         aiDoneFor = emptySet()
         loadApps()
+    }
+
+    /** "안 써요": 이 앱은 알림이 안 들어와도 다시 경고하지 않음 */
+    fun dismissSilent(pkg: String) {
+        AppFilter.dismissSilent(getApplication<Application>(), pkg)
+        silentApps = silentApps.filterNot { it.first == pkg }
     }
 
     fun setAppKeep(pkg: String, keep: Boolean) {
