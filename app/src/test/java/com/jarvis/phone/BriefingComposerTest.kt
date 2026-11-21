@@ -70,4 +70,16 @@ class BriefingComposerTest {
         assertTrue(tr.length <= BriefingComposer.ROOM_CHARS + 120)
         assertTrue(tr.contains("메시지 40") && !tr.contains("메시지 1 "))
     }
+
+    @Test fun 일대일_대화에서_모델이_요청을_놓쳐도_묻는_말이면_답장할_연락() {
+        val conv = BriefingComposer.conversations(listOf(
+            kakao("", "서윤 어머니", "서윤이가 열이 나서 2교시 후에 등교해도 될까요?"),
+            kakao("", "서윤 어머니", "병원 다녀왔는데 감기래요. 체육은 쉬게 해 주시면 감사하겠습니다."),
+        ))[0]
+        val r = BriefingComposer.parse(conv, "요점: 서윤이가 감기로 늦게 등교함\n요청: 없음\n답장: 아님")
+        assertTrue(r.needReply)
+        assertTrue(r.ask.contains("쉬게 해 주시면"))
+        val group = BriefingComposer.conversations(listOf(kakao("동학년방", "최선생", "명단 양식 있을까요?")))[0]
+        assertFalse(BriefingComposer.parse(group, "요점: 양식 문의\n요청: 없음\n답장: 아님").needReply)
+    }
 }

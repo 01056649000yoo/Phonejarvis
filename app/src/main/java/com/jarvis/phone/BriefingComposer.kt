@@ -31,7 +31,7 @@ object BriefingComposer {
     const val SHORT_CHARS = 60        // 이보다 짧은 메시지 하나뿐인 방은 모델 없이
 
     private val AD = Regex("^\\(광고\\)")
-    private val QUESTION = Regex("[?？]|(주세요|주실|부탁|가능할까|될까요|되나요|인가요|있나요|어떠세요|알려|확인해|회신|답장|연락 ?주)")
+    private val QUESTION = Regex("[?？]|(주세요|주시면|주실|부탁|가능할까|될까요|되나요|인가요|있나요|어떠세요|알려|확인해|회신|답장|연락 ?주)")
 
     /** 사람 메시지(메시지 앱)인가 — 업무 앱·사람 묶음은 이 앞에서 이미 빠진다 */
     fun isPerson(n: NotiItem): Boolean = AppAdvisor.isMessaging(n.app, n.pkg)
@@ -65,7 +65,8 @@ object BriefingComposer {
         ---
         위 메시지만 보고 정확히 세 줄로 답해. 다른 말, 꾸밈, 별표는 쓰지 마.
         요점: 가장 중요한 내용 하나를 40자 안쪽 한 문장으로. 날짜·시간·장소·숫자는 메시지 그대로.
-        요청: 사용자에게 해 달라거나 묻는 것을 구체적으로(무엇을, 언제까지). 여러 개면 쉼표로. 없으면 없음.
+        요청: 사용자에게 해 달라거나 묻거나 허락을 구하는 것(…해 주세요, …해도 될까요, …줄래?)을 구체적으로(무엇을, 언제까지). 여러 개면 쉼표로. 없으면 없음.
+              단톡방에서 '각 반', '모두', '선생님들'에게 하는 부탁과 '너'에게 하는 부탁도 사용자에게 하는 요청이다.
         답장: 사용자가 답하거나 해야 할 일이 있으면 필요, 없으면 아님.
 
         예시(내용은 다름):
@@ -81,13 +82,14 @@ object BriefingComposer {
             ?.substringAfter(':')?.trim().orEmpty()
         val point = field("요점").ifEmpty { clean.firstOrNull { ':' !in it.take(4) } ?: "" }
             .ifEmpty { conv.items.last().text.replace('\n', ' ').take(80) }
-        val ask = field("요청").let { if (it.isEmpty() || it.startsWith("없음") || it == "-") "" else it }
-        val reply3 = field("답장")
-        val need = when {
-            reply3.startsWith("필요") -> true
-            reply3.startsWith("아님") || reply3.startsWith("불필요") -> false
-            else -> ask.isNotEmpty()
+        val modelAsk = field("요청").let { if (it.isEmpty() || it.startsWith("없음") || it == "-") "" else it }
+        // 1:1 대화에서 묻는 말이 있는데 모델이 놓치면 그 말을 그대로 요청으로(단톡방은 서로 묻는 말이 많아 하지 않는다)
+        val ask = modelAsk.ifEmpty {
+            if (conv.items.all { it.room.isEmpty() }) conv.items.lastOrNull { QUESTION.containsMatchIn(it.text) }?.text?.replace('\n', ' ')?.trim()?.take(100).orEmpty() else ""
         }
+        val reply3 = field("답장")
+        // 요청이 있으면 답장할 연락이다 — 큰 모델(E4B)이 요청을 적고도 '답장: 아님'이라 하는 일이 있었다(2026-11-21 시뮬레이션)
+        val need = ask.isNotEmpty() || reply3.startsWith("필요")
         return RoomSummary(conv, point.take(160), ask.take(160), need, byModel = true)
     }
 
