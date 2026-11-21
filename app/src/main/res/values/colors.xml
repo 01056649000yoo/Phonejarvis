@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 쌤톡스 브랜드 색 (로고 디자인과 같음) -->
+    <color name="ssam_board">#2E4A3D</color>   <!-- 칠판 그린 -->
+    <color name="ssam_chalk">#F6F1E4</color>   <!-- 분필 크림 -->
+    <color name="ssam_sprout">#9BD18B</color>  <!-- 새싹 -->
+    <color name="ssam_leaf">#7CC06C</color>
+    <color name="ssam_blush">#F28C6B</color>   <!-- 볼터치 -->
+</resources>

@@ -27,16 +27,16 @@ jobs:
           ./gradlew assembleDebug --stacktrace
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk PhoneJarvis-${{ github.run_number }}.apk
+        run: cp app/build/outputs/apk/debug/app-debug.apk SsamTox-${{ github.run_number }}.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PhoneJarvis-apk
-          path: PhoneJarvis-*.apk
+          name: SsamTox-apk
+          path: SsamTox-*.apk
 
       # 폰에서 받기 쉽도록 릴리스(Releases)에 APK 첨부
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
-          name: 휴대폰 자비스 빌드 ${{ github.run_number }}
-          files: PhoneJarvis-*.apk
+          name: 쌤톡스 빌드 ${{ github.run_number }}
+          files: SsamTox-*.apk

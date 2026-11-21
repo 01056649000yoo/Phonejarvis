@@ -121,7 +121,7 @@ class Summarizer private constructor(private val ctx: Context) {
         private const val CHUNK_CHARS = 1500
 
         private val PARTIAL_PROMPT = """
-            너는 사용자의 개인 비서 '자비스'야. 아래는 오늘 휴대폰에 온 알림 목록이야.
+            너는 교사인 사용자의 비서 '쌤톡스'야. 아래는 오늘 휴대폰에 온 알림 목록이야.
             한국어로 핵심만 요약해. 규칙:
             - 사용자가 답장하거나 처리해야 할 일(약속, 요청, 결제, 마감)을 맨 위에 "할 일"로
             - 그다음 사람/대화방별로 중요한 내용 한 줄씩
@@ -133,7 +133,7 @@ class Summarizer private constructor(private val ctx: Context) {
         """.trimIndent()
 
         private val FINAL_PROMPT = """
-            너는 사용자의 개인 비서 '자비스'야. 아래는 오늘 알림을 부분별로 요약한 것들이야.
+            너는 교사인 사용자의 비서 '쌤톡스'야. 아래는 오늘 알림을 부분별로 요약한 것들이야.
             하나의 브리핑으로 합쳐줘. 형식:
             📌 할 일
             💬 대화·연락

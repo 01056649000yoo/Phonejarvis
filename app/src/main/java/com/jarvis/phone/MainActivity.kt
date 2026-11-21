@@ -11,6 +11,7 @@ import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.*
@@ -61,6 +62,34 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         BriefingScheduler.startNow(getApplication<Application>(), "지금 브리핑")
         status = "브리핑을 시작했어요. 진행 상황은 알림창에서 볼 수 있어요."
     }
+
+    // ── 첫 실행 설치 안내 ──
+    private val prefs = app.getSharedPreferences("app", android.content.Context.MODE_PRIVATE)
+
+    /** 설치 안내를 끝냈는지. 모델이 없으면 안내를 끝냈어도 다시 보여줌. */
+    var onboardingDone by mutableStateOf(prefs.getBoolean("onboarding_done", false))
+        private set
+    var onboardingStep by mutableIntStateOf(0)
+    val device: DeviceReport by lazy { DeviceCheck.run(app) }
+    /** 사용자가 고른 모델. 기본값은 진단 결과의 추천 모델. */
+    var chosenModel by mutableStateOf<ModelOption?>(null)
+    val selectedModel get() = chosenModel ?: device.recommended
+    /** 지금 설치된 모델 (파일 크기로 알아냄). 모르는 파일이면 null. */
+    var installedModel by mutableStateOf(
+        prefs.getString("model_id", null)?.let { runCatching { ModelOption.valueOf(it) }.getOrNull() })
+        private set
+
+    /** 메인 화면의 "모델 바꾸기/받기": 설치 안내의 폰 진단 단계부터 다시 보여줌. */
+    fun openModelGuide() {
+        onboardingStep = 1
+        onboardingDone = false
+    }
+
+    fun finishOnboarding() {
+        prefs.edit().putBoolean("onboarding_done", true).apply()
+        onboardingDone = true
+    }
+
     var hasModel by mutableStateOf(false)
         private set
     var todayItems by mutableStateOf<List<NotiItem>>(emptyList())
@@ -151,7 +180,12 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
                 summarizer.release()   // 예약 브리핑이 모델을 쓰는 중이면 끝날 때까지 기다림
                 java.nio.file.Files.move(tmp.toPath(), summarizer.modelFile.toPath(),
                     java.nio.file.StandardCopyOption.REPLACE_EXISTING)
-                ui { status = "모델 준비 완료 (${copied / 1_000_000}MB)" }
+                val detected = ModelOption.bySize(copied)
+                prefs.edit().putString("model_id", detected?.name).apply()
+                ui {
+                    installedModel = detected
+                    status = "모델 준비 완료 · ${detected?.title ?: "직접 고른 모델"} (${copied / 1_000_000}MB)"
+                }
             } catch (t: Throwable) {
                 tmp.delete()
                 val raw = t.message.orEmpty()
@@ -193,9 +227,17 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()   // 상태바까지 앱 배경색, 다크 모드에 맞춰 아이콘 색 자동
         Notifications.ensureChannels(this)
         BriefingScheduler.scheduleAll(this)   // 강제 종료 등으로 알람이 지워졌을 때를 대비해 다시 등록
-        setContent { MaterialTheme(colorScheme = darkColorScheme()) { Surface { JarvisScreen(vm) } } }
+        setContent {
+            SsamTheme {
+                Surface(color = MaterialTheme.colorScheme.background) {
+                    // 첫 실행이면 설치 안내(폰 진단 → 모델 받기 → 권한), 끝났으면 메인 화면
+                    if (vm.onboardingDone) JarvisScreen(vm) else OnboardingScreen(vm)
+                }
+            }
+        }
     }
 
     override fun onResume() { super.onResume(); vm.refresh() }
@@ -204,9 +246,6 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun JarvisScreen(vm: JarvisViewModel) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) vm.importModel(uri)
-    }
     val timeFmt = remember { SimpleDateFormat("HH:mm", Locale.KOREA) }
     val dayTimeFmt = remember { SimpleDateFormat("M/d HH:mm", Locale.KOREA) }
 
@@ -215,7 +254,15 @@ fun JarvisScreen(vm: JarvisViewModel) {
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text("휴대폰 자비스", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            SsamLogo(48.dp)
+            Column {
+                Text("쌤톡스", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary)
+                Text("선생님을 위한 디지털 디톡스", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
 
         // 1. 알림 접근 권한
         SetupCard(
@@ -228,12 +275,13 @@ fun JarvisScreen(vm: JarvisViewModel) {
         // 2. 모델 파일
         SetupCard(
             done = vm.hasModel,
-            title = "② AI 모델 (Gemma)",
-            desc = if (vm.hasModel) "준비됨 (${vm.summarizer.modelFile.length() / 1_000_000}MB)"
-                   else "다운로드한 .litertlm 파일을 선택하세요",
-            button = if (vm.hasModel) "다시 선택" else "파일 선택",
+            title = "② AI 모델",
+            desc = if (vm.hasModel) "${vm.installedModel?.title ?: "직접 고른 모델"} · " +
+                       "${vm.summarizer.modelFile.length() / 1_000_000}MB"
+                   else "폰 진단 후 맞는 모델을 받아요",
+            button = if (vm.hasModel) "바꾸기" else "받기",
             enabled = !vm.busy,
-        ) { picker.launch(arrayOf("*/*")) }
+        ) { vm.openModelGuide() }
 
         // 3. 자동 브리핑 결과를 알림으로 받기 위한 권한 (Android 13+)
         val notiPermLauncher = rememberLauncherForActivityResult(
@@ -284,13 +332,17 @@ fun JarvisScreen(vm: JarvisViewModel) {
         if (vm.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         if (vm.status.isNotEmpty()) Text(vm.status, style = MaterialTheme.typography.bodySmall)
 
+        // 브리핑 카드: 로고처럼 칠판 그린 바탕에 분필 크림 글씨
+        val briefingColors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer)
         if (vm.summary.isNotEmpty()) {
-            Card(Modifier.fillMaxWidth()) {
+            Card(Modifier.fillMaxWidth(), colors = briefingColors) {
                 Text(vm.summary, Modifier.padding(16.dp), style = MaterialTheme.typography.bodyLarge)
             }
         } else vm.lastBriefing?.let { b ->
             // 마지막 브리핑 (예약 브리핑 포함)
-            Card(Modifier.fillMaxWidth()) {
+            Card(Modifier.fillMaxWidth(), colors = briefingColors) {
                 Column(Modifier.padding(16.dp)) {
                     Text("${b.label} · ${dayTimeFmt.format(b.time)} · 알림 ${b.count}건",
                         style = MaterialTheme.typography.labelMedium)

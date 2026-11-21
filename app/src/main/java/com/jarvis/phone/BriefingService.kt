@@ -90,7 +90,7 @@ object Briefings {
     suspend fun run(ctx: Context, label: String, from: Long, onStatus: (String) -> Unit): Outcome {
         val db = NotificationDb.get(ctx)
         val summarizer = Summarizer.get(ctx)
-        if (!summarizer.hasModel()) return Outcome("$label 건너뜀", "AI 모델이 없어요. 자비스 앱에서 모델 파일을 선택하세요.")
+        if (!summarizer.hasModel()) return Outcome("$label 건너뜀", "AI 모델이 없어요. 쌤톡스 앱에서 모델 파일을 선택하세요.")
 
         val items = db.since(from)
         if (items.isEmpty()) return Outcome(label, "새로 온 알림이 없어요.")
@@ -115,7 +115,7 @@ object Notifications {
         nm.createNotificationChannel(
             NotificationChannel(CH_PROGRESS, "브리핑 진행 상태", NotificationManager.IMPORTANCE_LOW))
         nm.createNotificationChannel(
-            NotificationChannel(CH_BRIEFING, "자비스 브리핑", NotificationManager.IMPORTANCE_DEFAULT))
+            NotificationChannel(CH_BRIEFING, "쌤톡스 브리핑", NotificationManager.IMPORTANCE_DEFAULT))
     }
 
     private fun openApp(ctx: Context): PendingIntent = PendingIntent.getActivity(
@@ -126,8 +126,9 @@ object Notifications {
 
     fun progress(ctx: Context, text: String): Notification =
         NotificationCompat.Builder(ctx, CH_PROGRESS)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle("자비스가 알림을 정리하는 중")
+            .setSmallIcon(R.drawable.ic_stat_ssamtox)
+            .setColor(0xFF2E4A3D.toInt())
+            .setContentTitle("쌤톡스가 알림을 정리하는 중")
             .setContentText(text)
             .setProgress(0, 0, true)
             .setOngoing(true)
@@ -136,7 +137,8 @@ object Notifications {
 
     fun result(ctx: Context, title: String, body: String): Notification =
         NotificationCompat.Builder(ctx, CH_BRIEFING)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setSmallIcon(R.drawable.ic_stat_ssamtox)
+            .setColor(0xFF2E4A3D.toInt())
             .setContentTitle(title)
             .setContentText(body.lineSequence().firstOrNull { it.isNotBlank() } ?: body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
