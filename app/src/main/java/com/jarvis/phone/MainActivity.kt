@@ -67,6 +67,11 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     fun addRestDay(ymd: Int) { RestDays.add(getApplication<Application>(), ymd); reloadSchedule() }
     fun removeRestDay(ymd: Int) { RestDays.remove(getApplication<Application>(), ymd); reloadSchedule() }
     fun setDndAuto(on: Boolean) { Dnd.setAuto(getApplication<Application>(), on); quietRev++ }
+    fun setHideWhen(h: QuietMode.Hide) {
+        quiet { putString("hide_when", h.name) }
+        // 지금 숨길 때가 되었으면 이미 와 있던 알림도 바로 정리
+        if (NotificationCollectorService.shouldHide(getApplication<Application>())) NotificationCollectorService.instance?.sweep()
+    }
     /** 다음 요약 시각 한 줄(설정 위 상태 줄) */
     fun nextRunText(): String {
         val run = BriefingScheduler.nextRun(getApplication<Application>()) ?: return "요약 시간이 없어요"

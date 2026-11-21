@@ -12,7 +12,11 @@ class NotificationCollectorService : NotificationListenerService() {
         val n = sbn.notification ?: return
         if (sbn.packageName == packageName) return                       // 내 앱 알림 제외
         if (sbn.isOngoing) return                                          // 음악 재생, 다운로드 진행 등 상시 알림 제외
-        if (n.flags and Notification.FLAG_GROUP_SUMMARY != 0) return       // "새 메시지 3개" 같은 묶음 요약 제외
+        if (n.flags and Notification.FLAG_GROUP_SUMMARY != 0) {            // "새 메시지 3개" 같은 묶음 요약은 모으지 않음
+            // 숨기는 때라면 묶음 안 알림이 다 숨겨졌을 때 묶음 요약도 지움(카톡 묶음이 상태바에 남던 것)
+            if (shouldHide(this) && sbn.packageName !in AppFilter.excluded(this)) cleanGroup(sbn.packageName, sbn.groupKey)
+            return
+        }
         if (sbn.packageName in IGNORED_PACKAGES || sbn.packageName == packageName) return   // 쌤톡스 자기 알림(요약 중·완료)은 모으지 않음
         val ex = n.extras
         val title = ex.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim().orEmpty()
@@ -56,9 +60,41 @@ class NotificationCollectorService : NotificationListenerService() {
 
         // 🏫 수업 중 · 🌙 퇴근 후: 모은 알림을 상태바에서 숨김 (나중에 브리핑으로 한 번에)
         //    단, 전화·알람·재난문자·인증번호는 절대 숨기지 않음
-        if (QuietMode.hideInShade(this) && QuietMode.state(this) != QuietMode.State.NONE && !mustNeverHide(sbn, title, text)) {
+        if (shouldHide(this) && !mustNeverHide(sbn, title, text)) {
             runCatching { cancelNotification(sbn.key) }
+            cleanGroup(sbn.packageName, sbn.groupKey)
         }
+    }
+
+    override fun onListenerConnected() { instance = this }
+    override fun onListenerDisconnected() { if (instance === this) instance = null }
+
+    /** 묶음 안에 보이는 알림이 하나도 없으면 묶음 요약("새 메시지 N개")도 지움 */
+    private fun cleanGroup(pkg: String, groupKey: String?) {
+        val same = runCatching { activeNotifications }.getOrNull()?.filter { it.packageName == pkg && it.groupKey == groupKey } ?: return
+        if (same.isNotEmpty() && same.all { it.notification.flags and Notification.FLAG_GROUP_SUMMARY != 0 })
+            same.forEach { runCatching { cancelNotification(it.key) } }
+    }
+
+    /**
+     * 지금 상태바에 남아 있는, 모으는 앱의 알림을 지움(이미 도착할 때 모아 두었으므로 지우기만).
+     * 모아 두는 시간이 시작될 때·'언제나 숨기기'를 켤 때 부름. 전화·알람·재난 문자·인증번호는 남김.
+     */
+    fun sweep() {
+        val rules = AppFilter.rules(this)
+        val excluded = AppFilter.excluded(this)
+        val active = runCatching { activeNotifications }.getOrNull() ?: return
+        active.filter { it.packageName != packageName && !it.isOngoing && it.packageName !in excluded && it.packageName !in IGNORED_PACKAGES
+                && it.notification.flags and Notification.FLAG_GROUP_SUMMARY == 0 }
+            .forEach { sbn ->
+                val ex = sbn.notification.extras
+                val title = ex.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim().orEmpty()
+                val text = (ex.getCharSequence(Notification.EXTRA_BIG_TEXT) ?: ex.getCharSequence(Notification.EXTRA_TEXT))?.toString()?.trim().orEmpty()
+                val room = (ex.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)
+                    ?: if (sbn.packageName == "com.kakao.talk") ex.getCharSequence(Notification.EXTRA_SUB_TEXT) else null)?.toString()?.trim().orEmpty()
+                if (rules.allows(sbn.packageName, room, title, text) && !mustNeverHide(sbn, title, text)) runCatching { cancelNotification(sbn.key) }
+            }
+        active.map { it.packageName to it.groupKey }.distinct().forEach { (p, g) -> if (p !in excluded) cleanGroup(p, g) }
     }
 
     /** 수업 중·퇴근 모드에서도 숨기면 안 되는 알림: 전화, 알람·타이머, 재난·긴급 문자, 인증번호(OTP) */
@@ -77,6 +113,17 @@ class NotificationCollectorService : NotificationListenerService() {
     } catch (_: Exception) { pkg }
 
     companion object {
+        /** 지금 연결된 알림 수집 서비스(모아 두는 시간이 시작될 때 상태바 정리에 씀) */
+        @Volatile var instance: NotificationCollectorService? = null
+            private set
+
+        /** 지금 모으는 앱 알림을 상태바에서 숨길 때인가: '언제나' 또는 모아 두는 시간 */
+        fun shouldHide(ctx: android.content.Context): Boolean = when (QuietMode.hideWhen(ctx)) {
+            QuietMode.Hide.ALWAYS -> true
+            QuietMode.Hide.QUIET -> QuietMode.state(ctx) != QuietMode.State.NONE
+            QuietMode.Hide.NEVER -> false
+        }
+
         private val NEVER_HIDE_CATEGORIES = setOf(
             Notification.CATEGORY_CALL, Notification.CATEGORY_ALARM, Notification.CATEGORY_REMINDER,
             Notification.CATEGORY_STOPWATCH, Notification.CATEGORY_NAVIGATION, "missed_call",

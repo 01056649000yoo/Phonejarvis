@@ -36,6 +36,7 @@ private const val WHATS_NEW = "🔕 모아 두기·요약 시간을 한 곳에 �
 
 /** 업데이트 내역 큰 창 (버전 올릴 때 같이 고치기) */
 private val WHATS_NEW_DETAIL = listOf(
+    "🙈 카톡 묶음 알림도 숨겨요" to "카톡의 '새 메시지 N개' 묶음 알림이 상태바에 남던 것을 고쳤어요. 모아 두는 시간이 시작되면 그 전에 와 있던 모으는 앱 알림도 정리해요. 설정 → 🔕 모아 두기·요약 시간에서 숨기는 때를 '모아 두는 시간에만 / 언제나 / 숨기지 않음' 중에 골라요.",
     "🔕 모아 두기·요약 시간" to "설정 → 🔕 모아 두기·요약 시간 한 곳에서 다 정해요. ① 수업 시간·퇴근 후에는 모으기로 한 앱 알림을 도착하자마자 숨기고 모아 두고 ② 정한 시각(여러 개)·1시간 단위 간격·수업이 끝날 때마다·출근할 때 중 고른 때 요약해요. 새 알림이 없으면 알리지 않아요. 예전 아침·저녁 시각은 그대로 옮겨 왔어요.",
     "📅 쉬는 날에 공휴일도" to "토·일·공휴일(대체공휴일 포함)에 할 일을 고르세요: 평일처럼 / 하루 종일 모아 두기 / 정한 시각 요약만 / 모두 쉬기. 재량휴업일은 ＋로 넣고, 학교 가는 공휴일은 눌러서 빼요.",
     "🔕 방해 금지 자동 켜기" to "권한을 한 번 허용하면 모아 두는 시간에 '쌤톡스 모아 두기' 모드를 켜서 소리·진동을 꺼요. 알람·즐겨찾기 연락처 전화·3분 안에 다시 건 전화만 울려요. 선생님이 직접 켠 방해 금지는 건드리지 않아요.",
@@ -1627,10 +1628,17 @@ private fun CollectGuideCard(vm: JarvisViewModel) {
                     vm.setDndAuto(on)
                 })
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("상태바에서 알림 숨기기", Modifier.weight(1f), fontWeight = FontWeight.Medium)
-                Switch(checked = QuietMode.hideInShade(ctx), onCheckedChange = { on -> vm.quiet { putBoolean("hide", on) } })
+            Text("모으는 앱 알림을 상태바에서 숨기는 때", fontWeight = FontWeight.Medium)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                QuietMode.Hide.entries.forEach { h ->
+                    FilterChip(selected = QuietMode.hideWhen(ctx) == h, onClick = { vm.setHideWhen(h) }, label = { Text(h.title) })
+                }
             }
+            Text(when (QuietMode.hideWhen(ctx)) {
+                QuietMode.Hide.QUIET -> "수업 시간·퇴근 후에만 숨겨요. 그 밖의 시간에는 모으면서 상태바에도 그대로 둬요."
+                QuietMode.Hide.ALWAYS -> "언제든 모으는 앱 알림은 도착하자마자 숨기고 모아요. 알림은 쌤톡스 요약과 🔔 알림 탭에서만 봐요."
+                QuietMode.Hide.NEVER -> "모으기만 하고 상태바에는 그대로 둬요."
+            }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

@@ -203,7 +203,11 @@ object QuietMode {
     fun workStart(ctx: Context) = prefs(ctx).getInt("work_start", 8 * 60)
     fun workEnd(ctx: Context) = prefs(ctx).getInt("work_end", 17 * 60)
     /** 수업이 끝날 때 "수업 중 알림 N건" 알림 */
-    fun hideInShade(ctx: Context) = prefs(ctx).getBoolean("hide", true)
+    fun hideInShade(ctx: Context) = hideWhen(ctx) != Hide.NEVER
+    /** 모으는 앱 알림을 상태바에서 숨기는 때(2026-11-21: '언제나' 추가). 예전 'hide' 스위치를 끈 사람은 NEVER */
+    enum class Hide(val title: String) { QUIET("모아 두는 시간에만"), ALWAYS("언제나"), NEVER("숨기지 않음") }
+    fun hideWhen(ctx: Context): Hide = runCatching { Hide.valueOf(prefs(ctx).getString("hide_when", null)!!) }
+        .getOrElse { if (prefs(ctx).getBoolean("hide", true)) Hide.QUIET else Hide.NEVER }
 
     fun update(ctx: Context, block: android.content.SharedPreferences.Editor.() -> Unit) {
         prefs(ctx).edit().apply(block).apply()
@@ -290,6 +294,8 @@ object QuietMode {
 
         // 🔕 방해 금지: 권한이 있고 '자동 켜기'가 켜져 있을 때만. 쌤톡스 전용 모드를 켜고 끔(선생님이 직접 켠 방해 금지는 건드리지 않음)
         if (cur != State.NONE) Dnd.on(ctx) else Dnd.off(ctx)
+        // 모아 두는 시간이 시작되면 그 전에 와 있던 모으는 앱 알림도 상태바에서 정리
+        if (cur != State.NONE && hideWhen(ctx) == Hide.QUIET) NotificationCollectorService.instance?.sweep()
 
         // 수업이 끝나면: 수업 중 모은 알림 수를 한 번 알려 줌 (AI 없이, 바로)
         // (수업 끝날 때마다 요약을 켰으면 요약이 대신 알려 주므로 건너뜀)
