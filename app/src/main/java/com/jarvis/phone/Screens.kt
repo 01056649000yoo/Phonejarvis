@@ -30,10 +30,11 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** 이번 버전에서 바뀐 점 한 줄 (버전 올릴 때 같이 고치기). */
-private const val WHATS_NEW = "👥 사람들: 묶음을 직접 만들고 이름만 쭉 · 🔤 큰 글자 · 💼 업무·일정 앱도 한곳에"
+private const val WHATS_NEW = "아래 탭이 📋 요약 · 🔔 알림 · 📚 지난 요약 · ⚙️ 설정 네 개로 바뀌었어요"
 
 /** 업데이트 내역 큰 창 (버전 올릴 때 같이 고치기) */
 private val WHATS_NEW_DETAIL = listOf(
+    "🧭 탭이 네 개로" to "📋 요약은 가장 최근 요약과 지금 정리하기만, 🔔 알림은 아직 요약 안 한 알림과 오늘 받은 알림 전체, 📚 지난 요약은 요약 모음이에요. 👥 사람 묶음은 설정 안으로 옮겼어요. 안 만들어도 요약은 그대로 돼요.",
     "👥 우리 반 → 사람들" to "아래 탭이 👥 사람들로 바뀌었어요. 교직원·가족처럼 묶음을 직접 만들고 이름만 쭉 넣으면, 그 이름이 보낸 알림이나 이름이 나온 알림을 묶음별로 모아 오늘 탭과 브리핑에 따로 보여 줘요. 학생·학부모 묶음도 이름을 바꾸거나 숨길 수 있어서 누구나 쓸 수 있어요.",
     "💼 업무·일정 앱도 한곳에" to "Gmail·Google Tasks·캘린더·메모 같은 업무·일정 앱은 메시지 앱 바로 아래 💼 묶음에 모이고, 브리핑 맨 위 \"💼 업무·일정 알림\"에 시간순으로 따로 보여요. 그 밖의 앱도 '⭐ 중요 앱으로 올리기'를 누르면 같이 관리돼요.",
     "🔤 글자가 커졌어요" to "앱 전체 글자를 한 단계씩 키우고 줄 간격을 넓혔어요. 오늘·사람들·설정 세 화면의 머리말과 카드 제목도 같은 모양으로 맞췄어요. 폰 설정에서 글자 크기를 키우면 쌤톡스도 같이 커져요.",
@@ -52,21 +53,23 @@ private val WHATS_NEW_DETAIL = listOf(
 )
 
 /**
- * 메인: 아래 탭 세 개
- *  📋 오늘 — 결과만 보기 (브리핑·할 일·학부모 연락)
- *  👥 사람들 — 직접 만드는 묶음 (우리 반 학생·학부모·교직원 등)·중요 키워드
- *  ⚙️ 설정 — 앱 동작 (알림 앱·시간·AI 모델·백업), 아이폰 '설정'처럼 목록 → 세부 화면
+ * 메인: 아래 탭 네 개 — 손대지 않아도 알림을 주기적으로 요약해 보는 앱
+ *  📋 요약 — 가장 최근 요약·할 일·연락, 지금 정리하기
+ *  🔔 알림 — 아직 요약 안 한 알림, 오늘 받은 알림 전체(앱·방별)
+ *  📚 지난 요약 — 요약 모음
+ *  ⚙️ 설정 — 앱 동작(알림 앱·시간·AI 모델·백업)과 선택 사항인 👥 사람 묶음, 목록 → 세부 화면
  */
 @Composable
 fun JarvisScreen(vm: JarvisViewModel) {
-    // 폰의 뒤로 버튼: 세부 화면 → 탭 첫 화면 → 오늘 탭
+    // 폰의 뒤로 버튼: 세부 화면 → 탭 첫 화면 → 요약 탭
     androidx.activity.compose.BackHandler(enabled = vm.page != null || vm.tab != JarvisViewModel.Tab.BRIEFING) { vm.back() }
     Scaffold(
         bottomBar = {
             NavigationBar {
                 listOf(
-                    Triple(JarvisViewModel.Tab.BRIEFING, "📋", "오늘"),
-                    Triple(JarvisViewModel.Tab.CLASS, "👥", "사람들"),
+                    Triple(JarvisViewModel.Tab.BRIEFING, "📋", "요약"),
+                    Triple(JarvisViewModel.Tab.ALERTS, "🔔", "알림"),
+                    Triple(JarvisViewModel.Tab.HISTORY, "📚", "지난 요약"),
                     Triple(JarvisViewModel.Tab.SETTINGS, "⚙️", "설정"),
                 ).forEach { (t, icon, label) ->
                     NavigationBarItem(
@@ -108,7 +111,8 @@ fun JarvisScreen(vm: JarvisViewModel) {
                 if (page != null) PageContent(vm, page)
                 else when (tab) {
                     JarvisViewModel.Tab.BRIEFING -> BriefingTab(vm)
-                    JarvisViewModel.Tab.CLASS -> ClassTab(vm)
+                    JarvisViewModel.Tab.ALERTS -> AlertsTab(vm)
+                    JarvisViewModel.Tab.HISTORY -> HistoryTab(vm)
                     JarvisViewModel.Tab.SETTINGS -> SettingsTab(vm)
                 }
                 Spacer(Modifier.height(12.dp))
@@ -119,11 +123,12 @@ fun JarvisScreen(vm: JarvisViewModel) {
 
 @Composable
 private fun Header(vm: JarvisViewModel, tab: JarvisViewModel.Tab) {
-    // 세 탭 모두 같은 모양: 작은 로고 + 큰 제목, 아래 한 줄 설명
+    // 네 탭 모두 같은 모양: 작은 로고 + 큰 제목, 아래 한 줄 설명
     val today = remember { SimpleDateFormat("M월 d일 (E)", Locale.KOREA).format(System.currentTimeMillis()) }
     val (title, sub) = when (tab) {
-        JarvisViewModel.Tab.BRIEFING -> "오늘" to today
-        JarvisViewModel.Tab.CLASS -> "사람들" to "묶음 ${vm.groups.count { !it.hidden }}개"
+        JarvisViewModel.Tab.BRIEFING -> "요약" to today
+        JarvisViewModel.Tab.ALERTS -> "알림" to "오늘 ${vm.todayItems.size}건 · 아직 요약 안 한 알림 ${vm.pendingItems.size}건"
+        JarvisViewModel.Tab.HISTORY -> "지난 요약" to "최근 요약 ${vm.briefings.size}개"
         JarvisViewModel.Tab.SETTINGS -> "설정" to "쌤톡스 v${vm.appVersion} · 알림은 폰 밖으로 나가지 않아요"
     }
     Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -139,7 +144,9 @@ private fun Header(vm: JarvisViewModel, tab: JarvisViewModel.Tab) {
 private fun PageHeader(vm: JarvisViewModel, page: JarvisViewModel.Page) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         TextButton(onClick = { vm.back() }, contentPadding = PaddingValues(start = 0.dp, end = 8.dp)) {
-            Text("‹ " + when (page.tab) { JarvisViewModel.Tab.CLASS -> "사람들"; JarvisViewModel.Tab.BRIEFING -> "오늘"; else -> "설정" },
+            Text("‹ " + (page.parent?.title ?: when (page.tab) {
+                JarvisViewModel.Tab.BRIEFING -> "요약"; JarvisViewModel.Tab.ALERTS -> "알림"
+                JarvisViewModel.Tab.HISTORY -> "지난 요약"; else -> "설정" }),
                 style = MaterialTheme.typography.titleMedium)
         }
     }
@@ -158,9 +165,9 @@ private fun PageContent(vm: JarvisViewModel, page: JarvisViewModel.Page) {
         JarvisViewModel.Page.SYSTEM -> SystemSettings(vm)
         JarvisViewModel.Page.BACKUP -> BackupCard(vm)
         JarvisViewModel.Page.STORAGE -> StoragePage(vm)
+        JarvisViewModel.Page.PEOPLE -> PeoplePage(vm)
         JarvisViewModel.Page.GROUP -> GroupPage(vm)
         JarvisViewModel.Page.KEYWORDS -> KeywordCard(vm)
-        JarvisViewModel.Page.TODAY_ALL -> TodayAllPage(vm)
     }
 }
 
@@ -188,8 +195,6 @@ private fun MenuGroup(rows: List<Triple<String, String, () -> Unit>>) {
 
 @Composable
 private fun BriefingTab(vm: JarvisViewModel) {
-    val timeFmt = remember { SimpleDateFormat("HH:mm", Locale.KOREA) }
-    val dayTimeFmt = remember { SimpleDateFormat("M/d HH:mm", Locale.KOREA) }
 
     // 🆕 업데이트 내역: 업데이트 뒤 처음 한 번만, 8초 뒤 저절로 사라짐. 누르면 큰 창으로
     var whatsNewOpen by rememberSaveable { mutableStateOf(false) }
@@ -270,16 +275,22 @@ private fun BriefingTab(vm: JarvisViewModel) {
     if (vm.status.isNotEmpty()) Text(vm.status, style = MaterialTheme.typography.bodySmall)
     if (!vm.hasModel) Text("AI 모델이 없어요. 설정 탭에서 받아 주세요.",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
+}
 
-    // 아직 정리(요약) 안 한 알림만: 지금 정리하기를 하면 사라짐. 오늘 전체는 맨 아래 메뉴에서
+// ───────────────────────── 🔔 알림 탭: 모은 알림 원본 ─────────────────────────
+
+@Composable
+private fun AlertsTab(vm: JarvisViewModel) {
+    val timeFmt = remember { SimpleDateFormat("HH:mm", Locale.KOREA) }
+    // 아직 요약 안 한 알림: 요약 탭에서 '지금 정리하기'를 하면 사라짐
     if (vm.pendingItems.isNotEmpty()) {
-        var expanded by rememberSaveable { mutableStateOf(false) }
+        var expanded by rememberSaveable { mutableStateOf(true) }
         val apps = vm.pendingItems.map { it.app }.distinct()
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("아직 정리 안 한 알림 ${vm.pendingItems.size}건", style = MaterialTheme.typography.titleMedium)
+                        Text("아직 요약 안 한 알림 ${vm.pendingItems.size}건", style = MaterialTheme.typography.titleMedium)
                         Text(apps.take(3).joinToString(", ") + if (apps.size > 3) " 외 ${apps.size - 3}개 앱" else "",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
@@ -298,14 +309,26 @@ private fun BriefingTab(vm: JarvisViewModel) {
             }
         }
     }
+    Text("오늘 받은 알림 전체 · 앱·대화방별", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 4.dp))
+    TodayAllPage(vm)
+}
 
-    // 📚 브리핑 모음: 맨 아래, 지난 브리핑을 한 줄씩. 누르면 펼쳐 보기 (최근 7일)
+// ───────────────────────── 📚 지난 요약 탭 ─────────────────────────
+
+@Composable
+private fun HistoryTab(vm: JarvisViewModel) {
+    val dayTimeFmt = remember { SimpleDateFormat("M/d HH:mm", Locale.KOREA) }
+    vm.briefingDetail?.let { (b, items) -> BriefingDetailDialog(vm, b, items) }
+    if (vm.briefings.isEmpty()) Card(Modifier.fillMaxWidth()) {
+        Text("아직 요약이 없어요. 설정에서 정한 시각이 되면 저절로 쌓여요.", Modifier.padding(16.dp), style = MaterialTheme.typography.bodyMedium)
+    }
+    // 지난 요약을 한 줄씩. 누르면 펼쳐 보기
     if (vm.briefings.isNotEmpty()) {
-        var open by rememberSaveable { mutableStateOf(false) }
+        var open by rememberSaveable { mutableStateOf(true) }
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("📚 브리핑 모음 · ${vm.briefings.size}개", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    Text("📚 요약 모음 · ${vm.briefings.size}개", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                     TextButton(onClick = { open = !open }) { Text(if (open) "접기" else "펼치기") }
                 }
                 AnimatedVisibility(visible = open, enter = expandVertically(Motion.size) + fadeIn(Motion.fade),
@@ -330,11 +353,6 @@ private fun BriefingTab(vm: JarvisViewModel) {
             }
         }
     }
-
-    // 🗂 맨 아래: 오늘 받은 알림 전체 (정리한 것까지 모두)
-    MenuGroup(listOf(
-        Triple("🗂 오늘 받은 알림 전체", "${vm.todayItems.size}건") { vm.open(JarvisViewModel.Page.TODAY_ALL) },
-    ))
 }
 
 /** 🗂 오늘 받은 알림 전체: 앱·방별로 묶어 최근 것부터 (정리한 알림 포함) */
@@ -485,6 +503,10 @@ private fun SettingsTab(vm: JarvisViewModel) {
             vm.open(JarvisViewModel.Page.TIMES) },
         Triple("🏫 수업·퇴근 모드", quietStatus) { vm.open(JarvisViewModel.Page.QUIET) },
     ))
+    // 👥 사람 묶음은 선택 사항: 안 만들어도 요약은 그대로 됨
+    MenuGroup(listOf(
+        Triple("👥 사람 묶음", "묶음 ${vm.groups.count { !it.hidden }}개 · 선택") { vm.open(JarvisViewModel.Page.PEOPLE) },
+    ))
     MenuGroup(listOf(
         Triple("🤖 AI 모델·권한",
             (vm.installedModel?.title ?: if (vm.hasModel) "모델 있음" else "모델 없음") + if (permsMissing > 0) " · 권한 확인 $permsMissing" else "") {
@@ -498,10 +520,10 @@ private fun SettingsTab(vm: JarvisViewModel) {
     ))
 }
 
-// ───────────────────────── 👥 사람들 탭 ─────────────────────────
+// ───────────────────────── 👥 사람 묶음 (설정 → 세부 화면) ─────────────────────────
 
 @Composable
-private fun ClassTab(vm: JarvisViewModel) {
+private fun PeoplePage(vm: JarvisViewModel) {
     vm.studentView?.let { (name, entries) -> StudentDialog(vm, name, entries) }
     var making by rememberSaveable { mutableStateOf(false) }
     val shown = vm.groups.filterNot { it.hidden }
@@ -585,7 +607,7 @@ private fun GroupPage(vm: JarvisViewModel) {
         onDismissRequest = { removing = false },
         title = { Text(if (g.kind == "custom") "${g.title} 묶음을 지울까요?" else "${g.title} 묶음을 숨길까요?") },
         text = { Text(if (g.kind == "custom") "넣어 둔 이름 ${vm.groupMembers[g.id]?.size ?: 0}개도 같이 지워져요. 모은 알림은 그대로 남아요."
-                      else "사람들 탭과 오늘 탭에서 안 보여요. 넣어 둔 이름은 남아 있어서, 사람들 탭 아래 '다시 보기'로 언제든 되돌릴 수 있어요.") },
+                      else "요약 탭에서 안 보여요. 넣어 둔 이름은 남아 있어서, 설정 → 👥 사람 묶음 아래 '다시 보기'로 언제든 되돌릴 수 있어요.") },
         confirmButton = { Button(onClick = { removing = false; vm.removeGroup(g.id) }) { Text(if (g.kind == "custom") "지우기" else "숨기기") } },
         dismissButton = { TextButton(onClick = { removing = false }) { Text("취소") } },
     )
@@ -629,7 +651,7 @@ private fun CustomGroupCard(vm: JarvisViewModel, g: PeopleGroup) {
     }
 }
 
-/** 오늘 탭: 👥 묶음별 오늘 연락 (직접 만든 묶음). 없으면 안 보임 */
+/** 요약 탭: 👥 묶음별 오늘 연락 (직접 만든 묶음). 없으면 안 보임 */
 @Composable
 private fun PeopleCard(vm: JarvisViewModel) {
     if (vm.peopleToday.isEmpty()) return

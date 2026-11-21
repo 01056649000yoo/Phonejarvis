@@ -131,7 +131,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     fun importFound(f: ModelFinder.Found) = importModel(Uri.fromFile(f.file))
 
     // ── 탭: 브리핑(결과만) / 설정 ──
-    enum class Tab { BRIEFING, CLASS, SETTINGS }
+    enum class Tab { BRIEFING, ALERTS, HISTORY, SETTINGS }
     /** 처음 들어오면 설정 탭부터. 알림 앱 정리를 한 번 적용한 뒤에는 브리핑 탭부터. */
     var tab by mutableStateOf(if (prefs.getBoolean("apps_setup_done", false)) Tab.BRIEFING else Tab.SETTINGS)
 
@@ -346,11 +346,12 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         private set
 
     // ── 탭 안의 세부 화면 (목록 → 누르면 옆에서 밀려 들어오는 화면) ──
-    enum class Page(val title: String, val tab: Tab) {
+    /** 세부 화면. parent 가 있으면 뒤로 가기가 그 화면으로 (사람 묶음 → 묶음 하나) */
+    enum class Page(val title: String, val tab: Tab, val parent: Page? = null) {
         APPS("🌱 알림 앱 정리", Tab.SETTINGS), TIMES("⏰ 브리핑 시각", Tab.SETTINGS), QUIET("🏫 수업·퇴근 모드", Tab.SETTINGS),
         SYSTEM("🤖 AI 모델·권한", Tab.SETTINGS), BACKUP("💾 백업·복원", Tab.SETTINGS), STORAGE("🧹 저장 공간", Tab.SETTINGS),
-        GROUP("👥 묶음", Tab.CLASS), KEYWORDS("⭐ 중요 키워드", Tab.CLASS),
-        TODAY_ALL("🗂 오늘 받은 알림 전체", Tab.BRIEFING),
+        PEOPLE("👥 사람 묶음", Tab.SETTINGS),
+        GROUP("👥 묶음", Tab.SETTINGS, PEOPLE), KEYWORDS("⭐ 중요 키워드", Tab.SETTINGS, PEOPLE),
     }
     /** 지금 열린 세부 화면 (null이면 탭의 첫 화면) */
     var page by mutableStateOf<Page?>(if (prefs.getBoolean("apps_setup_done", false)) null else Page.APPS)
@@ -394,9 +395,9 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     var peopleToday by mutableStateOf<List<Pair<PeopleGroup, List<Pair<String, NotiItem>>>>>(emptyList())
         private set
     fun selectTab(t: Tab) { tab = t; page = null }
-    /** 뒤로: 세부 화면 → 탭 첫 화면 → 오늘 탭. 더 갈 곳이 없으면 false */
+    /** 뒤로: 세부 화면 → (윗 세부 화면) → 탭 첫 화면 → 요약 탭. 더 갈 곳이 없으면 false */
     fun back(): Boolean = when {
-        page != null -> { page = null; true }
+        page != null -> { page = page?.parent; true }
         tab != Tab.BRIEFING -> { tab = Tab.BRIEFING; true }
         else -> false
     }
