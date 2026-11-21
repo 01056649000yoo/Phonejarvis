@@ -133,14 +133,17 @@ class Summarizer private constructor(private val ctx: Context) {
         val fmt = SimpleDateFormat("HH:mm", Locale.KOREA)
         return items
             .filterNot { it.title.startsWith("(광고)") || it.text.startsWith("(광고)") }
-            .distinctBy { Triple(it.app, it.title, it.text) }
-            .groupBy { it.app to it.title }
+            .distinctBy { listOf(it.app, it.room, it.title, it.text) }
+            .groupBy { it.app to it.roomOrTitle }   // 단톡방 단위로 묶음 (1:1·일반 앱은 제목 단위)
             .map { (key, list) ->
-                val (app, title) = key
+                val (app, room) = key
                 Group(list.maxOf { it.time }, buildString {
-                    append("■ [$app] $title (${list.size}건)\n")
-                    // 대화방이 길면 최근 PER_GROUP개만
-                    list.takeLast(PER_GROUP).forEach { append("  ${fmt.format(it.time)} ${it.text.take(200)}\n") }
+                    append("■ [$app] $room (${list.size}건)\n")
+                    // 대화방이 길면 최근 PER_GROUP개만. 단톡방이면 보낸 사람도 함께
+                    list.takeLast(PER_GROUP).forEach {
+                        val who = if (it.room.isNotEmpty() && it.title != it.room) "${it.title}: " else ""
+                        append("  ${fmt.format(it.time)} $who${it.text.take(200)}\n")
+                    }
                 })
             }
             .sortedByDescending { it.lastTime }

@@ -134,6 +134,9 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var aiBusy by mutableStateOf(false)
         private set
+    /** 설치돼 있지만 최근 7일 알림이 0건인 메시지 앱 (패키지, 이름). 예: PC 카톡 사용 중이라 폰 알림이 꺼진 경우 */
+    var silentApps by mutableStateOf<List<Pair<String, String>>>(emptyList())
+        private set
     private var aiDoneFor: Set<String> = emptySet()
 
     /** 앱 목록과 규칙 추천을 바로 보여 주고, 모델이 있으면 AI 추천으로 다시 다듬음 (앱 목록이 바뀌었을 때만). */
@@ -143,13 +146,21 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
             val stats = withContext(Dispatchers.IO) { db.appStats(7) }
             val pkgs = stats.map { it.pkg }.toSet()
             if (pkgs == aiDoneFor && appRecs.isNotEmpty()) return@launch
+            silentApps = withContext(Dispatchers.IO) { AppAdvisor.silentMessagingApps(ctx, stats) }
             val rules = AppAdvisor.sortForDisplay(AppAdvisor.byRules(stats))
             appRecs = rules
             excludedApps = AppFilter.excluded(ctx)
+            // 키워드 추천: 최근 7일 모은 알림(뺀 앱·방 제외)에서 규칙으로 바로
+            val recent = withContext(Dispatchers.IO) {
+                val r = AppFilter.rules(ctx)
+                db.since(System.currentTimeMillis() - 7 * 24L * 3600 * 1000).filter { r.allows(it) }
+            }
+            keywordRecs = KeywordAdvisor.byRules(recent)
             if (!summarizer.hasModel() || stats.isEmpty() || aiBusy) return@launch
             aiBusy = true
             try {
                 appRecs = AppAdvisor.sortForDisplay(AppAdvisor.byAi(ctx, rules))
+                keywordRecs = KeywordAdvisor.byAi(ctx, recent, keywordRecs)   // AI가 더 골라 줌
                 aiDoneFor = pkgs
             } finally { aiBusy = false }
         }
@@ -172,6 +183,94 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         status = if (dropped > 0) "앱 ${dropped}개를 뺐어요. 이제 학교·연락 알림만 모아요." else "추천대로 적용했어요."
         tab = Tab.BRIEFING
         refresh()
+    }
+
+    // ── 방 고르기 (메시지·SNS 앱 안의 단톡방) ──
+    /** 방 고르기 창을 연 앱 (패키지, 이름). null이면 닫힘. */
+    var roomApp by mutableStateOf<Pair<String, String>?>(null)
+        private set
+    var rooms by mutableStateOf<List<Pair<String, Int>>>(emptyList())
+        private set
+    var excludedRooms by mutableStateOf(AppFilter.excludedRooms(app))
+        private set
+
+    fun openRooms(pkg: String, name: String) {
+        roomApp = pkg to name
+        rooms = emptyList()
+        viewModelScope.launch { rooms = withContext(Dispatchers.IO) { db.roomStats(pkg) } }
+    }
+    fun closeRooms() { roomApp = null; refresh() }
+    fun isRoomOn(pkg: String, room: String) = !AppFilter.isRoomExcluded(excludedRooms, pkg, room)
+    fun setRoom(pkg: String, room: String, keep: Boolean) {
+        val ctx = getApplication<Application>()
+        AppFilter.setRoomKeep(ctx, pkg, room, keep)
+        excludedRooms = AppFilter.excludedRooms(ctx)
+    }
+    fun setAllRooms(pkg: String, keep: Boolean) {
+        val ctx = getApplication<Application>()
+        AppFilter.setAllRooms(ctx, pkg, rooms.map { it.first }, keep)
+        excludedRooms = AppFilter.excludedRooms(ctx)
+    }
+    /** 앱 목록에 보여 줄 "뺀 방 N개" */
+    fun excludedRoomCount(pkg: String) = excludedRooms.count { it.startsWith("$pkg|") }
+
+    // ── 중요 키워드 ──
+    var keywords by mutableStateOf(AppFilter.keywords(app))
+        private set
+    fun addKeyword(word: String) {
+        val w = word.trim()
+        if (w.isEmpty() || w in keywords) return
+        AppFilter.setKeywords(getApplication<Application>(), keywords + w)
+        keywords = AppFilter.keywords(getApplication<Application>())
+    }
+    // ── 👪 학부모 연락 ──
+    var parentRooms by mutableStateOf(ParentAdvisor.parentRooms(app))
+        private set
+    var parentContacts by mutableStateOf<List<ParentContact>>(emptyList())
+        private set
+    var handledKeys by mutableStateOf<Set<String>>(emptySet())
+        private set
+    /** 답장 추천 결과 (연락 키 → 답장들) 와 지금 만들고 있는 연락 키 */
+    var drafts by mutableStateOf<Map<String, List<String>>>(emptyMap())
+        private set
+    var draftingKey by mutableStateOf<String?>(null)
+        private set
+
+    fun isParentRoom(pkg: String, room: String) = ParentAdvisor.isParent(parentRooms, pkg, room)
+    fun setParentRoom(pkg: String, room: String, on: Boolean) {
+        ParentAdvisor.setParent(getApplication<Application>(), pkg, room, on)
+        parentRooms = ParentAdvisor.parentRooms(getApplication<Application>())
+    }
+    /** 방 고르기 창: 이름으로 학부모 같아 보이는데 아직 지정 안 한 방 */
+    fun suggestedParentRooms(pkg: String) =
+        rooms.map { it.first }.filter { ParentAdvisor.looksParent(it) && !isParentRoom(pkg, it) }
+    fun setAllSuggestedParents(pkg: String) = suggestedParentRooms(pkg).forEach { setParentRoom(pkg, it, true) }
+
+    fun markHandled(c: ParentContact) {
+        ParentAdvisor.markHandled(getApplication<Application>(), c.key)
+        handledKeys = ParentAdvisor.handled(getApplication<Application>())
+    }
+    fun draftReply(c: ParentContact) {
+        if (draftingKey != null) return
+        draftingKey = c.key
+        viewModelScope.launch {
+            try {
+                val list = ParentAdvisor.drafts(getApplication<Application>(), c)
+                drafts = drafts + (c.key to list)
+            } finally { draftingKey = null }
+        }
+    }
+
+    /** 최근 알림에서 찾은 추천 키워드 (단어, 나온 횟수). */
+    var keywordRecs by mutableStateOf<List<Pair<String, Int>>>(emptyList())
+        private set
+    fun addAllKeywordRecs() {
+        AppFilter.setKeywords(getApplication<Application>(), keywords + keywordRecs.map { it.first })
+        keywords = AppFilter.keywords(getApplication<Application>())
+    }
+    fun removeKeyword(word: String) {
+        AppFilter.setKeywords(getApplication<Application>(), keywords - word)
+        keywords = AppFilter.keywords(getApplication<Application>())
     }
 
     /** 버전마다 "바뀐 점" 한 줄. 닫으면 다음 버전까지 다시 안 보임. */
@@ -223,8 +322,11 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         if (onboardingDone) loadApps()
         viewModelScope.launch(Dispatchers.IO) {
             db.purgeOld()
-            val excluded = AppFilter.excluded(ctx)
-            val items = db.today().filterNot { it.pkg in excluded }
+            val rules = AppFilter.rules(ctx)
+            val items = db.today().filter { rules.allows(it) }
+            val parents = ParentAdvisor.contacts(items, ParentAdvisor.parentRooms(ctx))
+            val done = ParentAdvisor.handled(ctx)
+            withContext(Dispatchers.Main) { parentContacts = parents; handledKeys = done }
             val last = db.lastBriefing()
             withContext(Dispatchers.Main) { todayItems = items; lastBriefing = last }
         }

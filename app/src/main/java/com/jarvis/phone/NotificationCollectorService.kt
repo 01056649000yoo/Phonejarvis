@@ -21,12 +21,21 @@ class NotificationCollectorService : NotificationListenerService() {
             ?: ex.getCharSequence(Notification.EXTRA_TEXT))?.toString()?.trim().orEmpty()
         if (title.isEmpty() && text.isEmpty()) return
 
+        // 단톡방 이름: 메시지 앱은 대화 제목(단톡방)을 따로 넣어 줌. 1:1 대화면 비어 있고 제목(보낸 사람)이 곧 방.
+        val room = (ex.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)
+            ?: if (sbn.packageName == "com.kakao.talk") ex.getCharSequence(Notification.EXTRA_SUB_TEXT) else null)
+            ?.toString()?.trim().orEmpty().take(100)
+
+        // 설정에서 뺀 방은 모으지 않음 (단, 중요 키워드가 있으면 모음)
+        if (!AppFilter.rules(this).allows(sbn.packageName, room, title, text)) return
+
         NotificationDb.get(this).insert(
             pkg = sbn.packageName,
             app = appLabel(sbn.packageName),
             title = title.take(200),
             text = text.take(1000),
             time = sbn.postTime,
+            room = room,
         )
     }
 

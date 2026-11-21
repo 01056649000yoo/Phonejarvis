@@ -13,7 +13,11 @@ data class NotiItem(
     val title: String,
     val text: String,
     val time: Long,
-)
+    /** 단톡방 이름. 1:1 대화나 일반 앱은 빈 값이라 제목(보낸 사람·제목)으로 대신함. */
+    val room: String = "",
+) {
+    val roomOrTitle: String get() = room.ifEmpty { title }
+}
 
 /** 한 번의 브리핑 결과. fromTime~time 사이 알림 count건을 요약한 것. */
 data class Briefing(
@@ -26,7 +30,7 @@ data class Briefing(
 
 /** 수집한 알림을 휴대폰 안에만 저장하는 SQLite DB (7일 보관). */
 class NotificationDb private constructor(ctx: Context) :
-    SQLiteOpenHelper(ctx, "jarvis.db", null, 2) {
+    SQLiteOpenHelper(ctx, "jarvis.db", null, 3) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -37,7 +41,8 @@ class NotificationDb private constructor(ctx: Context) :
                 title TEXT NOT NULL,
                 text TEXT NOT NULL,
                 time INTEGER NOT NULL,
-                dedupe TEXT NOT NULL UNIQUE)"""
+                dedupe TEXT NOT NULL UNIQUE,
+                room TEXT NOT NULL DEFAULT '')"""
         )
         db.execSQL("CREATE INDEX idx_noti_time ON noti(time)")
         createBriefingTable(db)
@@ -45,6 +50,8 @@ class NotificationDb private constructor(ctx: Context) :
 
     override fun onUpgrade(db: SQLiteDatabase, oldV: Int, newV: Int) {
         if (oldV < 2) createBriefingTable(db)
+        // v3: 단톡방 이름 (방 고르기)
+        if (oldV < 3) db.execSQL("ALTER TABLE noti ADD COLUMN room TEXT NOT NULL DEFAULT ''")
     }
 
     /** v2: 자동·수동 브리핑 결과 기록. */
@@ -77,11 +84,11 @@ class NotificationDb private constructor(ctx: Context) :
         }
 
     /** 같은 알림이 업데이트되며 여러 번 들어오는 경우(카톡 등)를 막기 위해 dedupe 키 사용. */
-    fun insert(pkg: String, app: String, title: String, text: String, time: Long) {
+    fun insert(pkg: String, app: String, title: String, text: String, time: Long, room: String = "") {
         val v = ContentValues().apply {
             put("pkg", pkg); put("app", app); put("title", title)
-            put("text", text); put("time", time)
-            put("dedupe", "$pkg|$title|$text")
+            put("text", text); put("time", time); put("room", room)
+            put("dedupe", "$pkg|$room|$title|$text")
         }
         writableDatabase.insertWithOnConflict("noti", null, v, SQLiteDatabase.CONFLICT_IGNORE)
     }
@@ -89,12 +96,12 @@ class NotificationDb private constructor(ctx: Context) :
     fun since(fromMillis: Long): List<NotiItem> {
         val out = mutableListOf<NotiItem>()
         readableDatabase.rawQuery(
-            "SELECT id,pkg,app,title,text,time FROM noti WHERE time>=? ORDER BY time ASC",
+            "SELECT id,pkg,app,title,text,time,room FROM noti WHERE time>=? ORDER BY time ASC",
             arrayOf(fromMillis.toString())
         ).use { c ->
             while (c.moveToNext()) {
                 out += NotiItem(c.getLong(0), c.getString(1), c.getString(2),
-                    c.getString(3), c.getString(4), c.getLong(5))
+                    c.getString(3), c.getString(4), c.getLong(5), c.getString(6))
             }
         }
         return out
@@ -119,6 +126,16 @@ class NotificationDb private constructor(ctx: Context) :
             }
         }
         return out
+    }
+
+    /** 한 앱에서 최근 days일 동안 알림이 온 방(단톡방 이름, 없으면 보낸 사람·제목)과 건수 (많은 순). */
+    fun roomStats(pkg: String, days: Int = 7): List<Pair<String, Int>> {
+        val from = (System.currentTimeMillis() - days * 24L * 3600 * 1000).toString()
+        return readableDatabase.rawQuery(
+            "SELECT CASE WHEN room='' THEN title ELSE room END AS r, COUNT(*) FROM noti " +
+            "WHERE pkg=? AND time>=? GROUP BY r ORDER BY 2 DESC LIMIT 60",
+            arrayOf(pkg, from)
+        ).use { c -> buildList { while (c.moveToNext()) add(c.getString(0) to c.getInt(1)) } }
     }
 
     fun purgeOld(days: Int = 7) {

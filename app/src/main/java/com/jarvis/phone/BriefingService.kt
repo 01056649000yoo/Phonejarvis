@@ -104,16 +104,54 @@ object Briefings {
         val summarizer = Summarizer.get(ctx)
         if (!summarizer.hasModel()) return Outcome("$label 건너뜀", "AI 모델이 없어요. 쌤톡스 앱에서 모델 파일을 선택하세요.")
 
-        val excluded = AppFilter.excluded(ctx)
-        val items = db.since(from).filterNot { it.pkg in excluded }   // 설정에서 뺀 앱은 요약에서도 제외
+        // 설정에서 뺀 앱·방은 요약에서도 제외 (뺀 방이라도 중요 키워드가 있으면 포함)
+        val rules = AppFilter.rules(ctx)
+        val items = db.since(from).filter { rules.allows(it) }
         if (items.isEmpty()) return Outcome(label, "새로 온 알림이 없어요.")
 
         val start = System.currentTimeMillis()
-        val text = summarizer.summarize(items, onStatus)
+        // ⭐ 키워드 알림: AI 없이 규칙으로 찾아 맨 위에 (놓치지 않게)
+        val keywordPart = keywordSection(items, rules.keywords)
+        // 👪 학부모 연락: 지정한 학부모 방의 연락을 분류해 맨 위에 (규칙, 즉시)
+        val parentPart = parentSection(ParentAdvisor.contacts(items, ParentAdvisor.parentRooms(ctx)))
+        val text = parentPart + keywordPart + summarizer.summarize(items, onStatus)
         val now = System.currentTimeMillis()
         db.insertBriefing(Briefing(time = now, fromTime = from, label = label, count = items.size, text = text))
         onStatus("완료 (${(now - start) / 1000}초)")
         return Outcome("$label · 알림 ${items.size}건", text)
+    }
+
+    /** 학부모 연락 요약 (방마다 한 줄). 없으면 빈 문자열. */
+    fun parentSection(contacts: List<ParentContact>): String {
+        if (contacts.isEmpty()) return ""
+        val fmt = java.text.SimpleDateFormat("HH:mm", java.util.Locale.KOREA)
+        val need = contacts.count { it.category.needsReply }
+        return buildString {
+            append("👪 학부모 연락 (${contacts.size}건, 답장 필요 ${need})\n")
+            contacts.take(10).forEach { c ->
+                val mark = if (c.category.needsReply) " · 답장 필요" else ""
+                append("- ${fmt.format(c.last.time)} ${c.room} [${c.category.label}$mark] ${c.last.text.replace('\n', ' ').take(70)}\n")
+            }
+            append("\n")
+        }
+    }
+
+    /** 중요 키워드가 들어간 알림 목록 (최근 것부터 최대 10개). 없으면 빈 문자열. */
+    fun keywordSection(items: List<NotiItem>, keywords: List<String>): String {
+        if (keywords.isEmpty()) return ""
+        val fmt = java.text.SimpleDateFormat("HH:mm", java.util.Locale.KOREA)
+        val hits = items.filter { AppFilter.hasKeyword(keywords, it.title, it.text, it.room) }
+            .distinctBy { it.roomOrTitle to it.text }
+            .takeLast(10).reversed()
+        if (hits.isEmpty()) return ""
+        return buildString {
+            append("⭐ 키워드 알림 (${hits.size}건)\n")
+            hits.forEach { n ->
+                val who = if (n.room.isNotEmpty() && n.room != n.title) "[${n.room}] ${n.title}" else n.title
+                append("- ${fmt.format(n.time)} $who: ${n.text.replace('\n', ' ').take(80)}\n")
+            }
+            append("\n")
+        }
     }
 }
 
