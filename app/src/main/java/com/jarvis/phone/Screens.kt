@@ -725,16 +725,36 @@ private fun ParentsPage(vm: JarvisViewModel) {
             Text("👪 명부 ${groups.size}명", style = MaterialTheme.typography.titleMedium)
             if (groups.isEmpty()) Text("아직 없어요. 위에 이름을 넣어 주세요.", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-            groups.forEach { (label, links) ->
-                HorizontalDivider()
+            // 2026-11-21 선생님: 한 사람씩 줄로 세우면 13명이 너무 길다 → 이름 칩을 옆으로 이어 붙이고, 누르면 작은 창에서 자세히·지우기
+            var picked by rememberSaveable { mutableStateOf<String?>(null) }
+            if (groups.isNotEmpty()) Text("이름을 누르면 연결한 이름·번호를 보고 지울 수 있어요.", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                groups.forEach { (label, links) ->
+                    val student = links.first().student.takeIf { it in vm.students }
+                    AssistChip(onClick = { picked = label },
+                        label = { Text((if (student != null) "🧒 " else "") + label + if (links.size > 1) " · ${links.size}" else "") })
+                }
+            }
+            picked?.let { label ->
+                val links = groups[label].orEmpty()
+                if (links.isEmpty()) { picked = null; return@let }
                 val student = links.first().student.takeIf { it in vm.students }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text((if (student != null) "🧒 " else "👤 ") + label, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-                    if (student != null) TextButton(onClick = { vm.openStudent(student) }) { Text("학생 기록 ›") }
-                }
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    links.forEach { l -> InputChip(selected = true, onClick = { vm.removeParentLink(l) }, label = { Text("${l.match}  ✕") }) }
-                }
+                AlertDialog(
+                    onDismissRequest = { picked = null },
+                    title = { Text("👪 $label") },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("이 이름·번호가 들어간 알림을 이 학부모 연락으로 모아요. ✕ 를 누르면 그것만 빠져요.", style = MaterialTheme.typography.bodySmall)
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                links.forEach { l -> InputChip(selected = true, onClick = { vm.removeParentLink(l) }, label = { Text("${l.match}  ✕") }) }
+                            }
+                            if (student != null) TextButton(onClick = { picked = null; vm.openStudent(student) }) { Text("🧒 $student 학생 기록 ›") }
+                        }
+                    },
+                    confirmButton = { Button(onClick = { picked = null }) { Text("닫기") } },
+                    dismissButton = { TextButton(onClick = { links.forEach { vm.removeParentLink(it) }; picked = null }) { Text("🗑 이 학부모 지우기") } },
+                )
             }
         }
     }
