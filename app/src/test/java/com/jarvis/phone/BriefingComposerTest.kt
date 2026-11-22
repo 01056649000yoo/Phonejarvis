@@ -112,4 +112,24 @@ class BriefingComposerTest {
         val talk = r.people.substringAfter("💬")
         assertTrue(r.people, talk.contains("택배기사") && talk.contains("문 앞에 둘까요"))
     }
+
+    @Test fun 짧은_1대1_메시지_세개까지는_모델_없이() = runBlocking {
+        val items = listOf(kakao("", "도윤 아버님", "선생님 안녕하세요"), kakao("", "도윤 아버님", "내일 체험학습"), kakao("", "도윤 아버님", "도시락 싸야 하나요?"))
+        val r = BriefingComposer.compose(items, ask = { error("부르면 안 됨") })
+        assertTrue(r.people, r.people.contains("🙋 답장할 연락 (1)") && r.people.contains("도시락 싸야 하나요?"))
+        val two = BriefingComposer.compose(listOf(kakao("", "서윤 어머니", "2교시 후에 등교해도 될까요?"), kakao("", "서윤 어머니", "체육은 쉬게 해 주세요")), ask = { error("부르면 안 됨") })
+        assertTrue(two.people, two.people.contains("등교해도 될까요?") && two.people.contains("쉬게 해 주세요"))
+    }
+
+    @Test fun 단톡방_여러_메시지는_짧아도_모델로() = runBlocking {
+        var calls = 0
+        BriefingComposer.compose(listOf(kakao("동학년방", "김선생", "내일 회의"), kakao("동학년방", "이선생", "몇 시요?")), ask = { calls++; "요점: 내일 회의\n요청: 없음\n답장: 아님" })
+        assertEquals(1, calls)
+    }
+
+    @Test fun 걸린_시간_한_줄() {
+        val s = Summarizer.Stats().apply { loadMs = 21_400; backend = "GPU"; calls = 2; callMs = 27_000 }
+        assertEquals("⏱ 48초 · 모델 불러오기 21초(GPU) · AI 2번 27초", Briefings.timingLine(48_900, s))
+        assertEquals("⏱ 1초 · AI 안 씀", Briefings.timingLine(300, Summarizer.Stats()))
+    }
 }

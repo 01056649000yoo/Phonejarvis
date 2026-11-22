@@ -2,6 +2,7 @@ package com.jarvis.phone
 
 import android.content.Context
 import com.google.ai.edge.litertlm.Backend
+import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.ExperimentalApi
@@ -28,6 +29,15 @@ class Summarizer private constructor(private val ctx: Context) {
     fun hasModel() = modelFile.exists() && modelFile.length() > 100_000_000
 
     private var engine: Engine? = null
+
+    /**
+     * ⏱ 이번 요약에서 어디에 시간이 들었나 (2026-11-22 선생님: "2건인데 오래, 70건인데 금방").
+     * 모델 불러오기·GPU/CPU·AI 부른 횟수와 시간. 요약 끝에 한 줄로 남겨 실제 폰에서 원인을 본다.
+     */
+    class Stats { @Volatile var loadMs = 0L; @Volatile var backend = ""; @Volatile var calls = 0; @Volatile var callMs = 0L }
+    @Volatile var stats = Stats()
+        private set
+    fun resetStats() { stats = Stats() }
     private val lock = Mutex()
     /** 화면의 수동 요약과 예약 브리핑이 동시에 모델을 쓰지 않도록 요약 전체를 한 줄로 세움. */
     private val runLock = Mutex()
@@ -40,31 +50,46 @@ class Summarizer private constructor(private val ctx: Context) {
         @OptIn(ExperimentalApi::class)
         ExperimentalFlags.enableSpeculativeDecoding = true
         withContext(Dispatchers.IO) {
+            val t0 = System.currentTimeMillis()
             val e = try {
                 onStatus("모델 불러오는 중 (GPU)…")
                 Engine(EngineConfig(modelPath = modelFile.path, backend = Backend.GPU(),
-                    cacheDir = engineCacheDir.path)).also { it.initialize() }
+                    cacheDir = engineCacheDir.path)).also { it.initialize(); backendName = "GPU" }
             } catch (t: Throwable) {
                 onStatus("GPU 실패, CPU로 불러오는 중…")
                 Engine(EngineConfig(modelPath = modelFile.path, backend = Backend.CPU(),
-                    cacheDir = engineCacheDir.path)).also { it.initialize() }
+                    cacheDir = engineCacheDir.path)).also { it.initialize(); backendName = "CPU" }
             }
+            stats.loadMs += System.currentTimeMillis() - t0
             engine = e
             e
         }
       }
     }
 
-    private suspend fun ask(prompt: String, onStatus: (String) -> Unit): String {
+    /** 지금 올라 있는 모델이 GPU 인지 CPU 인지 (CPU 면 몇 배 느림) */
+    @Volatile private var backendName = ""
+    @Volatile private var capOk = true
+
+    /** maxTokens: 답 길이 상한 — 모델은 한 글자씩 만들어 내서 길게 쓸수록 느림(요약 세 줄·답장 초안은 짧게 막음) */
+    private suspend fun ask(prompt: String, onStatus: (String) -> Unit, maxTokens: Int? = null): String {
         val e = engine(onStatus)
-        return withContext(Dispatchers.IO) {
-            e.createConversation().use { conv -> conv.sendMessage(prompt).toString().trim() }
-        }
+        stats.backend = backendName
+        val t0 = System.currentTimeMillis()
+        return try {
+            withContext(Dispatchers.IO) {
+                // 답 길이 상한을 못 받는 폰·판이면(처음 쓰는 설정) 예전처럼 상한 없이 다시 — 요약이 통째로 실패하지 않게
+                val capped = if (maxTokens != null && capOk) runCatching {
+                    e.createConversation(ConversationConfig(maxOutputToken = maxTokens)).use { conv -> conv.sendMessage(prompt).toString().trim() }
+                }.onFailure { capOk = false }.getOrNull() else null
+                capped ?: e.createConversation().use { conv -> conv.sendMessage(prompt).toString().trim() }
+            }
+        } finally { stats.calls++; stats.callMs += System.currentTimeMillis() - t0 }
     }
 
     /** 짧은 질문 한 번 (알림 앱 정리 추천 등). 요약과 겹치지 않게 같은 순서로 실행. */
-    suspend fun complete(prompt: String, onStatus: (String) -> Unit = {}): String =
-        runLock.withLock { ask(prompt, onStatus) }
+    suspend fun complete(prompt: String, onStatus: (String) -> Unit = {}, maxTokens: Int? = null): String =
+        runLock.withLock { ask(prompt, onStatus, maxTokens) }
 
     /** 화면·알림의 "중지" 버튼. 지금 하던 부분(최대 1분 정도)이 끝나면 멈추고 그때까지의 결과를 돌려줌. */
     @Volatile var stopRequested = false
@@ -91,7 +116,7 @@ class Summarizer private constructor(private val ctx: Context) {
         var called = 0
         val result = BriefingComposer.compose(
             items,
-            ask = { prompt -> called++; ask(prompt, onStatus) },
+            ask = { prompt -> called++; ask(prompt, onStatus, BriefingComposer.MAX_ANSWER_TOKENS) },
             onStatus = onStatus,
             stopReason = {
                 when {

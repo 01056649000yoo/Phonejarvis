@@ -49,9 +49,11 @@ class BriefingService : Service() {
         val topUpTitle = intent?.getStringExtra(EXTRA_TOPUP_TITLE).orEmpty()
         val topUpBody = intent?.getStringExtra(EXTRA_TOPUP_BODY).orEmpty()
         val topUp = topUpTime > 0 && topUpBody.isNotEmpty()
+        // ✉️ 초안만 쓰는 실행(정각에 미리 준비한 요약을 보낸 뒤)
+        val draftOnly = intent?.getBooleanExtra(EXTRA_DRAFT_ONLY, false) == true
         val title = if (prepare) "요약 미리 준비 중" else "쌤톡스가 알림을 정리하는 중"
         ServiceCompat.startForeground(
-            this, Notifications.ID_PROGRESS, Notifications.progress(this, "브리핑 준비 중…", title = title, quiet = prepare || topUp),
+            this, Notifications.ID_PROGRESS, Notifications.progress(this, "브리핑 준비 중…", title = title, quiet = prepare || topUp || draftOnly),
             if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0,
         )
         if (running) {
@@ -73,6 +75,17 @@ class BriefingService : Service() {
             .apply { acquire(30 * 60 * 1000L) }
 
         scope.launch {
+            if (draftOnly) {
+                try { runCatching { Briefings.draftPending(this@BriefingService) { } } }
+                finally {
+                    runCatching { Summarizer.get(this@BriefingService).release() }
+                    if (wake.isHeld) wake.release()
+                    running = false; active = false; preparing = false
+                    ServiceCompat.stopForeground(this@BriefingService, ServiceCompat.STOP_FOREGROUND_REMOVE)
+                    stopSelf()
+                }
+                return@launch
+            }
             try {
                 val result = Briefings.runSinceLast(this@BriefingService, label) { s ->
                     Notifications.notify(this@BriefingService, Notifications.ID_PROGRESS,
@@ -80,7 +93,8 @@ class BriefingService : Service() {
                 }
                 // 📝 자동 요약은 결과를 기록(설정의 '최근 자동 요약'·위젯 머리줄) — 조용히 넘어가도 돈 것은 보이게
                 if (auto) AutoLog.add(this@BriefingService, label, when {
-                    result.time != 0L -> (if (prepare && !showWhenDone) "미리 준비 · " else "요약 · ") + result.title.substringAfter(" · ", "")
+                    result.time != 0L -> (if (prepare && !showWhenDone) "미리 준비 · " else "요약 · ") + result.title.substringAfter(" · ", "") +
+                        result.timing.removePrefix("⏱").let { if (it.isNotBlank()) " ·$it" else "" }
                     result.title.endsWith("건너뜀") -> "건너뜀 · AI 모델 없음"
                     else -> "새 알림 없음"
                 })
@@ -110,6 +124,9 @@ class BriefingService : Service() {
                     Notifications.notify(this@BriefingService, Notifications.idFor(result.time),
                         Notifications.result(this@BriefingService, result.title, result.body, result.time))
                 }
+                // ✉️ 문자 답장 초안: 결과 알림을 보낸 뒤에(미리 준비 중이면 정각 알림 뒤 BriefingReceiver 가 따로)
+                if (!(prepare && !showWhenDone)) runCatching { Briefings.draftPending(this@BriefingService) { s -> Notifications.notify(this@BriefingService,
+                    Notifications.ID_PROGRESS, Notifications.progress(this@BriefingService, s, title = title, quiet = true)) } }
             } catch (s: Summarizer.StoppedException) {
                 if (auto) AutoLog.add(this@BriefingService, label, "중지됨")
                 Notifications.notify(this@BriefingService, Notifications.ID_RESULT,
@@ -146,6 +163,7 @@ class BriefingService : Service() {
         const val EXTRA_TOPUP_TIME = "topup_time"
         const val EXTRA_TOPUP_TITLE = "topup_title"
         const val EXTRA_TOPUP_BODY = "topup_body"
+        const val EXTRA_DRAFT_ONLY = "draft_only"
         const val ACTION_STOP = "com.jarvis.phone.STOP_BRIEFING"
 
         /** 백그라운드 정리가 도는 중인지 (화면에서 "정리 중" 표시용) */
@@ -162,7 +180,8 @@ class BriefingService : Service() {
 /** 브리핑 실행 로직 (서비스·화면 공용). */
 object Briefings {
     /** time: 저장한 브리핑의 시각 키 (알림을 누르면 이 브리핑의 세부 내역을 엶). 0이면 저장 안 함 */
-    data class Outcome(val title: String, val body: String, val time: Long = 0)
+    /** timing: ⏱ 걸린 시간 한 줄(자동 요약 기록에도 남김) */
+    data class Outcome(val title: String, val body: String, val time: Long = 0, val timing: String = "")
 
 
     /**
@@ -195,6 +214,7 @@ object Briefings {
         } ?: "지난 요약 이후 새로 온 알림이 없어요.")
 
         val start = System.currentTimeMillis()
+        summarizer.resetStats()
         // ⭐ 키워드 알림: AI 없이 규칙으로 찾아 맨 위에 (놓치지 않게)
         val keywordPart = keywordSection(items, rules.keywords)
         // 👪 학부모 연락: 지정한 학부모 방의 연락을 분류해 맨 위에 (규칙, 즉시)
@@ -212,12 +232,14 @@ object Briefings {
         // 🙋 답장할 연락·💬 사람 메시지(대화방마다 AI 세 줄)·📦 앱 알림(AI 없이 건수) — BriefingComposer
         val ai = if (rest.isEmpty()) null else summarizer.summarize(rest, onStatus) { c -> c.items.any { rules.mentionsRoster(it) } }
         // ✉️ 답장할 문자: 🙋 답장할 연락 중 문자(1:1)만 올리고, 모델이 켜진 김에 초안을 5건까지 미리
-        runCatching { draftSmsReplies(ctx, db, summarizer, ai?.replies.orEmpty(), onStatus) }
+        // ✉️ 답장할 문자는 목록에만 올림 — 초안은 요약 알림을 보낸 뒤에 씀(결과가 늦어지지 않게, draftPending)
+        runCatching { upsertSmsTargets(db, ai?.replies.orEmpty()) }
         // 읽는 순서: 마감 → 학부모 → 답장할 연락·사람 메시지 → 내 묶음 → 업무 → 키워드 → 앱 알림
         val aiPeople = ai?.people?.takeIf { it.isNotBlank() }?.let { it + "\n\n" } ?: ""
-        val text = (taskPart + parentPart + aiPeople + peoplePart + workPart + keywordPart + (ai?.apps ?: "")).trim()
-            .ifEmpty { "요약할 알림이 없어요." }
         val now = System.currentTimeMillis()
+        val timing = timingLine(now - start, summarizer.stats)
+        val text = ((taskPart + parentPart + aiPeople + peoplePart + workPart + keywordPart + (ai?.apps ?: "")).trim()
+            .ifEmpty { "요약할 알림이 없어요." }) + "\n\n($timing)"
         // time = 이번 요약이 덮은 마지막 시각 (다음 요약은 이 다음부터)
         db.insertBriefing(Briefing(time = cutoff, fromTime = from, label = label, count = items.size, text = text))
         onStatus("완료 (${(now - start) / 1000}초)")
@@ -225,23 +247,40 @@ object Briefings {
         val hm = java.text.SimpleDateFormat("M/d HH:mm", java.util.Locale.KOREA)
         val range = "🕘 " + (prevBriefing?.let { "${hm.format(it.time)} ${it.label} 뒤" } ?: hm.format(items.minOf { it.time })) +
             " ~ ${hm.format(cutoff)}에 온 알림"
-        return Outcome("$label · 알림 ${items.size}건", range + "\n\n" + text, cutoff)
+        return Outcome("$label · 알림 ${items.size}건", range + "\n\n" + text, cutoff, timing)
     }
 
-    private suspend fun draftSmsReplies(ctx: Context, db: NotificationDb, summarizer: Summarizer,
-                                        replies: List<BriefingComposer.RoomSummary>, onStatus: (String) -> Unit) {
+    /** ⏱ 48초 · 모델 불러오기 21초(GPU) · AI 2번 27초 — 어디서 시간이 드는지 실제 폰에서 보려고 */
+    fun timingLine(totalMs: Long, s: Summarizer.Stats): String {
+        fun sec(ms: Long) = if (ms in 1..999) "1초" else "${ms / 1000}초"
+        return listOfNotNull(
+            "⏱ ${sec(totalMs)}",
+            if (s.loadMs > 0) "모델 불러오기 ${sec(s.loadMs)}(${s.backend.ifEmpty { "?" }})" else null,
+            if (s.calls > 0) "AI ${s.calls}번 ${sec(s.callMs)}" else "AI 안 씀",
+        ).joinToString(" · ")
+    }
+
+    private fun upsertSmsTargets(db: NotificationDb, replies: List<BriefingComposer.RoomSummary>) {
         val sms = replies.filter { r -> r.conv.items.all { Sms.isSms(it.pkg) && it.room.isEmpty() } }
         sms.forEach { r -> db.upsertReplyTarget(r.conv.items.last().pkg, r.conv.room, r.conv.last, r.conv.items.takeLast(2).joinToString(" / ") { it.text.replace('\n', ' ') }) }
-        if (summarizer.stopRequested) return
+    }
+
+    /** 초안이 없는 답장할 문자에 초안 쓰기(5건까지) — 요약 알림을 보낸 뒤에 부름. 쓴 수를 돌려줌 */
+    suspend fun draftPending(ctx: Context, onStatus: (String) -> Unit): Int {
+        val db = NotificationDb.get(ctx); val summarizer = Summarizer.get(ctx)
+        if (!summarizer.hasModel() || summarizer.stopRequested) return 0
+        var made = 0
         val todo = db.openReplies().filter { it.draft.isEmpty() }.take(ReplyDrafter.MAX_AUTO)
         todo.forEachIndexed { i, d ->
             onStatus("문자 답장 초안 ${i + 1}/${todo.size}")
             val items = db.since(d.lastTime - 3 * 24 * 3600_000L).filter { it.pkg == d.pkg && it.room.isEmpty() && it.title == d.sender }
             if (items.isEmpty()) return@forEachIndexed
-            val draft = ReplyDrafter.clean(summarizer.complete(ReplyDrafter.prompt(d.sender, items)))
-            if (draft.isNotEmpty()) db.setReplyDraft(d.pkg, d.sender, draft)
+            val draft = ReplyDrafter.clean(summarizer.complete(ReplyDrafter.prompt(d.sender, items), maxTokens = ReplyDrafter.MAX_TOKENS))
+            if (draft.isNotEmpty()) { db.setReplyDraft(d.pkg, d.sender, draft); made++ }
         }
+        return made
     }
+    fun hasPendingDrafts(ctx: Context) = runCatching { NotificationDb.get(ctx).openReplies().any { it.draft.isEmpty() } }.getOrDefault(false)
 
     /** 이어 붙일 때: 맨 위 구간 줄(🕘)과 앞 요약에 이미 있는 📌 마감 칸은 뺌 */
     fun topUpPart(body: String): String = body.trim().split(Regex("\\n\\s*\\n"))

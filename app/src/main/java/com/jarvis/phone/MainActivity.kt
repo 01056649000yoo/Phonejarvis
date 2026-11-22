@@ -594,7 +594,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
                 val text = withContext(Dispatchers.IO) {
                     val items = db.since(d.lastTime - 3 * 24 * 3600_000L).filter { it.pkg == d.pkg && it.room.isEmpty() && it.title == d.sender }
                         .ifEmpty { listOf(NotiItem(0, d.pkg, "문자", d.sender, d.question, d.lastTime)) }
-                    ReplyDrafter.clean(summarizer.complete(ReplyDrafter.prompt(d.sender, items)))
+                    ReplyDrafter.clean(summarizer.complete(ReplyDrafter.prompt(d.sender, items), maxTokens = ReplyDrafter.MAX_TOKENS))
                 }
                 if (text.isNotEmpty()) withContext(Dispatchers.IO) { db.setReplyDraft(d.pkg, d.sender, text) }
                 else status = "초안을 만들지 못했어요. 다시 눌러 주세요."

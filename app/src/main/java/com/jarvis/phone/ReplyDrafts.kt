@@ -80,6 +80,7 @@ object ReplyHandles {
 
 object ReplyDrafter {
     const val MAX_AUTO = 5
+    const val MAX_TOKENS = 220   // 두세 문장 상한 — 길게 쓰지 않게
 
     /** 초안 만들기 질문. 지어내지 않고 모르는 사실은 [ ] 로 비워 둠 */
     fun prompt(sender: String, items: List<NotiItem>): String {

@@ -27,8 +27,13 @@ object BriefingComposer {
     data class RoomSummary(val conv: Conversation, val point: String, val ask: String, val needReply: Boolean, val byModel: Boolean)
 
     const val CHUNK = 30              // 대화방 하나에서 모델에 한 번에 넣는 메시지 수 — 넘으면 30개씩 나눠 요약한 뒤 합침(2026-11-21 선생님)
-    const val ROOM_CHARS = 2400       // 한 번에 넣는 글자 상한(최근 메시지부터 채움)
-    const val SHORT_CHARS = 60        // 이보다 짧은 메시지 하나뿐인 방은 모델 없이
+    // 2026-11-22 빠르게(선생님: "2건인데 오래 걸림"): 넣는 글·받는 글을 줄이고, 짧은 1:1 은 모델 없이
+    const val ROOM_CHARS = 1600       // 한 번에 넣는 글자 상한(최근 메시지부터 채움) — 2400 에서 줄임
+    const val LINE_CHARS = 200        // 메시지 한 개에서 넣는 글자(300 에서 줄임)
+    const val SHORT_CHARS = 60        // 이보다 짧은 메시지만 있는 1:1 대화(3개까지)는 모델 없이
+    const val SHORT_MAX_MSGS = 3
+    const val MAX_ANSWER_TOKENS = 200 // 세 줄 답의 상한 — 넘게 쓰지 않게(모델은 한 글자씩 만들어 길수록 느림)
+    private val URL = Regex("https?://\\S+")
 
     private val AD = Regex("^\\(광고\\)")
     private val QUESTION = Regex("[?？]|(주세요|주시면|주실|부탁|가능할까|될까요|되나요|인가요|있나요|어떠세요|알려|확인해|회신|답장|연락 ?주)")
@@ -67,7 +72,7 @@ object BriefingComposer {
         var size = 0
         for (n in conv.items.asReversed()) {
             val who = conv.who(n).let { if (it.isNotEmpty()) "$it: " else "" }
-            val line = "${fmt.format(n.time)} $who${n.text.replace('\n', ' ').trim().take(300)}"
+            val line = "${fmt.format(n.time)} $who${n.text.replace('\n', ' ').replace(URL, "[링크]").trim().take(LINE_CHARS)}"
             if (size + line.length > ROOM_CHARS && picked.isNotEmpty()) break
             picked.addFirst(line); size += line.length + 1
         }
@@ -109,15 +114,21 @@ object BriefingComposer {
         return RoomSummary(conv, point.take(160), ask.take(160), need, byModel = true)
     }
 
-    /** 짧은 메시지 하나뿐인 방: 모델 없이 그 말을 그대로 */
+    /**
+     * 모델 없이 그 말을 그대로: 짧은 메시지 하나뿐인 방, 또는 짧은 메시지(60자 이하) 3개까지뿐인 1:1 대화(2026-11-22).
+     * 짧은 말은 요약하는 것보다 원문이 더 정확하고, 모델을 부르지 않아 빠름. 단톡방 여러 메시지는 누구에게 한 부탁인지 봐야 해서 모델로.
+     */
     fun direct(conv: Conversation): RoomSummary? {
-        val only = conv.items.singleOrNull() ?: return null
-        val text = only.text.replace('\n', ' ').trim()
-        if (isChatter(text)) return RoomSummary(conv, "", "", false, byModel = false)
-        if (text.length > SHORT_CHARS) return null
-        val asking = QUESTION.containsMatchIn(text)
-        val who = conv.who(only).let { if (it.isNotEmpty()) "$it: " else "" }
-        return RoomSummary(conv, "$who$text", if (asking) text else "", asking, byModel = false)
+        val texts = conv.items.map { it.text.replace('\n', ' ').trim() }
+        if (texts.all { isChatter(it) }) return if (texts.size == 1) RoomSummary(conv, "", "", false, byModel = false) else null
+        val oneToOne = conv.items.all { it.room.isEmpty() }
+        if (texts.size > (if (oneToOne) SHORT_MAX_MSGS else 1) || texts.any { it.length > SHORT_CHARS }) return null
+        val said = conv.items.zip(texts).filterNot { isChatter(it.second) }
+        val who = conv.who(said.last().first).let { if (it.isNotEmpty()) "$it: " else "" }
+        val point = who + said.joinToString(" / ") { it.second }
+        // 물음·부탁이 든 말은 모두(1:1 에서 두 번 물으면 둘 다 — 앞의 물음이 빠지던 것)
+        val ask = said.filter { QUESTION.containsMatchIn(it.second) }.joinToString(" / ") { it.second }
+        return RoomSummary(conv, point, ask, ask.isNotEmpty(), byModel = false)
     }
 
     /** 'ㅋㅋ'·'ㅎㅎ'·'ㅇㅇ'·이모지·문장부호뿐인 말 — 요약 줄로 쓰지 않고 그 밖의 방에 이름만 */

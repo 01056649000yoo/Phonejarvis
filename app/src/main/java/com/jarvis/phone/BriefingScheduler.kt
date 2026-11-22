@@ -138,8 +138,12 @@ class BriefingReceiver : BroadcastReceiver() {
                             // ⏰ 정한 시각에 요약 알림 (누르면 세부 내역)
                             Notifications.notify(ctx, Notifications.idFor(ready.briefingTime),
                                 Notifications.result(ctx, ready.title, ready.body, ready.briefingTime))
-                            // 그 뒤 온 알림은 이어서 요약해 같은 알림을 고쳐 씀(소리 없이)
+                            // 그 뒤 온 알림은 이어서 요약해 같은 알림을 고쳐 씀(소리 없이) — 그 실행이 문자 답장 초안도 씀
                             if (pending > 0) BriefingScheduler.startNow(ctx, label, auto = true, topUp = ready)
+                            // 새로 온 것은 없고 초안을 기다리는 답장할 문자만 있으면 초안만 씀(미리 준비 때는 결과가 늦지 않게 안 씀)
+                            else if (Briefings.hasPendingDrafts(ctx)) ContextCompat.startForegroundService(ctx,
+                                Intent(ctx, BriefingService::class.java).putExtra(BriefingService.EXTRA_LABEL, label)
+                                    .putExtra(BriefingService.EXTRA_DRAFT_ONLY, true))
                         }
                     }
                     // 아직 준비 중이면(요약이 길어짐) 끝나는 대로 바로 알리게 표시
