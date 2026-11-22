@@ -230,16 +230,23 @@ object Briefings {
         val (peoplePart, peopleItems) = People.section(People.customBook(ctx), items - workItems.toSet())
         val rest = items - workItems.toSet() - peopleItems
         // 🙋 답장할 연락·💬 사람 메시지(대화방마다 AI 세 줄)·📦 앱 알림(AI 없이 건수) — BriefingComposer
-        val ai = if (rest.isEmpty()) null else summarizer.summarize(rest, onStatus) { c -> c.items.any { rules.mentionsRoster(it) } }
+        // 🌡️ 폰이 뜨겁거나 배터리가 바닥이면 모델을 올리지 않고 AI 없이(대화방마다 최근 말 그대로)
+        val load = PhoneLoad.state(ctx)
+        val skipAi = PhoneLoad.skipAiReason(load)
+        val ai = when {
+            rest.isEmpty() -> null
+            skipAi != null -> BriefingComposer.compose(rest, ask = { "" }) { c -> c.items.any { rules.mentionsRoster(it) } }
+            else -> summarizer.summarize(rest, onStatus) { c -> c.items.any { rules.mentionsRoster(it) } }
+        }
         // ✉️ 답장할 문자: 🙋 답장할 연락 중 문자(1:1)만 올리고, 모델이 켜진 김에 초안을 5건까지 미리
         // ✉️ 답장할 문자는 목록에만 올림 — 초안은 요약 알림을 보낸 뒤에 씀(결과가 늦어지지 않게, draftPending)
         runCatching { upsertSmsTargets(db, ai?.replies.orEmpty()) }
         // 읽는 순서: 마감 → 학부모 → 답장할 연락·사람 메시지 → 내 묶음 → 업무 → 키워드 → 앱 알림
         val aiPeople = ai?.people?.takeIf { it.isNotBlank() }?.let { it + "\n\n" } ?: ""
         val now = System.currentTimeMillis()
-        val timing = timingLine(now - start, summarizer.stats)
+        val timing = timingLine(now - start, summarizer.stats, PhoneLoad.state(ctx).thermal)
         val text = ((taskPart + parentPart + aiPeople + peoplePart + workPart + keywordPart + (ai?.apps ?: "")).trim()
-            .ifEmpty { "요약할 알림이 없어요." }) + "\n\n($timing)"
+            .ifEmpty { "요약할 알림이 없어요." }) + (if (skipAi != null && rest.isNotEmpty()) "\n\n$skipAi" else "") + "\n\n($timing)"
         // time = 이번 요약이 덮은 마지막 시각 (다음 요약은 이 다음부터)
         db.insertBriefing(Briefing(time = cutoff, fromTime = from, label = label, count = items.size, text = text))
         onStatus("완료 (${(now - start) / 1000}초)")
@@ -251,12 +258,15 @@ object Briefings {
     }
 
     /** ⏱ 48초 · 모델 불러오기 21초(GPU) · AI 2번 27초 — 어디서 시간이 드는지 실제 폰에서 보려고 */
-    fun timingLine(totalMs: Long, s: Summarizer.Stats): String {
+    fun timingLine(totalMs: Long, s: Summarizer.Stats, thermal: Int? = null): String {
         fun sec(ms: Long) = if (ms in 1..999) "1초" else "${ms / 1000}초"
         return listOfNotNull(
             "⏱ ${sec(totalMs)}",
             if (s.loadMs > 0) "모델 불러오기 ${sec(s.loadMs)}(${s.backend.ifEmpty { "?" }})" else null,
             if (s.calls > 0) "AI ${s.calls}번 ${sec(s.callMs)}" else "AI 안 씀",
+            // 🌡️ 폰에 얼마나 무리가 갔나: 모델이 올라 있을 때 쌤톡스 메모리, 끝났을 때 발열
+            if (s.memMb > 0) "메모리 ${"%.1f".format(s.memMb / 1024.0)}GB" else null,
+            thermal?.let { "발열 ${PhoneLoad.thermalName(it)}" },
         ).joinToString(" · ")
     }
 
@@ -269,6 +279,8 @@ object Briefings {
     suspend fun draftPending(ctx: Context, onStatus: (String) -> Unit): Int {
         val db = NotificationDb.get(ctx); val summarizer = Summarizer.get(ctx)
         if (!summarizer.hasModel() || summarizer.stopRequested) return 0
+        // 🌡️ 폰이 따뜻하거나 절전·배터리 부족이면 초안은 다음 요약 때로 미룸(목록에는 남아 있고 '다시 쓰기'로 직접 쓸 수 있음)
+        if (PhoneLoad.deferLightWork(PhoneLoad.state(ctx))) return 0
         var made = 0
         val todo = db.openReplies().filter { it.draft.isEmpty() }.take(ReplyDrafter.MAX_AUTO)
         todo.forEachIndexed { i, d ->

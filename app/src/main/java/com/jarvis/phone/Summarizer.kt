@@ -34,7 +34,9 @@ class Summarizer private constructor(private val ctx: Context) {
      * ⏱ 이번 요약에서 어디에 시간이 들었나 (2026-11-22 선생님: "2건인데 오래, 70건인데 금방").
      * 모델 불러오기·GPU/CPU·AI 부른 횟수와 시간. 요약 끝에 한 줄로 남겨 실제 폰에서 원인을 본다.
      */
-    class Stats { @Volatile var loadMs = 0L; @Volatile var backend = ""; @Volatile var calls = 0; @Volatile var callMs = 0L }
+    class Stats { @Volatile var loadMs = 0L; @Volatile var backend = ""; @Volatile var calls = 0; @Volatile var callMs = 0L
+        /** 모델이 올라 있을 때 잰 쌤톡스 메모리(MB)의 최댓값 */
+        @Volatile var memMb = 0 }
     @Volatile var stats = Stats()
         private set
     fun resetStats() { stats = Stats() }
@@ -51,15 +53,20 @@ class Summarizer private constructor(private val ctx: Context) {
         ExperimentalFlags.enableSpeculativeDecoding = true
         withContext(Dispatchers.IO) {
             val t0 = System.currentTimeMillis()
-            val e = try {
-                onStatus("모델 불러오는 중 (GPU)…")
-                Engine(EngineConfig(modelPath = modelFile.path, backend = Backend.GPU(),
-                    cacheDir = engineCacheDir.path)).also { it.initialize(); backendName = "GPU" }
-            } catch (t: Throwable) {
-                onStatus("GPU 실패, CPU로 불러오는 중…")
-                Engine(EngineConfig(modelPath = modelFile.path, backend = Backend.CPU(),
-                    cacheDir = engineCacheDir.path)).also { it.initialize(); backendName = "CPU" }
-            }
+            // 🌡️ 폰에 무리가 덜 가게(2026-11-22): AI 작업 공간(한 번에 다루는 글 길이)을 실제로 쓰는 만큼만(MAX_CONTEXT),
+            // CPU 로 돌 땐 코어를 다 쓰지 않게(PhoneLoad.cpuThreads). 작업 공간 상한을 못 받는 판이면 상한 없이 다시.
+            fun load(backend: Backend, name: String, cap: Boolean) =
+                Engine(EngineConfig(modelPath = modelFile.path, backend = backend,
+                    maxNumTokens = if (cap) MAX_CONTEXT else null,
+                    cacheDir = engineCacheDir.path)).also { it.initialize(); backendName = name }
+            onStatus("모델 불러오는 중 (GPU)…")
+            val e = runCatching { load(Backend.GPU(), "GPU", true) }
+                .recoverCatching { load(Backend.GPU(), "GPU", false) }
+                .recoverCatching {
+                    onStatus("GPU 실패, CPU로 불러오는 중…")
+                    load(Backend.CPU(PhoneLoad.cpuThreads()), "CPU", true)
+                }
+                .getOrElse { load(Backend.CPU(PhoneLoad.cpuThreads()), "CPU", false) }
             stats.loadMs += System.currentTimeMillis() - t0
             engine = e
             e
@@ -84,7 +91,10 @@ class Summarizer private constructor(private val ctx: Context) {
                 }.onFailure { capOk = false }.getOrNull() else null
                 capped ?: e.createConversation().use { conv -> conv.sendMessage(prompt).toString().trim() }
             }
-        } finally { stats.calls++; stats.callMs += System.currentTimeMillis() - t0 }
+        } finally {
+            stats.calls++; stats.callMs += System.currentTimeMillis() - t0
+            stats.memMb = maxOf(stats.memMb, PhoneLoad.appMemoryMb())
+        }
     }
 
     /** 짧은 질문 한 번 (알림 앱 정리 추천 등). 요약과 겹치지 않게 같은 순서로 실행. */
@@ -146,6 +156,8 @@ class Summarizer private constructor(private val ctx: Context) {
             }
 
         const val MODEL_NAME = "model.litertlm"
+        /** AI 작업 공간(토큰). 요약 한 번 = 넣는 글 1600자 + 질문 + 답 200, 답장 초안 = 문자 8개(2400자) + 답 220 → 넉넉히 4096 */
+        const val MAX_CONTEXT = 4096
         // 요약 한 번에 쓰는 최대 시간. 넘으면 그때까지 정리한 부분만 보여 줌 (멈추지 않는 문제 방지)
         private const val MAX_MILLIS = 10 * 60_000L   // 30개씩 나눠 모든 대화방을 요약하므로 넉넉히(v1.8.0)
     }
