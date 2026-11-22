@@ -69,6 +69,8 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         if (on) NotificationCollectorService.instance?.sweep()
     }
     fun setRestSkip(on: Boolean) = editSchedule { putBoolean("rest_skip", on) }
+    fun setDaily(on: Boolean) = editSchedule { putBoolean("daily_on", on) }
+    fun setDailyTime(m: Int) = editSchedule { putInt("daily_min", m) }
     fun setDndAuto(on: Boolean) { Dnd.setAuto(getApplication<Application>(), on); quietRev++ }
     fun setHideWhen(h: QuietMode.Hide) {
         quiet { putString("hide_when", h.name) }

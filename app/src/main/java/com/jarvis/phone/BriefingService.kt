@@ -51,6 +51,7 @@ class BriefingService : Service() {
         val topUp = topUpTime > 0 && topUpBody.isNotEmpty()
         // ✉️ 초안만 쓰는 실행(정각에 미리 준비한 요약을 보낸 뒤)
         val draftOnly = intent?.getBooleanExtra(EXTRA_DRAFT_ONLY, false) == true
+        val daily = intent?.getBooleanExtra(EXTRA_DAILY, false) == true
         val title = if (prepare) "요약 미리 준비 중" else "쌤톡스가 알림을 정리하는 중"
         ServiceCompat.startForeground(
             this, Notifications.ID_PROGRESS, Notifications.progress(this, "브리핑 준비 중…", title = title, quiet = prepare || topUp || draftOnly),
@@ -87,6 +88,7 @@ class BriefingService : Service() {
                 return@launch
             }
             try {
+                if (daily) { Briefings.runDaily(this@BriefingService); return@launch }   // finally 에서 정리
                 val result = Briefings.runSinceLast(this@BriefingService, label) { s ->
                     Notifications.notify(this@BriefingService, Notifications.ID_PROGRESS,
                         Notifications.progress(this@BriefingService, s, title = title, quiet = (prepare && !showWhenDone) || topUp))
@@ -127,6 +129,8 @@ class BriefingService : Service() {
                 // ✉️ 문자 답장 초안: 결과 알림을 보낸 뒤에(미리 준비 중이면 정각 알림 뒤 BriefingReceiver 가 따로)
                 if (!(prepare && !showWhenDone)) runCatching { Briefings.draftPending(this@BriefingService) { s -> Notifications.notify(this@BriefingService,
                     Notifications.ID_PROGRESS, Notifications.progress(this@BriefingService, s, title = title, quiet = true)) } }
+                // 🗓 이 요약 중에 하루 정리 시각이 왔으면 이어서
+                if (dailyAfter) { dailyAfter = false; Briefings.runDaily(this@BriefingService) }
             } catch (s: Summarizer.StoppedException) {
                 if (auto) AutoLog.add(this@BriefingService, label, "중지됨")
                 Notifications.notify(this@BriefingService, Notifications.ID_RESULT,
@@ -164,6 +168,9 @@ class BriefingService : Service() {
         const val EXTRA_TOPUP_TITLE = "topup_title"
         const val EXTRA_TOPUP_BODY = "topup_body"
         const val EXTRA_DRAFT_ONLY = "draft_only"
+        const val EXTRA_DAILY = "daily"
+        /** 🗓 하루 정리 시각에 다른 요약이 돌고 있었으면 그 요약 끝에 이어서 */
+        @Volatile var dailyAfter = false
         const val ACTION_STOP = "com.jarvis.phone.STOP_BRIEFING"
 
         /** 백그라운드 정리가 도는 중인지 (화면에서 "정리 중" 표시용) */
@@ -195,6 +202,25 @@ object Briefings {
         maxOf((db.lastBriefing()?.time ?: -1L) + 1, now - MAX_BACK_MS)
 
     /** 자동 브리핑·"지금 정리하기" 공용: 지난 요약 이후 새로 온 오늘 알림만 요약해 저장. */
+    /**
+     * 🗓 하루 정리: 아직 요약 안 한 알림이 있으면 먼저 요약(알림은 따로 안 보냄)한 뒤, 오늘 요약들을 합쳐 한 번 알림.
+     * 오늘 요약이 하나도 없으면 알리지 않고 기록만.
+     */
+    suspend fun runDaily(ctx: Context) {
+        val db = NotificationDb.get(ctx)
+        val rules = AppFilter.rules(ctx)
+        val pending = db.since(pendingFrom(db)).count { rules.allows(it) }
+        if (pending > 0 && Summarizer.get(ctx).hasModel()) runCatching {
+            val hm = "%02d:%02d".format(java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY), java.util.Calendar.getInstance().get(java.util.Calendar.MINUTE))
+            run(ctx, "🌙 $hm 요약", pendingFrom(db)) { s -> Notifications.notify(ctx, Notifications.ID_PROGRESS,
+                Notifications.progress(ctx, s, title = "하루 정리 준비 중", quiet = true)) }
+        }
+        val out = DailyDigest.build(ctx)
+        if (out == null) { AutoLog.add(ctx, DailyDigest.LABEL, "오늘 요약이 없어 건너뜀"); return }
+        AutoLog.add(ctx, DailyDigest.LABEL, "알림 보냄")
+        Notifications.notify(ctx, Notifications.idFor(out.time), Notifications.result(ctx, out.title, out.body, out.time))
+    }
+
     suspend fun runSinceLast(ctx: Context, label: String, onStatus: (String) -> Unit): Outcome =
         run(ctx, label, pendingFrom(NotificationDb.get(ctx)), onStatus)
 

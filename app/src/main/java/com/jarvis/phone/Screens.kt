@@ -33,10 +33,13 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** 이번 버전에서 바뀐 점 한 줄 (버전 올릴 때 같이 고치기). */
-private const val WHATS_NEW = "알림 검색 · 요약 말투를 부드럽게 · 폰에 무리가 덜 가게 · 설치 첫날부터 알림 앱 정리 추천 · 걸린 시간 표시"
+private const val WHATS_NEW = "🗓 하루 정리 · 검색 색인 · 알림 원문 3개월 보관 · 알림 검색 · 요약 말투를 부드럽게 · 폰에 무리가 덜 가게 · 설치 첫날부터 알림 앱 정리 추천 · 걸린 시간 표시"
 
 /** 업데이트 내역 큰 창 (버전 올릴 때 같이 고치기) */
 private val WHATS_NEW_DETAIL = listOf(
+    "🗓 하루 정리" to "매일 밤 10시(설정 → 🔕 모아서 알림에서 시각 바꾸기·끄기)에 그날 요약들을 한 번에 모아 알려 드려요. 답장할 연락·대화방은 방마다 가장 최근 것 하나로, 앱 알림은 건수만 합치고, 내일 마감도 보여 줘요. AI를 다시 돌리지 않아 금방 끝나요. 지난 요약 탭에도 남아요.",
+    "🔎 검색이 빨라졌어요" to "알림을 넣을 때 두 글자 조각 찾아보기(색인)를 같이 만들어, 3개월 치가 쌓여도 낱말 가운데 글자까지 금방 찾아요. 한 글자 낱말은 예전처럼 찾아요.",
+    "📨 알림 원문 3개월까지" to "설정 → 🧹 저장 공간에서 받은 알림 원문을 3개월까지 남길 수 있어요(기본 7일). 오래된 메시지도 알림 탭 🔎 검색으로 찾을 수 있어요. 하루 1,000건이면 3개월에 25MB쯤 써요.",
     "🔎 알림 검색" to "알림 탭 맨 위 검색 칸에 낱말을 치면 모아 둔 알림 전체(오늘 것만이 아니라 저장 기간 안의 것 모두)에서 내용·보낸 사람·대화방 이름으로 찾아 최근 것부터 보여 줘요. 띄어 쓰면 낱말이 모두 든 것만. 찾은 낱말은 노랗게 표시돼요.",
     "🗣️ 요약 말투를 부드럽게" to "'다음에 연락해' 같은 말을 '지시'·'명령'·'통보'처럼 딱딱하게 적던 것을 '다음에 연락하라고 함'처럼 고쳤어요.",
     "🌡️ 폰에 무리가 덜 가게" to "폰이 뜨겁거나 배터리가 15% 이하(충전 중 아님)면 AI를 켜지 않고 대화방마다 최근 말 그대로 정리해요. 조금 따뜻하거나 절전 모드면 요약은 하되 문자 답장 초안은 다음으로 미뤄요. AI가 쓰는 메모리 공간도 실제로 쓰는 만큼만 잡고, GPU가 안 되는 폰에서는 CPU를 다 쓰지 않게 했어요. 요약 끝 ⏱ 줄에 메모리·발열도 나와요.",
@@ -518,7 +521,7 @@ private fun historyLine(b: Briefing, hm: String): String {
         null -> "$head · $hm"
         hm -> head
         else -> "$head · $hm 정리"
-    } + " · ${b.count}건"
+    } + if (DailyDigest.isDaily(b)) "" else " · ${b.count}건"
 }
 
 /** 요약 모음 날짜 머리: 오늘 · 11/22 (일), 어제 · 11/21 (토), 11/20 (금) */
@@ -1693,6 +1696,25 @@ private fun SchedulePage(vm: JarvisViewModel) {
                 "모으는 앱(🌱 알림 앱 정리에서 켠 앱)의 알림은 도착하자마자 상태바에서 사라지고 쌤톡스에 모여요. 아래 정한 때 한 번에 요약해서 알려 드려요. " +
                 "전화·알람·재난 문자·인증번호는 언제나 그대로 와요.",
                 style = MaterialTheme.typography.bodySmall)
+        }
+    }
+    // 🗓 하루 정리 (모아서 알림을 꺼도 따로)
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("🗓 하루 정리", fontWeight = FontWeight.Bold)
+                    Text(if (sc.dailyOn) "매일 ${hm(sc.dailyMinute)}에 오늘 요약들을 한 번에 모아 알려 드려요." else "꺼짐",
+                        style = MaterialTheme.typography.bodySmall)
+                }
+                Switch(checked = sc.dailyOn, onCheckedChange = { vm.setDaily(it) })
+            }
+            if (sc.dailyOn) {
+                AssistChip(onClick = { pick(sc.dailyMinute) { vm.setDailyTime(it) } }, label = { Text("⏰ ${hm(sc.dailyMinute)} 바꾸기") })
+                Text("답장할 연락·대화방은 방마다 가장 최근 것 하나로, 앱 알림은 건수만 합쳐요. AI를 다시 돌리지 않아 금방 끝나요. " +
+                    "그 시각에 아직 요약 안 한 알림이 있으면 먼저 요약한 뒤 합쳐요. 오늘 요약이 하나도 없으면 알리지 않아요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
     if (!sc.digest) return

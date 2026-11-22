@@ -33,7 +33,7 @@ data class Briefing(
 
 /** 수집한 알림을 휴대폰 안에만 저장하는 SQLite DB (7일 보관). */
 class NotificationDb private constructor(ctx: Context) :
-    SQLiteOpenHelper(ctx, "jarvis.db", null, 6) {
+    SQLiteOpenHelper(ctx, "jarvis.db", null, 7) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -52,6 +52,7 @@ class NotificationDb private constructor(ctx: Context) :
         createTeacherTables(db)
         createSeenTable(db)
         createReplyTable(db)
+        createSearchIndex(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldV: Int, newV: Int) {
@@ -64,6 +65,22 @@ class NotificationDb private constructor(ctx: Context) :
         if (oldV < 5) createSeenTable(db)
         // v6: ✉️ 문자 답장 초안
         if (oldV < 6) createReplyTable(db)
+        // v7: 🔎 검색 색인 (지금 있는 알림도 한 번 넣음)
+        if (oldV < 7) createSearchIndex(db, fill = true)
+    }
+
+    /** v7: 🔎 검색 색인(FTS4, 두 글자 조각 — SearchIndex). 알림을 지우면 색인도 함께 지움(트리거) */
+    private fun createSearchIndex(db: SQLiteDatabase, fill: Boolean = false) {
+        db.execSQL("CREATE VIRTUAL TABLE IF NOT EXISTS noti_fts USING fts4(body)")
+        db.execSQL("CREATE TRIGGER IF NOT EXISTS noti_fts_del AFTER DELETE ON noti BEGIN DELETE FROM noti_fts WHERE docid=old.id; END")
+        if (!fill) return
+        db.rawQuery("SELECT id,app,title,room,text FROM noti", null).use { c ->
+            while (c.moveToNext()) indexRow(db, c.getLong(0), c.getString(1), c.getString(2), c.getString(3), c.getString(4))
+        }
+    }
+
+    private fun indexRow(db: SQLiteDatabase, id: Long, app: String, title: String, room: String, text: String) {
+        db.insert("noti_fts", null, ContentValues().apply { put("docid", id); put("body", SearchIndex.grams("$app $title $room $text")) })
     }
 
     /** v6: ✉️ 문자 답장 초안 — 보낸 사람마다 하나(새 문자가 오면 초안을 비우고 다시), 보낸 뒤 done=1 */
@@ -238,7 +255,7 @@ class NotificationDb private constructor(ctx: Context) :
 
     fun lastBriefing(): Briefing? =
         readableDatabase.rawQuery(
-            "SELECT time,from_time,label,count,text FROM briefing ORDER BY time DESC LIMIT 1", null
+            "SELECT time,from_time,label,count,text FROM briefing WHERE label<>'${DailyDigest.LABEL}' ORDER BY time DESC LIMIT 1", null
         ).use { c ->
             if (c.moveToFirst()) Briefing(c.getLong(0), c.getLong(1), c.getString(2), c.getInt(3), c.getString(4))
             else null
@@ -251,7 +268,8 @@ class NotificationDb private constructor(ctx: Context) :
             put("text", text); put("time", time); put("room", room)
             put("dedupe", "$pkg|$room|$title|$text")
         }
-        writableDatabase.insertWithOnConflict("noti", null, v, SQLiteDatabase.CONFLICT_IGNORE)
+        val id = writableDatabase.insertWithOnConflict("noti", null, v, SQLiteDatabase.CONFLICT_IGNORE)
+        if (id > 0) runCatching { indexRow(writableDatabase, id, app, title, room, text) }   // 🔎 검색 색인
     }
 
     fun since(fromMillis: Long): List<NotiItem> {
@@ -270,13 +288,21 @@ class NotificationDb private constructor(ctx: Context) :
 
     fun today(): List<NotiItem> = since(startOfToday())
 
-    /** 🔎 모은 알림 검색(2026-11-22 선생님): 내용·보낸 이·대화방·앱 이름에 낱말이 든 것, 최근 것부터 [limit]개. 띄어 쓴 낱말은 모두 들어 있어야 함 */
+    /**
+     * 🔎 모은 알림 검색(2026-11-22 선생님): 내용·보낸 이·대화방·앱 이름에 낱말이 든 것, 최근 것부터 [limit]개.
+     * 띄어 쓴 낱말은 모두 들어 있어야 함. 두 글자 이상이면 색인(SearchIndex)으로, 한 글자 낱말이 있으면 훑어서.
+     */
     fun search(query: String, limit: Int = 100): List<NotiItem> {
         val words = query.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }.take(5)
         if (words.isEmpty()) return emptyList()
-        val esc = { w: String -> "%" + w.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%" }
-        val where = words.joinToString(" AND ") { "(text LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\' OR room LIKE ? ESCAPE '\\' OR app LIKE ? ESCAPE '\\')" }
-        val args = words.flatMap { w -> List(4) { esc(w) } }.toTypedArray()
+        val match = SearchIndex.matchQuery(query)
+        val (where, args) = if (match != null) {
+            "id IN (SELECT docid FROM noti_fts WHERE noti_fts MATCH ?)" to arrayOf(match)
+        } else {
+            val esc = { w: String -> "%" + w.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%" }
+            words.joinToString(" AND ") { "(text LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\' OR room LIKE ? ESCAPE '\\' OR app LIKE ? ESCAPE '\\')" } to
+                words.flatMap { w -> List(4) { esc(w) } }.toTypedArray()
+        }
         val out = mutableListOf<NotiItem>()
         readableDatabase.rawQuery("SELECT id,pkg,app,title,text,time,room FROM noti WHERE $where ORDER BY time DESC LIMIT $limit", args).use { c ->
             while (c.moveToNext()) out += NotiItem(c.getLong(0), c.getString(1), c.getString(2), c.getString(3), c.getString(4), c.getLong(5), c.getString(6))

@@ -18,6 +18,7 @@ import kotlinx.coroutines.launch
 object BriefingScheduler {
     const val ACTION_BRIEFING = "com.jarvis.phone.ACTION_BRIEFING"
     const val ACTION_PREPARE = "com.jarvis.phone.ACTION_PREPARE"
+    const val ACTION_DAILY = "com.jarvis.phone.ACTION_DAILY"
     const val EXTRA_KIND = "kind"
     const val EXTRA_MINUTE = "minute"
     /**
@@ -32,6 +33,11 @@ object BriefingScheduler {
     /** 다음 요약 한 번(그리고 정한 시각이면 5분 전 미리 준비)을 예약 */
     fun scheduleAll(ctx: Context) {
         val am = ctx.getSystemService(AlarmManager::class.java)
+        // 🗓 하루 정리: 요약 예약과 따로 하루 한 번
+        val dailyPi = PendingIntent.getBroadcast(ctx, 20, Intent(ctx, BriefingReceiver::class.java).setAction(ACTION_DAILY),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        am.cancel(dailyPi)
+        DailyDigest.next(System.currentTimeMillis(), SummarySchedule.config(ctx)) { RestDays.isRest(ctx, it) }?.let { set(am, it, dailyPi) }
         val run = nextRun(ctx)
         val show = pendingIntent(ctx, ACTION_BRIEFING, run)
         val prep = pendingIntent(ctx, ACTION_PREPARE, run)
@@ -108,6 +114,13 @@ class BriefingReceiver : BroadcastReceiver() {
         val kind = runCatching { SummarySchedule.Kind.valueOf(intent.getStringExtra(BriefingScheduler.EXTRA_KIND)!!) }.getOrNull()
         val minute = intent.getIntExtra(BriefingScheduler.EXTRA_MINUTE, 0)
         when (intent.action) {
+            BriefingScheduler.ACTION_DAILY -> {
+                BriefingScheduler.scheduleAll(ctx)        // 내일 하루 정리
+                // 다른 요약이 도는 중이면 그 요약이 끝난 뒤 이어서
+                if (BriefingService.active) BriefingService.dailyAfter = true
+                else ContextCompat.startForegroundService(ctx, Intent(ctx, BriefingService::class.java)
+                    .putExtra(BriefingService.EXTRA_LABEL, DailyDigest.LABEL).putExtra(BriefingService.EXTRA_DAILY, true))
+            }
             BriefingScheduler.ACTION_PREPARE -> {
                 if (kind != null) BriefingScheduler.startNow(ctx, BriefingScheduler.labelOf(kind, minute), prepare = true, auto = true)
             }

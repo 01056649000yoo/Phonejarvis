@@ -27,6 +27,8 @@ object SummarySchedule {
         val intervalFrom: Int,
         val intervalTo: Int,
         val restSkip: Boolean,
+        val dailyOn: Boolean = false,      // 🗓 하루 정리 (DailyDigest)
+        val dailyMinute: Int = DailyDigest.DEFAULT_MINUTE,
     )
 
     data class Run(val at: Long, val kind: Kind, val minute: Int)
@@ -72,6 +74,8 @@ object SummarySchedule {
             intervalFrom = p.getInt("interval_from", 8 * 60),
             intervalTo = p.getInt("interval_to", 18 * 60),
             restSkip = p.getBoolean("rest_skip", false),
+            dailyOn = p.getBoolean("daily_on", true),
+            dailyMinute = p.getInt("daily_min", DailyDigest.DEFAULT_MINUTE),
         )
     }
 

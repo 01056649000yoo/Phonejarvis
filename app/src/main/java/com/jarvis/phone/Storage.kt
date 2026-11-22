@@ -12,7 +12,7 @@ object Storage {
     private fun p(ctx: Context) = ctx.getSharedPreferences("storage", Context.MODE_PRIVATE)
 
     /** 보관 기간 선택지 (일) */
-    val NOTI_CHOICES = listOf(3, 7, 14, 30)
+    val NOTI_CHOICES = listOf(3, 7, 14, 30, 90)
     val BRIEF_CHOICES = listOf(7, 30, 90)
     val LOG_CHOICES = listOf(90, 180, 365)
 
