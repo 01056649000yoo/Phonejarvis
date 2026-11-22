@@ -68,8 +68,14 @@ class BriefingService : Service() {
                     Notifications.notify(this@BriefingService, Notifications.ID_PROGRESS,
                         Notifications.progress(this@BriefingService, s, title = title))
                 }
+                // 📝 자동 요약은 결과를 기록(설정의 '최근 자동 요약'·위젯 머리줄) — 조용히 넘어가도 돈 것은 보이게
+                if (auto) AutoLog.add(this@BriefingService, label, when {
+                    result.time != 0L -> (if (prepare && !showWhenDone) "미리 준비 · " else "요약 · ") + result.title.substringAfter(" · ", "")
+                    result.title.endsWith("건너뜀") -> "건너뜀 · AI 모델 없음"
+                    else -> "새 알림 없음"
+                })
                 if (auto && result.time == 0L) {
-                    // 예약 요약인데 새 알림이 없음 → 조용히 넘어감(자주 요약해도 귀찮지 않게)
+                    // 예약 요약인데 새 알림이 없음 → 알림은 안 보냄(자주 요약해도 귀찮지 않게). 기록·위젯에는 남김
                 } else if (prepare && !showWhenDone) {
                     // 미리 준비 완료: 저장해 두었다가 정한 시각에 알림
                     BriefingScheduler.saveReady(this@BriefingService, result.title, result.body, result.time)
@@ -83,9 +89,11 @@ class BriefingService : Service() {
                         Notifications.result(this@BriefingService, result.title, result.body, result.time))
                 }
             } catch (s: Summarizer.StoppedException) {
+                if (auto) AutoLog.add(this@BriefingService, label, "중지됨")
                 Notifications.notify(this@BriefingService, Notifications.ID_RESULT,
                     Notifications.result(this@BriefingService, "$label 중지됨", s.message ?: "중지했어요."))
             } catch (t: Throwable) {
+                if (auto) AutoLog.add(this@BriefingService, label, "실패 · ${t.javaClass.simpleName}")
                 Notifications.notify(this@BriefingService, Notifications.ID_RESULT,
                     Notifications.result(this@BriefingService, "$label 실패", "${t.javaClass.simpleName}: ${t.message}"))
             } finally {
@@ -133,11 +141,14 @@ object Briefings {
 
 
     /**
-     * 아직 요약하지 않은 알림의 시작 시각: 오늘 0시와 지난 요약이 덮은 시각 다음 중 늦은 쪽.
+     * 아직 요약하지 않은 알림의 시작 시각: 지난 요약이 덮은 시각 다음부터(최대 3일 전까지).
      * 한 번 요약한 알림은 다음 요약(자동·수동 모두)에 다시 들어가지 않음.
+     * 2026-11-22: 예전엔 '오늘 0시'에서 잘라서, 어제 저녁 요약 뒤~자정에 온 알림이 아침 요약에서 빠지고
+     * 자정 뒤 새 알림이 없으면 아침 자동 요약이 '새 알림 없음'으로 조용히 넘어갔다(선생님: 9시 자동 요약이 안 돎).
      */
-    fun pendingFrom(db: NotificationDb): Long =
-        maxOf((db.lastBriefing()?.time ?: -1L) + 1, NotificationDb.startOfToday())
+    const val MAX_BACK_MS = 3 * 24L * 3600 * 1000   // 금요일 저녁 → 월요일 아침도 덮음
+    fun pendingFrom(db: NotificationDb, now: Long = System.currentTimeMillis()): Long =
+        maxOf((db.lastBriefing()?.time ?: -1L) + 1, now - MAX_BACK_MS)
 
     /** 자동 브리핑·"지금 정리하기" 공용: 지난 요약 이후 새로 온 오늘 알림만 요약해 저장. */
     suspend fun runSinceLast(ctx: Context, label: String, onStatus: (String) -> Unit): Outcome =

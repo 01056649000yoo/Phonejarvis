@@ -33,10 +33,13 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** 이번 버전에서 바뀐 점 한 줄 (버전 올릴 때 같이 고치기). */
-private const val WHATS_NEW = "보안 점검 — 인증번호 알림은 모으지 않고, 백업 비밀번호는 6자 이상으로 더 튼튼하게"
+private const val WHATS_NEW = "아침 자동 요약이 어젯밤 메시지까지 · 위젯에 자동 요약 결과 · 보안 점검"
 
 /** 업데이트 내역 큰 창 (버전 올릴 때 같이 고치기) */
 private val WHATS_NEW_DETAIL = listOf(
+    "🌅 아침 요약에 어젯밤 메시지도" to "예전엔 자동 요약이 '오늘 0시'부터만 모아서, 저녁 요약 뒤~자정에 온 메시지가 빠지고 새벽에 새 알림이 없으면 아침 요약이 조용히 넘어갔어요. 이제 지난 요약 바로 다음부터(최대 3일) 모두 요약해요.",
+    "⏰ 자동 요약이 돌았는지 보여요" to "위젯 위쪽에 '⏰ 09:00 자동 · 새 알림 없음 · 다음 17:00'처럼 마지막 자동 요약 결과와 다음 시각이 보여요. 설정 → 🔕 모아서 알림 맨 아래 📝 최근 자동 요약에서 지난 기록도 볼 수 있어요.",
+    "🏠 위젯은 요약만" to "위젯에는 🙋 답장할 연락·💬 메시지 요약만 보이고, 마감·업무·앱 알림은 제목 한 줄로 줄였어요. 자세한 건 위젯을 눌러 앱에서 봐요.",
     "🔐 인증번호는 모으지 않아요" to "은행·본인확인 인증번호 알림은 상태바에 그대로 두고, 쌤톡스에는 저장하지 않아요. 요약·위젯·알림 탭에도 나오지 않아요.",
     "🔒 백업 비밀번호를 더 튼튼하게" to "새로 정하는 백업 비밀번호는 6자 이상이고 글자도 섞을 수 있어요. 예전 4~5자리 비밀번호는 그대로 쓰이지만 바꿔 달라고 알려 드려요. 예전에 만든 백업 파일도 그대로 열려요.",
     "📵 새 폰 옮기기에서 빠져요" to "폰을 바꿀 때 자동으로 옮겨지는 데이터에 알림 내용·학생 기록이 들어가지 않게 했어요. 설정은 💾 백업(암호화)으로 옮겨요.",
@@ -1608,6 +1611,25 @@ private fun SchedulePage(vm: JarvisViewModel) {
     }
     OutlinedButton(onClick = { vm.briefNow() }, enabled = vm.hasModel && !vm.busy, modifier = Modifier.fillMaxWidth()) {
         Text("지금 요약 받아보기 (테스트)")
+    }
+    // 📝 최근 자동 요약: 정한 시각에 실제로 돌았는지·결과(새 알림 없음도) 확인
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("📝 최근 자동 요약", fontWeight = FontWeight.Bold)
+            val fmt = remember { SimpleDateFormat("M/d(E) HH:mm", Locale.KOREA) }
+            if (vm.autoLog.isEmpty()) Text("아직 자동으로 돈 요약이 없어요. 정한 시각이 지나면 여기에 결과가 남아요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            vm.autoLog.take(6).forEach { e ->
+                Row {
+                    Text(fmt.format(e.at), Modifier.width(118.dp), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("${e.label} · ${e.result}", style = MaterialTheme.typography.bodySmall,
+                        color = if (e.result.startsWith("실패")) MaterialTheme.colorScheme.tertiary else androidx.compose.ui.graphics.Color.Unspecified)
+                }
+            }
+            Text("새 알림이 없으면 알림은 보내지 않고 여기에만 남겨요.", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 

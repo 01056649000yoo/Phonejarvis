@@ -51,13 +51,15 @@ import java.util.Locale
  */
 class SummaryWidget : GlanceAppWidget() {
 
-    private data class State(val briefing: Briefing?, val pending: Int, val running: Boolean)
+    private data class State(val briefing: Briefing?, val pending: Int, val running: Boolean,
+                             val lastAuto: AutoLog.Entry?, val next: SummarySchedule.Run?)
 
     private fun load(ctx: Context): State {
         val db = NotificationDb.get(ctx)
         val rules = AppFilter.rules(ctx)
         val pending = runCatching { db.since(Briefings.pendingFrom(db)).count { rules.allows(it) } }.getOrDefault(0)
-        return State(db.lastBriefing(), pending, BriefingService.active)
+        return State(db.lastBriefing(), pending, BriefingService.active, AutoLog.last(ctx),
+            runCatching { BriefingScheduler.nextRun(ctx) }.getOrNull())
     }
 
     // 위젯은 한 번 뜬 동안(세션) provideGlance 를 다시 부르지 않는다 — 처음 읽은 요약을 계속 그리던 것(2026-11-21 선생님:
@@ -94,6 +96,14 @@ class SummaryWidget : GlanceAppWidget() {
                         s.briefing?.let { "${it.label} · ${fmt.format(it.time)} · 알림 ${it.count}건" } ?: "아직 요약이 없어요",
                         style = TextStyle(color = c.onSurfaceVariant, fontSize = 11.sp), maxLines = 1,
                     )
+                    // ⏰ 자동 요약이 돌았는지(새 알림이 없어 조용히 넘어간 것도)·다음 요약
+                    val hm = SimpleDateFormat("HH:mm", Locale.KOREA)
+                    val auto = s.lastAuto?.takeIf { a -> s.briefing == null || a.at > s.briefing.time + 60_000 || !a.result.startsWith("요약") }
+                    val line = listOfNotNull(
+                        auto?.let { "⏰ ${hm.format(it.at)} 자동 · ${it.result}" },
+                        s.next?.let { n -> "다음 " + SimpleDateFormat(if (SummarySchedule.startOfDay(n.at) == SummarySchedule.startOfDay(System.currentTimeMillis())) "HH:mm" else "M/d HH:mm", Locale.KOREA).format(n.at) },
+                    ).joinToString(" · ")
+                    if (line.isNotEmpty()) Text(line, style = TextStyle(color = c.onSurfaceVariant, fontSize = 11.sp), maxLines = 1)
                 }
                 Text(
                     when {
@@ -113,7 +123,8 @@ class SummaryWidget : GlanceAppWidget() {
             }
             Spacer(GlanceModifier.height(8.dp))
             // 요약 본문: 줄마다, 칸 제목(🙋 💬 📦 📌 …)은 굵게. 누르면 앱의 요약 탭
-            val lines = s.briefing?.text?.lines()?.map { it.trimEnd() }?.filter { it.isNotEmpty() }.orEmpty()
+            // 위젯은 요약만(2026-11-22 선생님: 온 메시지가 다 보일 필요 없음) — 🙋·💬 는 그대로, 나머지 칸은 제목만 한 줄로
+            val lines = s.briefing?.text?.let { summaryOnly(it) }.orEmpty()
             if (lines.isEmpty()) {
                 Text(
                     if (s.pending > 0) "새 알림 ${s.pending}건이 모였어요. 📋 요약을 누르면 여기에 정리돼요." else "알림이 모이면 📋 요약을 눌러 보세요. 정한 시각에는 저절로 요약해요.",
@@ -135,6 +146,14 @@ class SummaryWidget : GlanceAppWidget() {
 
     companion object {
         const val EXTRA_OPEN_TAB = "open_tab"
+
+        /** 요약 글에서 위젯에 보일 줄: AI 요약 칸(🙋 답장할 연락·💬 사람 메시지)은 전부, 다른 칸(마감·학부모·업무·키워드·앱 알림)은 제목만 모아 한 줄 */
+        fun summaryOnly(text: String): List<String> {
+            val blocks = text.trim().split(Regex("\\n\\s*\\n")).map { b -> b.lines().map { it.trimEnd() }.filter { it.isNotEmpty() } }.filter { it.isNotEmpty() }
+            val keep = blocks.filter { it[0].startsWith("🙋") || it[0].startsWith("💬") }.flatten()
+            val heads = blocks.filterNot { it[0].startsWith("🙋") || it[0].startsWith("💬") || it[0].startsWith("(") }.map { it[0] }
+            return keep + (if (heads.isNotEmpty()) listOf("(" + heads.joinToString(" · ") + " — 눌러서 보기)") else emptyList())
+        }
         @Volatile private var lastNotiRefresh = 0L
 
         private val REV = longPreferencesKey("rev")

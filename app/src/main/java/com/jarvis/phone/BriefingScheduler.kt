@@ -8,6 +8,7 @@ import android.content.Intent
 import android.os.Build
 import androidx.core.content.ContextCompat
 import java.util.Calendar
+import kotlinx.coroutines.launch
 
 /**
  * 정확한 시각 알람(AlarmManager)으로 요약을 예약 (v1.7.0: 규칙이 여러 개라 '다음 한 번'만 예약).
@@ -112,6 +113,8 @@ class BriefingReceiver : BroadcastReceiver() {
                 val ready = BriefingScheduler.takeReady(ctx)
                 when {
                     ready != null -> {
+                        AutoLog.add(ctx, label, "알림 보냄 · 미리 준비한 요약")
+                        AppScope.main.launch { SummaryWidget.refresh(ctx) }
                         Notifications.ensureChannels(ctx)
                         // ⏰ 정한 시각에 요약 알림 (누르면 세부 내역)
                         Notifications.notify(ctx, Notifications.idFor(ready.briefingTime),
@@ -125,4 +128,24 @@ class BriefingReceiver : BroadcastReceiver() {
             else -> { BriefingScheduler.scheduleAll(ctx); QuietMode.tick(ctx) }   // BOOT_COMPLETED, 시간/시간대 변경, 앱 업데이트
         }
     }
+}
+
+/**
+ * 📝 자동 요약 기록 (2026-11-22 선생님: "9시 자동 요약이 안 돌아감", "자동으로 돌면 위젯에도") —
+ * 예약으로 돈 요약마다 언제·무엇을·결과(요약함/새 알림 없음/실패…)를 최근 15개까지. 설정과 위젯에 보여 줌.
+ */
+object AutoLog {
+    data class Entry(val at: Long, val label: String, val result: String)
+    private fun prefs(ctx: Context) = ctx.getSharedPreferences("autolog", Context.MODE_PRIVATE)
+    fun add(ctx: Context, label: String, result: String, at: Long = System.currentTimeMillis()) {
+        val list = (listOf(Entry(at, label, result)) + all(ctx)).take(15)
+        val arr = org.json.JSONArray()
+        list.forEach { arr.put(org.json.JSONObject().put("at", it.at).put("label", it.label).put("result", it.result)) }
+        prefs(ctx).edit().putString("list", arr.toString()).apply()
+    }
+    fun all(ctx: Context): List<Entry> = runCatching {
+        val a = org.json.JSONArray(prefs(ctx).getString("list", "[]"))
+        (0 until a.length()).map { a.getJSONObject(it).let { o -> Entry(o.getLong("at"), o.getString("label"), o.getString("result")) } }
+    }.getOrDefault(emptyList())
+    fun last(ctx: Context): Entry? = all(ctx).firstOrNull()
 }

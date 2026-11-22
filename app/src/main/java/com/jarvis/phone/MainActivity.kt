@@ -416,6 +416,9 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     /** 오늘 탭: 묶음별 오늘 연락 (묶음, [(이름, 알림)]) */
     var peopleToday by mutableStateOf<List<Pair<PeopleGroup, List<Pair<String, NotiItem>>>>>(emptyList())
         private set
+    /** 📝 최근 자동 요약 기록 (🔕 모아서 알림 화면) */
+    var autoLog by mutableStateOf<List<AutoLog.Entry>>(emptyList())
+        private set
     fun selectTab(t: Tab) { tab = t; page = null }
     /** 뒤로: 세부 화면 → (윗 세부 화면) → 탭 첫 화면 → 요약 탭. 더 갈 곳이 없으면 false */
     fun back(): Boolean = when {
@@ -884,6 +887,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         if (backupNeedsAccess && ModelFinder.hasAccess()) findBackups()
         lastBackup = Backup.lastBackupTime(ctx)
         reloadSchedule()
+        autoLog = AutoLog.all(ctx)
         // 모델 받기 단계에 있으면(권한 설정에서 돌아온 경우 포함) 다운로드 폴더를 다시 찾아봄
         if (!onboardingDone && onboardingStep == 2) scanDownloads()
         if (onboardingDone) loadApps(ai = page == Page.APPS)
@@ -906,7 +910,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
             val done = ParentAdvisor.handled(ctx)
             // 아직 요약하지 않은 새 알림 수 ("지금 정리하기" 버튼)
             val from = Briefings.pendingFrom(db)
-            val pendingList = items.filter { it.time >= from }
+            val pendingList = db.since(from).filter { rules.allows(it) }   // 어제 저녁 요약 뒤에 온 것도(오늘 0시로 자르지 않음)
             val pending = pendingList.size
             withContext(Dispatchers.Main) {
                 parentContacts = parents; handledKeys = done; pendingCount = pending; pendingItems = pendingList
