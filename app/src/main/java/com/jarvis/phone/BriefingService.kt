@@ -40,13 +40,18 @@ class BriefingService : Service() {
             return START_NOT_STICKY
         }
         Notifications.ensureChannels(this)
-        // 미리 준비(브리핑 15분 전)면 결과를 알리지 않고 저장만 → 브리핑 시각에 바로 보여 줌
+        // 미리 준비(브리핑 5분 전)면 결과를 알리지 않고 저장만 → 브리핑 시각에 바로 보여 줌
         val prepare = intent?.getBooleanExtra(EXTRA_PREPARE, false) == true
         val auto = intent?.getBooleanExtra(EXTRA_AUTO, false) == true
         val rolling = intent?.getBooleanExtra(EXTRA_ROLLING, false) == true
+        // ➕ 정각에 이미 보낸 '미리 준비한 요약'에 그 뒤 온 알림을 이어 붙이는 실행
+        val topUpTime = intent?.getLongExtra(EXTRA_TOPUP_TIME, 0L) ?: 0L
+        val topUpTitle = intent?.getStringExtra(EXTRA_TOPUP_TITLE).orEmpty()
+        val topUpBody = intent?.getStringExtra(EXTRA_TOPUP_BODY).orEmpty()
+        val topUp = topUpTime > 0 && topUpBody.isNotEmpty()
         val title = if (prepare) "요약 미리 준비 중" else "쌤톡스가 알림을 정리하는 중"
         ServiceCompat.startForeground(
-            this, Notifications.ID_PROGRESS, Notifications.progress(this, "브리핑 준비 중…", title = title),
+            this, Notifications.ID_PROGRESS, Notifications.progress(this, "브리핑 준비 중…", title = title, quiet = prepare || topUp),
             if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0,
         )
         if (running) return START_NOT_STICKY     // 이미 도는 중이면 겹쳐 실행하지 않음
@@ -66,7 +71,7 @@ class BriefingService : Service() {
             try {
                 val result = Briefings.runSinceLast(this@BriefingService, label) { s ->
                     Notifications.notify(this@BriefingService, Notifications.ID_PROGRESS,
-                        Notifications.progress(this@BriefingService, s, title = title))
+                        Notifications.progress(this@BriefingService, s, title = title, quiet = (prepare && !showWhenDone) || topUp))
                 }
                 // 📝 자동 요약은 결과를 기록(설정의 '최근 자동 요약'·위젯 머리줄) — 조용히 넘어가도 돈 것은 보이게
                 if (auto) AutoLog.add(this@BriefingService, label, when {
@@ -74,8 +79,20 @@ class BriefingService : Service() {
                     result.title.endsWith("건너뜀") -> "건너뜀 · AI 모델 없음"
                     else -> "새 알림 없음"
                 })
-                if (auto && result.time == 0L) {
-                    // 예약 요약인데 새 알림이 없음 → 알림은 안 보냄(자주 요약해도 귀찮지 않게). 기록·위젯에는 남김
+                if (topUp) {
+                    // 새로 온 것이 있으면 정각에 보낸 알림을 '준비한 요약 + 그 뒤 온 알림'으로 고쳐 씀
+                    if (result.time != 0L) {
+                        val n0 = Regex("알림 (\\d+)건").find(topUpTitle)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+                        val n1 = Regex("알림 (\\d+)건").find(result.title)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+                        val hm = java.text.SimpleDateFormat("HH:mm", java.util.Locale.KOREA)
+                        Notifications.notify(this@BriefingService, Notifications.idFor(topUpTime),
+                            Notifications.result(this@BriefingService, "$label · 알림 ${n0 + n1}건",
+                                topUpBody + "\n\n➕ ${hm.format(topUpTime)} 뒤에 온 알림 (${n1}건)\n" + Briefings.topUpPart(result.body),
+                                topUpTime, quiet = true))
+                    }
+                } else if (rolling && result.time == 0L) {
+                    // 간격 요약인데 새 알림이 없음 → 알림은 안 보냄(자주 요약해도 귀찮지 않게). 기록·위젯에는 남김
+                    // 정한 시각 요약은 새 알림이 없어도 '없음'을 알린다(2026-11-22 선생님: "12시 요약이 와야 하는데 안 옴")
                 } else if (prepare && !showWhenDone) {
                     // 미리 준비 완료: 저장해 두었다가 정한 시각에 알림
                     BriefingScheduler.saveReady(this@BriefingService, result.title, result.body, result.time)
@@ -121,6 +138,9 @@ class BriefingService : Service() {
         const val EXTRA_PREPARE = "prepare"
         const val EXTRA_AUTO = "auto"
         const val EXTRA_ROLLING = "rolling"
+        const val EXTRA_TOPUP_TIME = "topup_time"
+        const val EXTRA_TOPUP_TITLE = "topup_title"
+        const val EXTRA_TOPUP_BODY = "topup_body"
         const val ACTION_STOP = "com.jarvis.phone.STOP_BRIEFING"
 
         /** 백그라운드 정리가 도는 중인지 (화면에서 "정리 중" 표시용) */
@@ -161,10 +181,13 @@ object Briefings {
 
         // 이 시각까지 온 알림을 이번 요약이 맡음. 요약하는 몇 분 사이에 온 알림은 다음 요약으로 넘어감.
         val cutoff = System.currentTimeMillis()
+        val prevBriefing = db.lastBriefing()   // 알림 맨 위 '언제부터' 표시용(이번 요약을 저장하기 전)
         // 설정에서 뺀 앱·방은 요약에서도 제외 (뺀 방이라도 중요 키워드가 있으면 포함)
         val rules = AppFilter.rules(ctx)
         val items = db.since(from).filter { it.time <= cutoff && rules.allows(it) }
-        if (items.isEmpty()) return Outcome(label, "지난 요약 이후 새로 온 알림이 없어요.")
+        if (items.isEmpty()) return Outcome("$label · 새 알림 없음", db.lastBriefing()?.let { b ->
+            "${java.text.SimpleDateFormat("M/d HH:mm", java.util.Locale.KOREA).format(b.time)} ${b.label} 이후 새로 온 알림이 없어요."
+        } ?: "지난 요약 이후 새로 온 알림이 없어요.")
 
         val start = System.currentTimeMillis()
         // ⭐ 키워드 알림: AI 없이 규칙으로 찾아 맨 위에 (놓치지 않게)
@@ -191,8 +214,16 @@ object Briefings {
         // time = 이번 요약이 덮은 마지막 시각 (다음 요약은 이 다음부터)
         db.insertBriefing(Briefing(time = cutoff, fromTime = from, label = label, count = items.size, text = text))
         onStatus("완료 (${(now - start) / 1000}초)")
-        return Outcome("$label · 알림 ${items.size}건", text, cutoff)
+        // 알림 맨 위에 이번 요약이 맡은 구간 — 앞선 요약(위젯·지금 정리하기·이전 시각)에 이미 들어간 메시지는 다시 나오지 않으므로
+        val hm = java.text.SimpleDateFormat("M/d HH:mm", java.util.Locale.KOREA)
+        val range = "🕘 " + (prevBriefing?.let { "${hm.format(it.time)} ${it.label} 뒤" } ?: hm.format(items.minOf { it.time })) +
+            " ~ ${hm.format(cutoff)}에 온 알림"
+        return Outcome("$label · 알림 ${items.size}건", range + "\n\n" + text, cutoff)
     }
+
+    /** 이어 붙일 때: 맨 위 구간 줄(🕘)과 앞 요약에 이미 있는 📌 마감 칸은 뺌 */
+    fun topUpPart(body: String): String = body.trim().split(Regex("\\n\\s*\\n"))
+        .filterNot { it.startsWith("🕘") || it.startsWith("📌") }.joinToString("\n\n").ifBlank { "(마감 소식만 있어요)" }
 
     /** 💼 업무·일정 앱(캘린더·할 일·메일 등) 알림을 시간순으로. 없으면 빈 문자열. */
     fun workSection(items: List<NotiItem>): String {
@@ -263,6 +294,8 @@ object Briefings {
 
 object Notifications {
     private const val CH_PROGRESS = "progress"
+    /** 정한 시각 5분 전 미리 준비: 알림창 맨 아래에 접혀 소리·상단 표시 없이(안드로이드가 백그라운드 작업에 알림을 꼭 요구함) */
+    private const val CH_PREPARE = "prepare_min"
     private const val CH_BRIEFING = "briefing"
     const val ID_PROGRESS = 1
     const val ID_RESULT = 2
@@ -277,6 +310,8 @@ object Notifications {
         nm.createNotificationChannel(
             NotificationChannel(CH_PROGRESS, "브리핑 진행 상태", NotificationManager.IMPORTANCE_LOW))
         nm.createNotificationChannel(
+            NotificationChannel(CH_PREPARE, "요약 미리 준비(조용히)", NotificationManager.IMPORTANCE_MIN))
+        nm.createNotificationChannel(
             NotificationChannel(CH_BRIEFING, "쌤톡스 브리핑", NotificationManager.IMPORTANCE_DEFAULT))
     }
 
@@ -290,8 +325,8 @@ object Notifications {
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
-    fun progress(ctx: Context, text: String, showStop: Boolean = true, title: String = "쌤톡스가 알림을 정리하는 중"): Notification =
-        NotificationCompat.Builder(ctx, CH_PROGRESS)
+    fun progress(ctx: Context, text: String, showStop: Boolean = true, title: String = "쌤톡스가 알림을 정리하는 중", quiet: Boolean = false): Notification =
+        NotificationCompat.Builder(ctx, if (quiet) CH_PREPARE else CH_PROGRESS)
             .setSmallIcon(R.drawable.ic_stat_ssamtox)
             .setColor(0xFF2E4A3D.toInt())
             .setContentTitle(title)
@@ -309,12 +344,13 @@ object Notifications {
             }
             .build()
 
-    fun result(ctx: Context, title: String, body: String, briefingTime: Long = 0): Notification =
+    fun result(ctx: Context, title: String, body: String, briefingTime: Long = 0, quiet: Boolean = false): Notification =
         NotificationCompat.Builder(ctx, CH_BRIEFING)
+            .setOnlyAlertOnce(quiet)   // 이미 보낸 요약을 고쳐 쓸 때는 다시 울리지 않음
             .setSmallIcon(R.drawable.ic_stat_ssamtox)
             .setColor(0xFF2E4A3D.toInt())
             .setContentTitle(title)
-            .setContentText(body.lineSequence().firstOrNull { it.isNotBlank() } ?: body)
+            .setContentText(body.lineSequence().firstOrNull { it.isNotBlank() && !it.startsWith("🕘") } ?: body)   // 접힌 알림엔 구간 줄 말고 내용
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setContentIntent(openApp(ctx, briefingTime))
             .setAutoCancel(true)

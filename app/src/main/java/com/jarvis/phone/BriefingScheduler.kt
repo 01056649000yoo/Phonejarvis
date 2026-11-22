@@ -20,13 +20,16 @@ object BriefingScheduler {
     const val ACTION_PREPARE = "com.jarvis.phone.ACTION_PREPARE"
     const val EXTRA_KIND = "kind"
     const val EXTRA_MINUTE = "minute"
-    /** 정한 시각보다 이만큼 먼저 백그라운드에서 요약을 돌려 둠 (모델 불러오기 + 최대 5분 요약) */
-    const val LEAD_MINUTES = 15
+    /**
+     * 정한 시각보다 이만큼 먼저 백그라운드에서 요약을 돌려 둠 (2026-11-22 선생님: 15분 → 5분 전).
+     * 정한 시각까지 못 끝나면 끝나는 대로 바로 알림(showWhenDone).
+     */
+    const val LEAD_MINUTES = 5
 
     fun nextRun(ctx: Context, now: Long = System.currentTimeMillis()): SummarySchedule.Run? =
         SummarySchedule.next(now, SummarySchedule.config(ctx)) { RestDays.isRest(ctx, it) }
 
-    /** 다음 요약 한 번(그리고 정한 시각이면 15분 전 미리 준비)을 예약 */
+    /** 다음 요약 한 번(그리고 정한 시각이면 5분 전 미리 준비)을 예약 */
     fun scheduleAll(ctx: Context) {
         val am = ctx.getSystemService(AlarmManager::class.java)
         val run = nextRun(ctx)
@@ -57,10 +60,15 @@ object BriefingScheduler {
         )
 
     /** auto: 예약으로 돈 요약(새 알림이 없으면 알리지 않음), rolling: 알림 하나를 새 내용으로 바꿔 보여 줌(간격·수업 끝) */
-    fun startNow(ctx: Context, label: String, prepare: Boolean = false, auto: Boolean = false, rolling: Boolean = false) {
+    fun startNow(ctx: Context, label: String, prepare: Boolean = false, auto: Boolean = false, rolling: Boolean = false,
+                 topUp: Ready? = null) {
         val i = Intent(ctx, BriefingService::class.java).putExtra(BriefingService.EXTRA_LABEL, label)
             .putExtra(BriefingService.EXTRA_PREPARE, prepare).putExtra(BriefingService.EXTRA_AUTO, auto)
             .putExtra(BriefingService.EXTRA_ROLLING, rolling)
+        topUp?.let {
+            i.putExtra(BriefingService.EXTRA_TOPUP_TIME, it.briefingTime).putExtra(BriefingService.EXTRA_TOPUP_TITLE, it.title)
+                .putExtra(BriefingService.EXTRA_TOPUP_BODY, it.body)
+        }
         ContextCompat.startForegroundService(ctx, i)
     }
 
@@ -91,7 +99,7 @@ object BriefingScheduler {
 
 /**
  * 알람 도착.
- * - 준비 알람(정한 시각 15분 전): 백그라운드에서 조용히 요약해 결과를 저장
+ * - 준비 알람(정한 시각 5분 전): 백그라운드에서 조용히 요약해 결과를 저장
  * - 요약 알람: 정한 시각이면 준비해 둔 결과를 바로 알림(없으면 그때 요약), 간격·수업 끝·출근이면 그때 요약
  * 울릴 때마다 그다음 요약을 다시 예약. 재부팅·시간 변경·앱 업데이트 때 알람 다시 등록.
  */
@@ -113,12 +121,26 @@ class BriefingReceiver : BroadcastReceiver() {
                 val ready = BriefingScheduler.takeReady(ctx)
                 when {
                     ready != null -> {
-                        AutoLog.add(ctx, label, "알림 보냄 · 미리 준비한 요약")
-                        AppScope.main.launch { SummaryWidget.refresh(ctx) }
-                        Notifications.ensureChannels(ctx)
-                        // ⏰ 정한 시각에 요약 알림 (누르면 세부 내역)
-                        Notifications.notify(ctx, Notifications.idFor(ready.briefingTime),
-                            Notifications.result(ctx, ready.title, ready.body, ready.briefingTime))
+                        // ➕ 미리 준비한 뒤(5분 사이) 온 알림도 이번 요약에 — 예전엔 다음 요약으로 넘어가
+                        // 정각 요약에 카톡 일부가 빠져 보였다(2026-11-22 선생님)
+                        val pending = runCatching {
+                            val db = NotificationDb.get(ctx); val rules = AppFilter.rules(ctx)
+                            db.since(Briefings.pendingFrom(db)).count { rules.allows(it) }
+                        }.getOrDefault(0)
+                        if (ready.briefingTime == 0L && pending > 0) {
+                            // 준비 때는 새 알림이 없었는데 그 뒤 왔음 → '없음' 대신 지금 요약
+                            AutoLog.add(ctx, label, "준비 뒤 새 알림 ${pending}건 · 지금 요약")
+                            BriefingScheduler.startNow(ctx, label, auto = true)
+                        } else {
+                            AutoLog.add(ctx, label, "알림 보냄 · 미리 준비한 요약")
+                            AppScope.main.launch { SummaryWidget.refresh(ctx) }
+                            Notifications.ensureChannels(ctx)
+                            // ⏰ 정한 시각에 요약 알림 (누르면 세부 내역)
+                            Notifications.notify(ctx, Notifications.idFor(ready.briefingTime),
+                                Notifications.result(ctx, ready.title, ready.body, ready.briefingTime))
+                            // 그 뒤 온 알림은 이어서 요약해 같은 알림을 고쳐 씀(소리 없이)
+                            if (pending > 0) BriefingScheduler.startNow(ctx, label, auto = true, topUp = ready)
+                        }
                     }
                     // 아직 준비 중이면(요약이 길어짐) 끝나는 대로 바로 알리게 표시
                     BriefingService.preparing -> BriefingService.showWhenDone = true

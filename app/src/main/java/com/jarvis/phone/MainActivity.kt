@@ -986,6 +986,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
 
                 // 4) 기존 모델 교체
                 summarizer.release()   // 예약 브리핑이 모델을 쓰는 중이면 끝날 때까지 기다림
+                summarizer.clearEngineCache()   // 옛 모델에 맞춘 캐시는 지움(새 모델은 첫 요약 때 다시 만듦)
                 java.nio.file.Files.move(tmp.toPath(), summarizer.modelFile.toPath(),
                     java.nio.file.StandardCopyOption.REPLACE_EXISTING)
                 val detected = ModelOption.bySize(copied)

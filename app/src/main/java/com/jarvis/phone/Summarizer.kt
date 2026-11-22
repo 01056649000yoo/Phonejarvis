@@ -18,6 +18,13 @@ import java.io.File
 class Summarizer private constructor(private val ctx: Context) {
 
     val modelFile: File get() = File(ctx.filesDir, MODEL_NAME)
+    /**
+     * 모델을 GPU 에 맞게 바꿔 둔 것(캐시)을 두는 앱 전용 칸 (2026-11-22 선생님: "느려지지 않게 별도 공간에 캐싱").
+     * 예전엔 cacheDir 에 두어 저장공간이 모자라거나 '캐시 정리'를 하면 지워졌고, 그러면 다음 요약에서 처음부터 다시 바꾸느라
+     * 오래 걸리고 폰이 뜨거워졌다. filesDir 는 안드로이드가 지우지 않는다. 모델을 바꾸면 비운다(clearEngineCache).
+     */
+    val engineCacheDir: File get() = File(ctx.filesDir, "llm_cache").apply { mkdirs() }
+    fun clearEngineCache() { runCatching { File(ctx.filesDir, "llm_cache").deleteRecursively() } }
     fun hasModel() = modelFile.exists() && modelFile.length() > 100_000_000
 
     private var engine: Engine? = null
@@ -36,11 +43,11 @@ class Summarizer private constructor(private val ctx: Context) {
             val e = try {
                 onStatus("모델 불러오는 중 (GPU)…")
                 Engine(EngineConfig(modelPath = modelFile.path, backend = Backend.GPU(),
-                    cacheDir = ctx.cacheDir.path)).also { it.initialize() }
+                    cacheDir = engineCacheDir.path)).also { it.initialize() }
             } catch (t: Throwable) {
                 onStatus("GPU 실패, CPU로 불러오는 중…")
                 Engine(EngineConfig(modelPath = modelFile.path, backend = Backend.CPU(),
-                    cacheDir = ctx.cacheDir.path)).also { it.initialize() }
+                    cacheDir = engineCacheDir.path)).also { it.initialize() }
             }
             engine = e
             e
