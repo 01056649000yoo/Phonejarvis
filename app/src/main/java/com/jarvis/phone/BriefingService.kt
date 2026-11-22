@@ -215,7 +215,12 @@ object Briefings {
             run(ctx, "🌙 $hm 요약", pendingFrom(db)) { s -> Notifications.notify(ctx, Notifications.ID_PROGRESS,
                 Notifications.progress(ctx, s, title = "하루 정리 준비 중", quiet = true)) }
         }
-        val out = DailyDigest.build(ctx)
+        // 🤖 AI 한 번(답 400토큰까지)으로 우선순위 정리 — 모델이 없거나 폰이 뜨겁거나 배터리가 바닥이면 AI 없이
+        val summarizer = Summarizer.get(ctx)
+        val ask: (suspend (String) -> String)? = if (summarizer.hasModel() && PhoneLoad.skipAiReason(PhoneLoad.state(ctx)) == null)
+            { p -> summarizer.complete(p, { s -> Notifications.notify(ctx, Notifications.ID_PROGRESS,
+                Notifications.progress(ctx, "🗓 하루 정리 중… $s", title = "하루 정리 준비 중", quiet = true)) }, 400) } else null
+        val out = DailyDigest.build(ctx, ask)
         if (out == null) { AutoLog.add(ctx, DailyDigest.LABEL, "오늘 요약이 없어 건너뜀"); return }
         AutoLog.add(ctx, DailyDigest.LABEL, "알림 보냄")
         Notifications.notify(ctx, Notifications.idFor(out.time), Notifications.result(ctx, out.title, out.body, out.time))

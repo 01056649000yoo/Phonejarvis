@@ -85,16 +85,122 @@ object DailyDigest {
         append('\n')
     }
 
-    /** 오늘 요약을 합쳐 저장하고 알림 내용을 돌려줌. 오늘 요약이 하나도 없으면 null */
-    fun build(ctx: Context, now: Long = System.currentTimeMillis()): Briefings.Outcome? {
+    // ───────── AI 하루 정리 (2026-11-22 선생님: 길어지지 않게, 우선순위로 거르고 AI가 정리) ─────────
+
+    /** 하루 정리 재료 한 줄. rank 1 = ⭐ 키워드·💼 업무·일정, 2 = 학생·학부모·마감·답장할 연락·사람 묶음, 3 = 그 밖의 대화방 */
+    data class Line(val rank: Int, val tag: String, val text: String, val weight: Int = 0)
+    data class Material(val lines: List<Line>, val apps: Map<String, Int>, val briefings: Int, val count: Int)
+
+    const val MAX_LINES = 20
+    private val RANK_CAP = mapOf(1 to 8, 2 to 8)   // 1·2순위가 많아도 3순위 자리가 조금은 남게
+
+    /** 그날 요약본들 → 순위 매긴 줄들(같은 방·같은 줄은 한 번, 최근 것이 이김) */
+    fun material(briefings: List<Briefing>, taskPart: String, students: List<String>): Material {
+        val merged = compose(briefings, "")   // 위의 규칙 합치기로 먼저 중복을 없앰
+        val lines = mutableListOf<Line>()
+        fun body(l: String) = l.removePrefix("- ").trim()
+        fun hasStudent(l: String) = students.any { it.length >= 2 && it in l }
+        var apps = emptyMap<String, Int>()
+        for (block in merged.split(Regex("\\n\\s*\\n"))) {
+            val ls = block.lines().filter { it.isNotBlank() }
+            val head = ls.firstOrNull() ?: continue
+            val items = ls.filter { it.startsWith("- ") && !it.startsWith("- 그 밖의 방") }
+            when {
+                head.startsWith("⭐") -> items.forEach { lines += Line(1, "⭐ 키워드", body(it)) }
+                head.startsWith("💼") -> items.forEach { lines += Line(1, "💼 업무·일정", body(it)) }
+                head.startsWith("🙋") -> items.forEach { lines += Line(2, "🙋 답장할 연락", body(it)) }
+                head.startsWith("👪") -> items.forEach { lines += Line(2, "👪 학부모", body(it)) }
+                head.startsWith("👥") -> items.forEach { lines += Line(2, head.substringBefore(" ("), body(it)) }
+                head.startsWith("💬") -> items.forEach { l ->
+                    val n = Regex("\\((\\d+)건\\)").find(l)?.groupValues?.get(1)?.toIntOrNull() ?: 1
+                    lines += if (hasStudent(l)) Line(2, "🧒 학생", body(l), n) else Line(3, "💬 대화", body(l), n)
+                }
+                head.startsWith("📦") -> apps = head.substringAfter(" · ", "").substringBefore(" 외 ").split(", ")
+                    .mapNotNull { Regex("^(.+) (\\d+)$").find(it.trim())?.destructured?.let { (a, n) -> a to n.toInt() } }.toMap()
+            }
+        }
+        // 📌 마감은 2순위 맨 뒤에 3줄까지 — 할 일이 많은 날 답장할 연락·학부모 자리를 밀어내지 않게
+        taskPart.lines().filter { it.startsWith("- ") }.take(3).forEach { lines += Line(2, "📌 마감", body(it)) }
+        return Material(lines, apps, briefings.size, briefings.sumOf { it.count })
+    }
+
+    /** 순위대로 MAX_LINES 줄까지(1·2순위는 각 8줄까지, 3순위는 건수 많은 방부터, 남는 자리는 다시 1·2순위로) */
+    fun pick(lines: List<Line>): List<Line> {
+        val byRank = lines.groupBy { it.rank }.mapValues { (r, l) -> if (r == 3) l.sortedByDescending { it.weight } else l }
+        val first = (1..3).flatMap { r -> byRank[r].orEmpty().let { l -> RANK_CAP[r]?.let { l.take(it) } ?: l } }.take(MAX_LINES)
+        val rest = (1..2).flatMap { r -> byRank[r].orEmpty() }.filterNot { it in first }
+        return (first + rest).take(MAX_LINES).sortedBy { it.rank }
+    }
+
+    fun prompt(picked: List<Line>): String = """
+        너는 교사인 사용자의 비서야. 아래는 오늘 사용자 폰에 온 알림을 미리 요약해 둔 줄들이야. [1]이 가장 중요하고 [3]이 덜 중요해.
+        ---
+        ${picked.joinToString("\n        ") { "[${it.rank}] ${it.tag}: ${it.text}" }}
+        ---
+        위 줄들만 보고 오늘 하루를 아래 네 칸으로 정리해. 줄에 없는 내용은 지어내지 마. 날짜·시간·숫자·이름은 그대로 옮겨.
+        [1] 줄을 먼저, 같은 일은 한 번만 써. 각 줄은 '- '로 시작하고 40자 안쪽. 별표·꾸밈·다른 말은 쓰지 마.
+        ✅ 오늘 꼭 챙길 일: 3줄까지
+        🙋 답장할 연락: 5줄까지, 없으면 '- 없음'
+        📝 오늘 있었던 일: 5줄까지
+        📅 내일 챙길 것: 줄에 '내일'이라고 적힌 것만 2줄까지, 없으면 '- 없음'
+    """.trimIndent()
+
+    private val HEADS = listOf("✅" to 3, "🙋" to 5, "📝" to 5, "📅" to 2)
+
+    /** AI 답 → 칸마다 줄 수를 지켜 다시 씀. 칸이 둘도 안 나오면 null(규칙 정리로) */
+    fun parseAi(reply: String): String? {
+        val out = LinkedHashMap<String, MutableList<String>>()
+        var cur: String? = null
+        reply.replace("*", "").lines().map { it.trim() }.filter { it.isNotEmpty() }.forEach { l ->
+            val h = HEADS.firstOrNull { l.startsWith(it.first) }
+            if (h != null) { cur = l.substringBefore(":").trim(); out.getOrPut(cur!!) { mutableListOf() }
+                l.substringAfter(":", "").trim().takeIf { it.isNotEmpty() && it != "없음" }?.let { out[cur]!! += "- " + it.removePrefix("- ") } }
+            else if (cur != null && l.startsWith("-")) { val t = l.removePrefix("-").trim(); if (t.isNotEmpty() && t != "없음") out[cur]!! += "- $t" }
+        }
+        if (out.size < 2) return null
+        return buildString {
+            out.forEach { (h, ls) ->
+                val cap = HEADS.first { h.startsWith(it.first) }.second
+                val keep = ls.map { BriefingComposer.soften(it) }.distinct().take(cap)
+                if (keep.isNotEmpty()) { append(h).append('\n'); keep.forEach { append(it).append('\n') }; append('\n') }
+            }
+        }.trim().ifEmpty { null }
+    }
+
+    /** AI 없이(발열·배터리·실패): 고른 줄을 순위별로 */
+    fun plain(picked: List<Line>): String = buildString {
+        val names = mapOf(1 to "⭐ 중요 키워드·업무·일정", 2 to "🙋 학생·학부모·마감·답장할 연락", 3 to "💬 대화방")
+        picked.groupBy { it.rank }.toSortedMap().forEach { (r, ls) ->
+            append(names[r]).append('\n'); ls.forEach { append("- ${it.text}").append('\n') }; append('\n')
+        }
+    }.trim()
+
+    fun appsLine(apps: Map<String, Int>): String = if (apps.isEmpty()) "" else
+        "📦 그 밖에 앱 알림 ${apps.values.sum()}건 · " + apps.entries.sortedByDescending { it.value }.take(5).joinToString(", ") { "${it.key} ${it.value}" }
+
+    /** 재료 → 하루 정리 글. ask 가 null 이면 AI 없이 */
+    suspend fun write(m: Material, ask: (suspend (String) -> String)?): Pair<String, Boolean> {
+        val picked = pick(m.lines)
+        val ai = if (ask != null && picked.isNotEmpty()) runCatching { parseAi(ask(prompt(picked))) }.getOrNull() else null
+        val left = m.lines.size - picked.size
+        val body = (ai ?: plain(picked)).ifBlank { "오늘은 따로 챙길 알림이 없었어요." }
+        val tail = listOfNotNull(appsLine(m.apps).ifEmpty { null },
+            if (left > 0) "(덜 중요한 ${left}줄은 뺐어요 · 📚 지난 요약에 그날 요약이 모두 있어요)" else null)
+        return ("요약 ${m.briefings}번 · 알림 ${m.count}건을 중요한 것부터 정리했어요.\n\n" + body +
+            (if (tail.isNotEmpty()) "\n\n" + tail.joinToString("\n") else "")) to (ai != null)
+    }
+
+    /** 오늘 요약을 정리해 저장하고 알림 내용을 돌려줌. 오늘 요약이 하나도 없으면 null */
+    suspend fun build(ctx: Context, ask: (suspend (String) -> String)?, now: Long = System.currentTimeMillis()): Briefings.Outcome? {
         val db = NotificationDb.get(ctx)
         val day = SummarySchedule.startOfDay(now)
         val today = db.briefings(300).filter { it.time >= day && !isDaily(it) }.sortedBy { it.time }
         if (today.isEmpty()) return null
-        val text = compose(today, Briefings.taskSection(db.tasks()))
+        val m = material(today, Briefings.taskSection(db.tasks()), Students.names(ctx))
+        val (text, byAi) = write(m, ask)
         db.insertBriefing(Briefing(time = now, fromTime = day, label = LABEL, count = 0, text = text))
         val d = SimpleDateFormat("M/d (E)", Locale.KOREA).format(now)
-        return Briefings.Outcome("$LABEL · $d", text, now)
+        return Briefings.Outcome("$LABEL · $d" + if (byAi) "" else " (AI 없이)", text, now)
     }
 
     /** 다음 하루 정리 시각. 끄면 null. 모아서 알림의 '주말·공휴일엔 쉬기'를 켰으면 쉬는 날은 건너뜀 */

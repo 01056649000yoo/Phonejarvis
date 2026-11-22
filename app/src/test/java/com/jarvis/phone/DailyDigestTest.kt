@@ -51,4 +51,18 @@ class DailyDigestTest {
         assertEquals(SummarySchedule.addDays(day, 2) + 22 * 3600_000L, DailyDigest.next(now, cfg) { it == tomorrow })
         assertEquals(null, DailyDigest.next(now, cfg.copy(dailyOn = false)) { false })
     }
+
+    @Test fun 순위대로_고르고_AI_답은_칸마다_줄수를_지킴() {
+        val lines = List(12) { DailyDigest.Line(3, "💬 대화", "방$it", it) } + List(10) { DailyDigest.Line(1, "⭐ 키워드", "키$it") } +
+            listOf(DailyDigest.Line(2, "🙋 답장할 연락", "민준 어머님 물음"))
+        val p = DailyDigest.pick(lines)
+        assertEquals(20, p.size)
+        assertEquals(8, p.count { it.rank == 1 })                  // 1순위는 8줄까지 — 나머지 자리는 대화방에
+        assertEquals(11, p.count { it.rank == 3 })
+        assertTrue(p.any { it.rank == 2 })
+        assertEquals("방11", p.first { it.rank == 3 }.text)          // 3순위는 건수 많은 방부터
+        val out = DailyDigest.parseAi("**정리**\n**✅ 오늘 꼭 챙길 일:**\n- 가\n- 나\n- 다\n- 라\n🙋 답장할 연락:\n- 없음\n📅 내일 챙길 것: 회의 준비")!!
+        assertEquals("✅ 오늘 꼭 챙길 일\n- 가\n- 나\n- 다\n\n📅 내일 챙길 것\n- 회의 준비", out)
+        assertEquals(null, DailyDigest.parseAi("그냥 아무 말"))
+    }
 }
