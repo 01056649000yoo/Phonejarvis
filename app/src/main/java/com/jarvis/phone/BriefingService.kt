@@ -211,6 +211,8 @@ object Briefings {
         val rest = items - workItems.toSet() - peopleItems
         // 🙋 답장할 연락·💬 사람 메시지(대화방마다 AI 세 줄)·📦 앱 알림(AI 없이 건수) — BriefingComposer
         val ai = if (rest.isEmpty()) null else summarizer.summarize(rest, onStatus) { c -> c.items.any { rules.mentionsRoster(it) } }
+        // ✉️ 답장할 문자: 🙋 답장할 연락 중 문자(1:1)만 올리고, 모델이 켜진 김에 초안을 5건까지 미리
+        runCatching { draftSmsReplies(ctx, db, summarizer, ai?.replies.orEmpty(), onStatus) }
         // 읽는 순서: 마감 → 학부모 → 답장할 연락·사람 메시지 → 내 묶음 → 업무 → 키워드 → 앱 알림
         val aiPeople = ai?.people?.takeIf { it.isNotBlank() }?.let { it + "\n\n" } ?: ""
         val text = (taskPart + parentPart + aiPeople + peoplePart + workPart + keywordPart + (ai?.apps ?: "")).trim()
@@ -224,6 +226,21 @@ object Briefings {
         val range = "🕘 " + (prevBriefing?.let { "${hm.format(it.time)} ${it.label} 뒤" } ?: hm.format(items.minOf { it.time })) +
             " ~ ${hm.format(cutoff)}에 온 알림"
         return Outcome("$label · 알림 ${items.size}건", range + "\n\n" + text, cutoff)
+    }
+
+    private suspend fun draftSmsReplies(ctx: Context, db: NotificationDb, summarizer: Summarizer,
+                                        replies: List<BriefingComposer.RoomSummary>, onStatus: (String) -> Unit) {
+        val sms = replies.filter { r -> r.conv.items.all { Sms.isSms(it.pkg) && it.room.isEmpty() } }
+        sms.forEach { r -> db.upsertReplyTarget(r.conv.items.last().pkg, r.conv.room, r.conv.last, r.conv.items.takeLast(2).joinToString(" / ") { it.text.replace('\n', ' ') }) }
+        if (summarizer.stopRequested) return
+        val todo = db.openReplies().filter { it.draft.isEmpty() }.take(ReplyDrafter.MAX_AUTO)
+        todo.forEachIndexed { i, d ->
+            onStatus("문자 답장 초안 ${i + 1}/${todo.size}")
+            val items = db.since(d.lastTime - 3 * 24 * 3600_000L).filter { it.pkg == d.pkg && it.room.isEmpty() && it.title == d.sender }
+            if (items.isEmpty()) return@forEachIndexed
+            val draft = ReplyDrafter.clean(summarizer.complete(ReplyDrafter.prompt(d.sender, items)))
+            if (draft.isNotEmpty()) db.setReplyDraft(d.pkg, d.sender, draft)
+        }
     }
 
     /** 이어 붙일 때: 맨 위 구간 줄(🕘)과 앞 요약에 이미 있는 📌 마감 칸은 뺌 */

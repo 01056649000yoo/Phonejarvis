@@ -33,7 +33,7 @@ data class Briefing(
 
 /** 수집한 알림을 휴대폰 안에만 저장하는 SQLite DB (7일 보관). */
 class NotificationDb private constructor(ctx: Context) :
-    SQLiteOpenHelper(ctx, "jarvis.db", null, 5) {
+    SQLiteOpenHelper(ctx, "jarvis.db", null, 6) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -51,6 +51,7 @@ class NotificationDb private constructor(ctx: Context) :
         createBriefingTable(db)
         createTeacherTables(db)
         createSeenTable(db)
+        createReplyTable(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldV: Int, newV: Int) {
@@ -61,6 +62,44 @@ class NotificationDb private constructor(ctx: Context) :
         if (oldV < 4) createTeacherTables(db)
         // v5: 알림이 온 앱·방 기억 (뺀 앱·끈 방도 목록에서 사라지지 않게)
         if (oldV < 5) createSeenTable(db)
+        // v6: ✉️ 문자 답장 초안
+        if (oldV < 6) createReplyTable(db)
+    }
+
+    /** v6: ✉️ 문자 답장 초안 — 보낸 사람마다 하나(새 문자가 오면 초안을 비우고 다시), 보낸 뒤 done=1 */
+    private fun createReplyTable(db: SQLiteDatabase) {
+        db.execSQL(
+            """CREATE TABLE IF NOT EXISTS reply_draft(
+                pkg TEXT NOT NULL,
+                sender TEXT NOT NULL,
+                last_time INTEGER NOT NULL,
+                question TEXT NOT NULL,
+                draft TEXT NOT NULL DEFAULT '',
+                done INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY(pkg, sender))"""
+        )
+    }
+
+    /** 답장할 문자 하나 올리기: 처음이거나 더 새 문자면 질문을 바꾸고 초안을 비워 다시 만들게 */
+    fun upsertReplyTarget(pkg: String, sender: String, lastTime: Long, question: String) {
+        val w = writableDatabase
+        val cur = w.rawQuery("SELECT last_time FROM reply_draft WHERE pkg=? AND sender=?", arrayOf(pkg, sender))
+            .use { c -> if (c.moveToFirst()) c.getLong(0) else null }
+        if (cur != null && cur >= lastTime) return
+        val v = ContentValues().apply {
+            put("pkg", pkg); put("sender", sender); put("last_time", lastTime); put("question", question.take(300)); put("draft", ""); put("done", 0)
+        }
+        w.insertWithOnConflict("reply_draft", null, v, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+    /** 아직 보내지 않은 답장할 문자 (최근 것부터) */
+    fun openReplies(): List<ReplyDraft> = readableDatabase.rawQuery(
+        "SELECT pkg,sender,last_time,question,draft FROM reply_draft WHERE done=0 ORDER BY last_time DESC LIMIT 30", null
+    ).use { c -> buildList { while (c.moveToNext()) add(ReplyDraft(c.getString(0), c.getString(1), c.getLong(2), c.getString(3), c.getString(4))) } }
+    fun setReplyDraft(pkg: String, sender: String, draft: String) {
+        writableDatabase.update("reply_draft", ContentValues().apply { put("draft", draft) }, "pkg=? AND sender=?", arrayOf(pkg, sender))
+    }
+    fun doneReply(pkg: String, sender: String) {
+        writableDatabase.update("reply_draft", ContentValues().apply { put("done", 1) }, "pkg=? AND sender=?", arrayOf(pkg, sender))
     }
 
     /**
@@ -269,6 +308,8 @@ class NotificationDb private constructor(ctx: Context) :
         w.delete("briefing", "time<?", arrayOf((now - briefDays * day).toString()))
         w.delete("student_log", "time<?", arrayOf((now - logDays * day).toString()))
         w.delete("seen", "last<?", arrayOf((now - 180 * day).toString()))
+        // ✉️ 답장 초안: 보낸 것은 지우고, 안 보낸 것도 받은 알림과 같은 기간이 지나면 지움
+        w.delete("reply_draft", "done=1 OR last_time<?", arrayOf((now - notiDays * day).toString()))
         // 끝낸 할 일은 30일, 마감이 지난 지 60일 된 할 일은 끝내지 않았어도 지움
         w.delete("task", "done=1 AND due<?", arrayOf((now - 30 * day).toString()))
         w.delete("task", "due<?", arrayOf((now - 60 * day).toString()))
@@ -280,7 +321,7 @@ class NotificationDb private constructor(ctx: Context) :
     }
 
     /** 받은 알림 원문 모두 지우기 */
-    fun clearNotis() { writableDatabase.delete("noti", null, null) }
+    fun clearNotis() { writableDatabase.delete("noti", null, null); writableDatabase.delete("reply_draft", null, null) }   // 문자 원문이 든 답장 초안도
 
     /** 지운 자리를 정리해 파일 크기를 실제로 줄임 */
     fun vacuum() { writableDatabase.execSQL("VACUUM") }

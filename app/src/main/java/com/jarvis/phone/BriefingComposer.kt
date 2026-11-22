@@ -148,7 +148,7 @@ object BriefingComposer {
      * 대화방마다 30개씩 나눠 모델에 묻고 합친다(모든 방). 멈추면 거기까지 정리한 것과 나머지 방 이름만 보여 준다.
      */
     /** 사람 메시지 칸(답장할 연락·사람에게 온 메시지)과 앱 알림 칸을 따로 돌려준다 — 브리핑에서 놓는 자리가 달라서 */
-    data class Result(val people: String, val apps: String) {
+    data class Result(val people: String, val apps: String, val replies: List<RoomSummary> = emptyList()) {
         val text: String get() = listOf(people, apps.trim()).filter { it.isNotBlank() }.joinToString("\n\n").ifEmpty { "요약할 알림이 없어요." }
     }
 
@@ -190,7 +190,8 @@ object BriefingComposer {
             if (cut != null && leftover.isNotEmpty()) add("$cut 대화방 ${leftover.size}곳은 이름만 적었어요.")
             else if (cut != null) add(cut!!)
         }
-        return Result(render(rooms, leftover, notes), appSection(apps.filterNot { AD.containsMatchIn(it.title) || AD.containsMatchIn(it.text) }))
+        return Result(render(rooms, leftover, notes), appSection(apps.filterNot { AD.containsMatchIn(it.title) || AD.containsMatchIn(it.text) }),
+            rooms.filter { it.needReply })
     }
 
     /** 한 대화방을 30개씩 나눠 요약한 것들을 하나로: 요점·요청은 이어 붙이고(같은 말은 한 번), 하나라도 답장 필요면 필요 */
@@ -220,7 +221,7 @@ object BriefingComposer {
             append("💬 사람에게 온 메시지 (${rooms.size + leftover.size}개 방)\n")
             talk.forEach { r ->
                 append("- ${r.conv.room} (${r.conv.items.size}건): ${r.point}")
-                if (r.ask.isNotEmpty()) append(" → ${r.ask}")
+                if (r.ask.isNotEmpty() && !r.point.contains(r.ask)) append(" → ${r.ask}")   // 짧은 한 마디는 요점이 곧 물음이라 두 번 쓰지 않음
                 append("\n")
             }
             if (others.isNotEmpty()) {

@@ -577,6 +577,51 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun closeBriefingDetail() { briefingDetail = null }
 
+    // ── ✉️ 문자 답장 초안 ──
+    var replyDrafts by mutableStateOf<List<ReplyDraft>>(emptyList())
+        private set
+    /** 지금 초안을 쓰는 중인 보낸 사람 (없으면 null) */
+    var draftingFor by mutableStateOf<String?>(null)
+        private set
+    fun canReplyDirectly(d: ReplyDraft) = ReplyHandles.canReplyDirectly(d.sender)
+    private suspend fun reloadReplies() { val l = withContext(Dispatchers.IO) { db.openReplies() }; replyDrafts = l }
+    /** ✏️ 초안 만들기·다시 쓰기 (누를 때 모델을 불러와 한 건만) */
+    fun makeDraft(d: ReplyDraft) {
+        if (draftingFor != null || bgRunning) return
+        draftingFor = d.sender
+        viewModelScope.launch {
+            try {
+                val text = withContext(Dispatchers.IO) {
+                    val items = db.since(d.lastTime - 3 * 24 * 3600_000L).filter { it.pkg == d.pkg && it.room.isEmpty() && it.title == d.sender }
+                        .ifEmpty { listOf(NotiItem(0, d.pkg, "문자", d.sender, d.question, d.lastTime)) }
+                    ReplyDrafter.clean(summarizer.complete(ReplyDrafter.prompt(d.sender, items)))
+                }
+                if (text.isNotEmpty()) withContext(Dispatchers.IO) { db.setReplyDraft(d.pkg, d.sender, text) }
+                else status = "초안을 만들지 못했어요. 다시 눌러 주세요."
+            } catch (t: Throwable) {
+                status = "초안 만들기 실패 · ${t.javaClass.simpleName}"
+            } finally {
+                draftingFor = null
+                AppScope.io.launch { summarizer.release() }   // 화면에서 쓴 모델도 바로 내려 폰을 가볍게
+                reloadReplies()
+            }
+        }
+    }
+    /** 💬 보내기: 고친 글로. 바로 답장이 되면 끝난 것으로, 아니면 문자 앱을 열고 '끝' 표시는 선생님이 */
+    fun sendReply(d: ReplyDraft, text: String): String {
+        val ctx = getApplication<Application>()
+        val direct = ReplyHandles.canReplyDirectly(d.sender)
+        val msg = ReplyHandles.send(ctx, d.pkg, d.sender, text)
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { if (direct && msg.endsWith("보냈어요")) db.doneReply(d.pkg, d.sender) else db.setReplyDraft(d.pkg, d.sender, text) }
+            reloadReplies()
+        }
+        return msg
+    }
+    fun doneReply(d: ReplyDraft) {
+        viewModelScope.launch { withContext(Dispatchers.IO) { db.doneReply(d.pkg, d.sender) }; reloadReplies() }
+    }
+
     // ── 🧹 저장 공간 ──
     var storageUsage by mutableStateOf<Storage.Usage?>(null)
         private set
@@ -919,7 +964,8 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
             }
             val last = db.lastBriefing()
             val all = db.briefings()
-            withContext(Dispatchers.Main) { todayItems = items; lastBriefing = last; briefings = all }
+            val replies = db.openReplies()
+            withContext(Dispatchers.Main) { todayItems = items; lastBriefing = last; briefings = all; replyDrafts = replies }
         }
     }
 

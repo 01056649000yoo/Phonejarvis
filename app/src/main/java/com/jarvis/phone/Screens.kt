@@ -33,10 +33,11 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** 이번 버전에서 바뀐 점 한 줄 (버전 올릴 때 같이 고치기). */
-private const val WHATS_NEW = "답장할 연락은 명부·키워드에 있는 사람만 · 지난 요약을 날짜별로 · 요약 30일·원래 알림 7일 자동 정리"
+private const val WHATS_NEW = "✉️ 문자 답장 초안 · 답장할 연락은 명부·키워드에 있는 사람만 · 지난 요약을 날짜별로 · 요약 30일·원래 알림 7일 자동 정리"
 
 /** 업데이트 내역 큰 창 (버전 올릴 때 같이 고치기) */
 private val WHATS_NEW_DETAIL = listOf(
+    "✉️ 문자 답장 초안" to "문자로 온 답장할 연락은 요약할 때 AI가 답장 초안을 미리 써 둬요(한 번에 5건). 요약 탭 ✉️ 답장할 문자에서 고친 뒤 💬 보내기를 누르면 그 사람에게 바로 가요. 바로 보내기가 안 되면 복사하고 문자 앱을 열어 드려요. 자동으로 보내는 일은 없어요. (카톡은 카톡 안의 답장 추천을 쓰세요)",
     "🙋 답장할 연락은 명부에 있는 사람만" to "묻는 말이 있다고 다 올리지 않고, ⭐ 중요 키워드·학생 이름·👪 학부모 명부·👥 사람 묶음에 있는 이름이 나온 연락만 답장할 연락으로 올려요. 다른 사람의 묻는 말은 💬 메시지 칸에 '→ 요청'으로 그대로 보여요.",
     "📚 지난 요약을 날짜별로" to "지난 요약이 오늘·어제·날짜별 묶음으로 정리돼요. 오늘만 펼쳐 두고, 날짜를 누르면 그날 요약이 나와요. 요약은 30일, 원래 알림은 7일 지나면 저절로 지워져요(설정 → 🧹 저장 공간에서 바꾸기).",
     "⏰ 정한 시각에 요약이 꼭 와요" to "정한 시각 5분 전에 조용히 미리 요약해 두었다가 정각에 결과 알림만 보내요. 새 알림이 없어도 '새 알림 없음 · 마지막 요약 언제'를 알려 줘서 요약이 돌았는지 바로 알 수 있어요. (N시간마다 요약은 새 알림이 없으면 예전처럼 조용히 넘어가요)",
@@ -301,6 +302,7 @@ private fun BriefingTab(vm: JarvisViewModel) {
     if (!vm.hasModel) Text("AI 모델이 없어요. 설정 탭에서 받아 주세요.",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
     vm.briefingDetail?.let { (b, items) -> BriefingDetailDialog(vm, b, items) }
+    if (vm.replyDrafts.isNotEmpty()) ReplyDraftsCard(vm)
     // 최신 브리핑 카드: 접으면 "언제·몇 건"만, 숨기면 맨 위에서 빠짐 (맨 아래 📚 모음에는 남음)
     val latest = vm.briefings.firstOrNull()
     when {
@@ -404,6 +406,59 @@ private fun HistoryTab(vm: JarvisViewModel) {
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * ✉️ 답장할 문자 (2026-11-22): 문자로 온 🙋 답장할 연락마다 초안 → 고쳐 쓰고 보내기. 자동으로 보내지 않음.
+ * 카톡은 카톡 안에 답장 추천이 있어 하지 않음(선생님 결정).
+ */
+@Composable
+private fun ReplyDraftsCard(vm: JarvisViewModel) {
+    val ctx = LocalContext.current
+    val timeFmt = remember { SimpleDateFormat("M/d HH:mm", Locale.KOREA) }
+    var open by rememberSaveable { mutableStateOf(true) }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth().clickable { open = !open }, verticalAlignment = Alignment.CenterVertically) {
+                Text("✉️ 답장할 문자 · ${vm.replyDrafts.size}", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Text(if (open) "▾" else "▸")
+            }
+            if (open) {
+                Text("AI가 쓴 초안이에요. 고친 뒤 보내기를 눌러야만 나가요. 모르는 내용은 [ ]로 비워 두었어요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                vm.replyDrafts.forEach { d ->
+                    HorizontalDivider()
+                    var text by rememberSaveable(d.sender, d.lastTime, d.draft) { mutableStateOf(d.draft) }
+                    Text("${d.sender} · ${timeFmt.format(d.lastTime)}", fontWeight = FontWeight.Bold)
+                    Text("“${d.question}”", style = MaterialTheme.typography.bodyMedium, maxLines = 3)
+                    if (vm.draftingFor == d.sender) {
+                        Text("✏️ 초안 쓰는 중… (처음엔 모델을 불러오느라 30초쯤)", style = MaterialTheme.typography.bodySmall)
+                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                    } else if (d.draft.isEmpty() && text.isEmpty()) {
+                        OutlinedButton(onClick = { vm.makeDraft(d) }, enabled = vm.hasModel && vm.draftingFor == null && !vm.bgRunning) { Text("✏️ 초안 만들기") }
+                    }
+                    if (d.draft.isNotEmpty() || text.isNotEmpty()) {
+                        OutlinedTextField(value = text, onValueChange = { text = it }, modifier = Modifier.fillMaxWidth(), minLines = 2)
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Button(onClick = {
+                                // [ ] 빈칸(AI가 모르는 사실)을 채우지 않고 나가지 않게
+                                if (Regex("\\[[^\\]]*\\]").containsMatchIn(text)) {
+                                    android.widget.Toast.makeText(ctx, "[ ] 빈칸을 먼저 채워 주세요", android.widget.Toast.LENGTH_LONG).show()
+                                    return@Button
+                                }
+                                val msg = vm.sendReply(d, text)
+                                android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_LONG).show()
+                            }, enabled = text.isNotBlank()) { Text(if (vm.canReplyDirectly(d)) "💬 보내기" else "📋 복사·문자 앱") }
+                            OutlinedButton(onClick = { vm.makeDraft(d) }, enabled = vm.hasModel && vm.draftingFor == null && !vm.bgRunning) { Text("다시 쓰기") }
+                            TextButton(onClick = { vm.doneReply(d) }) { Text("✓ 끝") }
+                        }
+                    } else {
+                        TextButton(onClick = { vm.doneReply(d) }) { Text("✓ 답장 안 해도 돼요") }
                     }
                 }
             }
