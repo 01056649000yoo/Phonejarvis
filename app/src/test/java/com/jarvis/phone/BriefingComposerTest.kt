@@ -99,4 +99,17 @@ class BriefingComposerTest {
         // 단톡방에서 사람이 '배송'이라는 말을 써도 사람 메시지
         assertTrue(BriefingComposer.isPerson(kakao("6학년 동학년방", "김부장", "학예회 소품 배송은 목요일에 와요")))
     }
+
+    @Test fun 답장할_연락은_명부_키워드가_나오는_방만() = runBlocking {
+        val rules = AppFilter.Rules(emptySet(), emptySet(), keywords = listOf("민준"))
+        val items = listOf(
+            kakao("", "민준 어머님", "내일 도시락 챙겨야 하나요?"),
+            kakao("", "택배기사", "문 앞에 둘까요?"),
+        )
+        val r = BriefingComposer.compose(items, ask = { error("부르면 안 됨") }, replyAllowed = { c -> c.items.any { rules.mentionsRoster(it) } })
+        assertTrue(r.people, r.people.contains("🙋 답장할 연락 (1)") && r.people.contains("민준 어머님"))
+        // 명부에 없는 사람의 묻는 말은 💬 메시지 칸에 그대로
+        val talk = r.people.substringAfter("💬")
+        assertTrue(r.people, talk.contains("택배기사") && talk.contains("문 앞에 둘까요"))
+    }
 }

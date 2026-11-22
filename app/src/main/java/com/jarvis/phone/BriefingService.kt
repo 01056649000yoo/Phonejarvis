@@ -210,7 +210,7 @@ object Briefings {
         val (peoplePart, peopleItems) = People.section(People.customBook(ctx), items - workItems.toSet())
         val rest = items - workItems.toSet() - peopleItems
         // 🙋 답장할 연락·💬 사람 메시지(대화방마다 AI 세 줄)·📦 앱 알림(AI 없이 건수) — BriefingComposer
-        val ai = if (rest.isEmpty()) null else summarizer.summarize(rest, onStatus)
+        val ai = if (rest.isEmpty()) null else summarizer.summarize(rest, onStatus) { c -> c.items.any { rules.mentionsRoster(it) } }
         // 읽는 순서: 마감 → 학부모 → 답장할 연락·사람 메시지 → 내 묶음 → 업무 → 키워드 → 앱 알림
         val aiPeople = ai?.people?.takeIf { it.isNotBlank() }?.let { it + "\n\n" } ?: ""
         val text = (taskPart + parentPart + aiPeople + peoplePart + workPart + keywordPart + (ai?.apps ?: "")).trim()

@@ -74,17 +74,19 @@ class Summarizer private constructor(private val ctx: Context) {
     /** 중지했거나 시간 제한에 걸렸는데 정리된 부분이 하나도 없을 때. */
     class StoppedException(msg: String) : Exception(msg)
 
-    suspend fun summarize(items: List<NotiItem>, onStatus: (String) -> Unit): BriefingComposer.Result =
+    suspend fun summarize(items: List<NotiItem>, onStatus: (String) -> Unit,
+                          replyAllowed: (BriefingComposer.Conversation) -> Boolean = { true }): BriefingComposer.Result =
         runLock.withLock {
             stopRequested = false
-            try { summarizeLocked(items, onStatus) } finally { stopRequested = false }
+            try { summarizeLocked(items, onStatus, replyAllowed) } finally { stopRequested = false }
         }
 
     /**
      * v1.4.0: 사람 메시지는 대화방마다 따로 세 줄(요점·요청·답장)로, 앱 알림은 AI 없이 건수로 — BriefingComposer.
      * 중지·시간 제한은 대화방 하나가 끝날 때마다 본다.
      */
-    private suspend fun summarizeLocked(items: List<NotiItem>, onStatus: (String) -> Unit): BriefingComposer.Result {
+    private suspend fun summarizeLocked(items: List<NotiItem>, onStatus: (String) -> Unit,
+                                        replyAllowed: (BriefingComposer.Conversation) -> Boolean): BriefingComposer.Result {
         val deadline = System.currentTimeMillis() + MAX_MILLIS
         var called = 0
         val result = BriefingComposer.compose(
@@ -98,6 +100,7 @@ class Summarizer private constructor(private val ctx: Context) {
                     else -> null
                 }
             },
+            replyAllowed = replyAllowed,
         )
         if (stopRequested && called == 0) throw StoppedException("중지했어요.")
         return result

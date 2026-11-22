@@ -157,6 +157,8 @@ object BriefingComposer {
         ask: suspend (String) -> String,
         onStatus: (String) -> Unit = {},
         stopReason: () -> String? = { null },
+        /** 🙋 답장할 연락으로 올려도 되는 방(명부·키워드가 나오는 방). 아니면 묻는 말이 있어도 💬 메시지에 요청만 붙여 둠 */
+        replyAllowed: (Conversation) -> Boolean = { true },
     ): Result {
         val (people, apps) = items.partition(::isPerson)
         val convs = conversations(people)
@@ -180,6 +182,8 @@ object BriefingComposer {
             if (parts.isEmpty()) { leftover += conv; continue }
             rooms += merge(conv, parts)
         }
+        // 명부·키워드가 안 나오는 방은 답장할 연락에서 뺌(요청은 💬 줄에 → 로 남김)
+        rooms.replaceAll { if (it.needReply && !replyAllowed(it.conv)) it.copy(needReply = false) else it }
         // 방 순서는 최근에 온 것부터
         rooms.sortByDescending { it.conv.last }
         val notes = buildList {

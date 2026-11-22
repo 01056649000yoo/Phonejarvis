@@ -116,6 +116,13 @@ object AppFilter {
             return true
         }
         fun allows(n: NotiItem) = allows(n.pkg, n.room, n.title, n.text)
+        /**
+         * 🙋 답장할 연락으로 올릴지 (2026-11-22 선생님: 묻는 말만으로 고르지 말고 명부에 있는 사람이 나올 때만):
+         * ⭐ 중요 키워드(학생 이름 포함)·👪 학부모 명부·학부모 방·👥 사람 묶음 이름이 보낸 사람·방·내용에 있으면
+         */
+        fun mentionsRoster(n: NotiItem): Boolean =
+            hasKeyword(keywords, n.title, n.text, n.room) || isLinkedParent(n.pkg, n.room, n.title, n.text) ||
+                ParentAdvisor.isParent(parentRooms, n.pkg, n.room.ifEmpty { n.title }) || hasKeyword(people, n.title, n.room, n.text)
         /** 학부모 명부의 이름·번호가 보낸 사람·방·내용에 들어 있는 알림인지 */
         fun isLinkedParent(pkg: String, room: String, title: String, text: String = "") =
             parentLinks.isNotEmpty() && ParentBook.find(parentLinks, NotiItem(0, pkg, "", title, text, 0, room)) != null
