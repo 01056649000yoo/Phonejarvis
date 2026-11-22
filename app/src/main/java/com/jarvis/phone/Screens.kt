@@ -33,10 +33,11 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** 이번 버전에서 바뀐 점 한 줄 (버전 올릴 때 같이 고치기). */
-private const val WHATS_NEW = "요약 말투를 부드럽게 · 폰에 무리가 덜 가게 · 설치 첫날부터 알림 앱 정리 추천 · 걸린 시간 표시"
+private const val WHATS_NEW = "알림 검색 · 요약 말투를 부드럽게 · 폰에 무리가 덜 가게 · 설치 첫날부터 알림 앱 정리 추천 · 걸린 시간 표시"
 
 /** 업데이트 내역 큰 창 (버전 올릴 때 같이 고치기) */
 private val WHATS_NEW_DETAIL = listOf(
+    "🔎 알림 검색" to "알림 탭 맨 위 검색 칸에 낱말을 치면 모아 둔 알림 전체(오늘 것만이 아니라 저장 기간 안의 것 모두)에서 내용·보낸 사람·대화방 이름으로 찾아 최근 것부터 보여 줘요. 띄어 쓰면 낱말이 모두 든 것만. 찾은 낱말은 노랗게 표시돼요.",
     "🗣️ 요약 말투를 부드럽게" to "'다음에 연락해' 같은 말을 '지시'·'명령'·'통보'처럼 딱딱하게 적던 것을 '다음에 연락하라고 함'처럼 고쳤어요.",
     "🌡️ 폰에 무리가 덜 가게" to "폰이 뜨겁거나 배터리가 15% 이하(충전 중 아님)면 AI를 켜지 않고 대화방마다 최근 말 그대로 정리해요. 조금 따뜻하거나 절전 모드면 요약은 하되 문자 답장 초안은 다음으로 미뤄요. AI가 쓰는 메모리 공간도 실제로 쓰는 만큼만 잡고, GPU가 안 되는 폰에서는 CPU를 다 쓰지 않게 했어요. 요약 끝 ⏱ 줄에 메모리·발열도 나와요.",
     "🌱 설치 첫날부터 알림 앱 추천" to "알림 접근을 켜는 순간 알림창에 남아 있던 알림을 앱별로 세고, 처음 정리하기 전에는 폰에 설치된 메시지·업무·알림 앱도 이름을 보고 미리 추천해요(쇼핑·게임·금융 등은 빼기). 설정 → 🌱 알림 앱 정리에서 '추천대로 적용' 한 번이면 돼요. 알림창에 있던 알림은 요약에는 넣지 않아요.",
@@ -331,6 +332,11 @@ private fun BriefingTab(vm: JarvisViewModel) {
 @Composable
 private fun AlertsTab(vm: JarvisViewModel) {
     val timeFmt = remember { SimpleDateFormat("HH:mm", Locale.KOREA) }
+    // 🔎 메시지 내용 검색(2026-11-22 선생님): 모아 둔 알림 전체에서. 찾는 동안에는 결과만 보임
+    OutlinedTextField(value = vm.searchQuery, onValueChange = { vm.search(it) }, singleLine = true,
+        modifier = Modifier.fillMaxWidth(), placeholder = { Text("🔎 메시지 검색 (내용·보낸 사람·방 이름)") },
+        trailingIcon = { if (vm.searchQuery.isNotEmpty()) TextButton(onClick = { vm.search("") }) { Text("지우기") } })
+    if (vm.searchQuery.isNotBlank()) { SearchResults(vm); return }
     // 아직 요약 안 한 알림: 요약 탭에서 '지금 정리하기'를 하면 사라짐
     if (vm.pendingItems.isNotEmpty()) {
         var expanded by rememberSaveable { mutableStateOf(false) }
@@ -363,6 +369,39 @@ private fun AlertsTab(vm: JarvisViewModel) {
     }
     Text("오늘 받은 알림 전체 · 앱·대화방별", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 4.dp))
     TodayAllPage(vm)
+}
+
+/** 🔎 검색 결과: 최근 것부터 100건까지, 찾은 낱말은 굵게 */
+@Composable
+private fun SearchResults(vm: JarvisViewModel) {
+    val fmt = remember { SimpleDateFormat("M/d HH:mm", Locale.KOREA) }
+    val list = vm.searchResults ?: run { Text("찾는 중…", style = MaterialTheme.typography.bodySmall); return }
+    val words = vm.searchQuery.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+    Text(if (list.isEmpty()) "'${vm.searchQuery.trim()}' 이(가) 든 알림이 없어요. 원래 알림은 ${Storage.label(vm.notiDays)} 지나면 지워져요."
+         else "${list.size}건" + (if (list.size >= 100) " (최근 100건까지)" else "") + " · 최근 것부터",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    list.forEach { n ->
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                val who = if (n.room.isNotEmpty() && n.title != n.room) "${n.room} · ${n.title}" else n.title
+                Text("$who · ${n.app} · ${fmt.format(n.time)}", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                Text(highlight(n.text.ifBlank { n.title }, words), style = MaterialTheme.typography.bodyMedium, maxLines = 6)
+            }
+        }
+    }
+}
+
+/** 글 속 낱말을 굵게(대소문자 구분 없이) */
+private fun highlight(text: String, words: List<String>) = androidx.compose.ui.text.buildAnnotatedString {
+    append(text)
+    words.forEach { w ->
+        var i = text.indexOf(w, ignoreCase = true)
+        while (w.isNotEmpty() && i >= 0) {
+            addStyle(androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold, background = androidx.compose.ui.graphics.Color(0x55FFE066)), i, i + w.length)
+            i = text.indexOf(w, i + w.length, ignoreCase = true)
+        }
+    }
 }
 
 // ───────────────────────── 📚 지난 요약 탭 ─────────────────────────

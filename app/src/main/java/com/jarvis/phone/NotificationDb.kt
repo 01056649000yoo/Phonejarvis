@@ -270,6 +270,20 @@ class NotificationDb private constructor(ctx: Context) :
 
     fun today(): List<NotiItem> = since(startOfToday())
 
+    /** 🔎 모은 알림 검색(2026-11-22 선생님): 내용·보낸 이·대화방·앱 이름에 낱말이 든 것, 최근 것부터 [limit]개. 띄어 쓴 낱말은 모두 들어 있어야 함 */
+    fun search(query: String, limit: Int = 100): List<NotiItem> {
+        val words = query.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }.take(5)
+        if (words.isEmpty()) return emptyList()
+        val esc = { w: String -> "%" + w.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%" }
+        val where = words.joinToString(" AND ") { "(text LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\' OR room LIKE ? ESCAPE '\\' OR app LIKE ? ESCAPE '\\')" }
+        val args = words.flatMap { w -> List(4) { esc(w) } }.toTypedArray()
+        val out = mutableListOf<NotiItem>()
+        readableDatabase.rawQuery("SELECT id,pkg,app,title,text,time,room FROM noti WHERE $where ORDER BY time DESC LIMIT $limit", args).use { c ->
+            while (c.moveToNext()) out += NotiItem(c.getLong(0), c.getString(1), c.getString(2), c.getString(3), c.getString(4), c.getLong(5), c.getString(6))
+        }
+        return out
+    }
+
     /** 최근 days일 동안 알림을 보낸 앱별 건수와 제목 예시 (많은 순). 알림 앱 정리 추천에 씀. */
     fun appStats(days: Int = 7): List<AppStat> {
         val from = (System.currentTimeMillis() - days * 24L * 3600 * 1000).toString()

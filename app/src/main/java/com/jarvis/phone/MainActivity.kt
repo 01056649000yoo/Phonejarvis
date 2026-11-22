@@ -903,6 +903,22 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var todayItems by mutableStateOf<List<NotiItem>>(emptyList())
         private set
+    /** 🔎 알림 검색: 낱말과 결과(null = 검색 안 함) */
+    var searchQuery by mutableStateOf("")
+        private set
+    var searchResults by mutableStateOf<List<NotiItem>?>(null)
+        private set
+    private var searchJob: kotlinx.coroutines.Job? = null
+    fun search(q: String) {
+        searchQuery = q
+        searchJob?.cancel()
+        if (q.isBlank()) { searchResults = null; return }
+        searchJob = viewModelScope.launch(Dispatchers.IO) {
+            delay(250)   // 치는 동안 매번 찾지 않게
+            val found = runCatching { db.search(q) }.getOrDefault(emptyList())
+            withContext(Dispatchers.Main) { if (searchQuery == q) searchResults = found }
+        }
+    }
     var status by mutableStateOf("")
         private set
     var summary by mutableStateOf("")
