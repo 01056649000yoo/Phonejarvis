@@ -174,12 +174,18 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         val ctx = getApplication<Application>()
         viewModelScope.launch {
             // 최근 7일 알림을 보낸 앱 + 예전에 알림을 보낸 앱(뺀 앱 포함) + 직접 추가한 앱 → 한 번 빼도 목록에서 사라지지 않음
+            // 🌱 첫날 보완: 알림 접근을 켤 때 알림창에 있던 알림(ShadeSeed) + 처음 정리 전에는 폰에 설치된 앱도
             val stats = withContext(Dispatchers.IO) {
-                val recent = db.appStats(7)
+                val recent = ShadeSeed.combine(db.appStats(7), ShadeSeed.load(ctx))
                 val have = recent.map { it.pkg }.toMutableSet()
                 val older = db.knownApps().filter { have.add(it.first) }.map { AppStat(it.first, it.second, 0, emptyList()) }
                 val added = AppFilter.addedApps(ctx).filter { have.add(it) }.map { AppStat(it, labelOf(it), 0, emptyList()) }
-                recent + older + added
+                // 설치된 앱: 처음 정리 전에는 메시지·업무·알림 보내는 앱을 모두, 그 뒤에는 뺀 앱만(목록에서 사라지지 않게)
+                val excluded = AppFilter.excluded(ctx)
+                val installed = installedApps(ctx)
+                    .filter { it.group <= 2 && (!appsApplied || it.pkg in excluded) && have.add(it.pkg) }
+                    .map { AppStat(it.pkg, it.name, 0, emptyList()) }
+                recent + older + added + installed
             }
             val pkgs = stats.map { it.pkg }.toSet()
             if (pkgs == aiDoneFor && appRecs.isNotEmpty()) return@launch
@@ -221,29 +227,14 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             addableApps = withContext(Dispatchers.IO) {
                 val listed = appRecs.map { it.stat.pkg }.toSet()
-                val pm = ctx.packageManager
-                pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)
-                    .map { it.activityInfo.packageName }.distinct()
-                    .filter { it != ctx.packageName && it !in listed }
-                    .mapNotNull { pkg ->
-                        val info = runCatching { pm.getApplicationInfo(pkg, 0) }.getOrNull() ?: return@mapNotNull null
-                        val name = pm.getApplicationLabel(info).toString()
-                        val msg = AppAdvisor.isMessaging(name, pkg)
-                        // 폰 기본 시스템 항목(내 파일·보안 폴더·설정 등)은 빼고 설치한 앱만. 단, 기본 문자 같은 메시지 앱은 남김
-                        val system = info.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM != 0 &&
-                            info.flags and android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP == 0
-                        if (system && !msg && !AppAdvisor.isWork(name, pkg)) return@mapNotNull null
-                        // 알림을 보내는 앱인지 (알림 권한을 요청하는 앱)
-                        val notifies = runCatching {
-                            pm.getPackageInfo(pkg, android.content.pm.PackageManager.GET_PERMISSIONS)
-                                .requestedPermissions?.contains("android.permission.POST_NOTIFICATIONS") == true
-                        }.getOrDefault(false)
-                        AddableApp(pkg, name, when { msg -> 0; AppAdvisor.isWork(name, pkg) -> 1; notifies -> 2; else -> 3 })
-                    }
-                    .sortedWith(compareBy<AddableApp> { it.group }.thenBy { it.name })
+                installedApps(ctx, fresh = true).filter { it.pkg !in listed }.map { AddableApp(it.pkg, it.name, it.group) }
             }
         }
     }
+    /** 설치된 앱 목록은 느려서(앱마다 권한 조회) 한 번 읽어 두고 씀. ＋ 앱 추가 창을 열 때는 새로 읽음 */
+    @Volatile private var installedCache: List<InstalledApp>? = null
+    private fun installedApps(ctx: Application, fresh: Boolean = false): List<InstalledApp> =
+        (if (fresh) null else installedCache) ?: runCatching { InstalledApps.list(ctx) }.getOrDefault(emptyList()).also { installedCache = it }
     fun closeAddApps() { addableApps = null }
     fun addApp(pkg: String, name: String) {
         val ctx = getApplication<Application>()

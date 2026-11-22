@@ -33,10 +33,11 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** 이번 버전에서 바뀐 점 한 줄 (버전 올릴 때 같이 고치기). */
-private const val WHATS_NEW = "요약이 더 빨라졌어요 · 걸린 시간 표시 · 문자 답장 초안은 요약 알림 뒤에"
+private const val WHATS_NEW = "설치 첫날부터 알림 앱 정리 추천 · 요약이 더 빨라졌어요 · 걸린 시간 표시"
 
 /** 업데이트 내역 큰 창 (버전 올릴 때 같이 고치기) */
 private val WHATS_NEW_DETAIL = listOf(
+    "🌱 설치 첫날부터 알림 앱 추천" to "알림 접근을 켜는 순간 알림창에 남아 있던 알림을 앱별로 세고, 처음 정리하기 전에는 폰에 설치된 메시지·업무·알림 앱도 이름을 보고 미리 추천해요(쇼핑·게임·금융 등은 빼기). 설정 → 🌱 알림 앱 정리에서 '추천대로 적용' 한 번이면 돼요. 알림창에 있던 알림은 요약에는 넣지 않아요.",
     "⚡ 요약이 더 빨라졌어요" to "AI에 넣는 글과 AI가 쓰는 답을 짧게 줄이고, 짧은 1:1 메시지(3개까지)는 AI 없이 원문 그대로 보여 줘요. 가짜 하루치 알림으로 41초 → 30초. 문자 답장 초안은 요약 알림을 먼저 보낸 뒤에 써서 결과가 늦어지지 않아요.",
     "⏱ 걸린 시간이 보여요" to "요약 맨 아래와 📝 최근 자동 요약에 '⏱ 48초 · 모델 불러오기 21초(GPU) · AI 2번 27초'처럼 어디에 시간이 들었는지 나와요. 오래 걸리면 이 줄을 알려 주세요.",
     "✉️ 문자 답장 초안" to "문자로 온 답장할 연락은 요약할 때 AI가 답장 초안을 미리 써 둬요(한 번에 5건). 요약 탭 ✉️ 답장할 문자에서 고친 뒤 💬 보내기를 누르면 그 사람에게 바로 가요. 바로 보내기가 안 되면 복사하고 문자 앱을 열어 드려요. 자동으로 보내는 일은 없어요. (카톡은 카톡 안의 답장 추천을 쓰세요)",
@@ -922,19 +923,25 @@ private fun AppCleanupCard(vm: JarvisViewModel) {
         Column(Modifier.animateContentSize(Motion.size).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("🌱 알림 앱 정리", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text(
-                when {
-                    recs.isEmpty() -> "아직 모은 알림이 없어요. 알림이 쌓이면 쌤톡스가 앱을 정리해 추천해 드려요."
-                    vm.aiBusy -> "최근 7일 동안 알림을 보낸 앱 ${recs.size}개 · AI가 살펴보는 중…"
-                    recs.any { it.byAi } -> "최근 7일 동안 알림을 보낸 앱 ${recs.size}개 · AI 추천"
-                    else -> "최근 7일 동안 알림을 보낸 앱 ${recs.size}개 · 기본 추천"
+                run {
+                    // 알림을 보낸 앱 / 아직 알림이 없는 설치된 앱(처음 정리 전 미리 추천)
+                    val sent = recs.count { it.stat.count > 0 }
+                    val apps = if (sent < recs.size) "알림을 보낸 앱 ${sent}개 · 설치된 앱 ${recs.size - sent}개" else "최근 7일 동안 알림을 보낸 앱 ${recs.size}개"
+                    when {
+                        recs.isEmpty() -> "아직 모은 알림이 없어요. 알림이 쌓이면 쌤톡스가 앱을 정리해 추천해 드려요."
+                        vm.aiBusy -> "$apps · AI가 살펴보는 중…"
+                        recs.any { it.byAi } -> "$apps · AI 추천"
+                        else -> "$apps · 기본 추천"
+                    }
                 },
                 style = MaterialTheme.typography.bodyMedium,
             )
             // 늘 보이는 안내: 목록은 실제로 알림이 온 앱만 나옴
             Surface(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f), shape = MaterialTheme.shapes.medium) {
                 Text(
-                    "ℹ️ 이 목록에는 폰에 실제로 알림이 온 앱만 나와요. 카톡·문자·밴드 같은 메시지·SNS 앱은 " +
-                    "그 앱의 알림을 켜 두어야 쌤톡스가 모을 수 있고, 여기 목록에도 떠요.",
+                    "ℹ️ 이 목록에는 폰에 알림이 온 앱(알림 접근을 켤 때 알림창에 있던 것 포함)이 나와요. 처음 정리하기 전에는 " +
+                    "아직 알림이 없는 설치된 앱도 이름을 보고 미리 추천해요. 카톡·문자·밴드 같은 메시지·SNS 앱은 " +
+                    "그 앱의 알림을 켜 두어야 쌤톡스가 모을 수 있어요.",
                     Modifier.padding(10.dp), style = MaterialTheme.typography.bodySmall,
                 )
             }

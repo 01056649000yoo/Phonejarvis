@@ -70,7 +70,28 @@ class NotificationCollectorService : NotificationListenerService() {
         }
     }
 
-    override fun onListenerConnected() { instance = this }
+    override fun onListenerConnected() {
+        instance = this
+        // 🌱 알림창 훑기: 지금 알림창에 남은 알림을 앱별로 세어 '알림 앱 정리' 추천 재료로(요약 재료에는 넣지 않음)
+        val active = runCatching { activeNotifications }.getOrNull() ?: return
+        AppScope.io.launch {
+            runCatching {
+                val db = NotificationDb.get(this@NotificationCollectorService)
+                val seen = active.filter { it.packageName != packageName && it.packageName !in IGNORED_PACKAGES && !it.isOngoing
+                        && it.notification.flags and Notification.FLAG_GROUP_SUMMARY == 0 }
+                    .mapNotNull { sbn ->
+                        val ex = sbn.notification.extras
+                        val title = ex.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim().orEmpty()
+                        val text = ex.getCharSequence(Notification.EXTRA_TEXT)?.toString()?.trim().orEmpty()
+                        if (title.isEmpty() && text.isEmpty()) return@mapNotNull null
+                        val app = appLabel(sbn.packageName)
+                        db.touchSeen(sbn.packageName, app, "", sbn.postTime)   // 📒 앱 이름 기억(내용 X)
+                        ShadeSeed.Seen(sbn.packageName, app, if (isSecretCode("$title $text")) "" else title)
+                    }
+                ShadeSeed.save(this@NotificationCollectorService, seen)
+            }
+        }
+    }
     override fun onListenerDisconnected() { if (instance === this) instance = null }
 
     /** 묶음 안에 보이는 알림이 하나도 없으면 묶음 요약("새 메시지 N개")도 지움 */
