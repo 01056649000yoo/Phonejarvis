@@ -132,4 +132,12 @@ class BriefingComposerTest {
         assertEquals("⏱ 48초 · 모델 불러오기 21초(GPU) · AI 2번 27초", Briefings.timingLine(48_900, s))
         assertEquals("⏱ 1초 · AI 안 씀", Briefings.timingLine(300, Summarizer.Stats()))
     }
+
+    @Test fun 딱딱한_말은_부드럽게() {
+        assertEquals("다음에 연락하라고 함", BriefingComposer.soften("다음에 연락하라는 지시"))
+        assertEquals("다음에 연락하라고 함", BriefingComposer.soften("다음에 연락하라고 지시함"))
+        assertEquals("자료를 보내 달라고 함", BriefingComposer.soften("자료를 보내 달라는 지시를 함"))
+        assertEquals("엄마가 말함", BriefingComposer.soften("엄마가 통보함"))
+        assertEquals("주말에 밥 먹자고 함", BriefingComposer.soften("주말에 밥 먹자고 함"))
+    }
 }
