@@ -70,53 +70,6 @@ class OpenInBackupFolder : ActivityResultContracts.OpenDocument() {
         )
 }
 
-/**
- * 🔎 찾은 백업 목록 (설치 안내 첫 화면·설정 백업 칸 공용).
- * 권한이 없으면 '모든 파일 접근' 안내 → 켜고 돌아오면 자동으로 찾음. 직접 고르기도 항상 가능.
- */
-@Composable
-fun BackupFinderPanel(vm: JarvisViewModel, onPickManually: () -> Unit) {
-    val ctx = LocalContext.current
-    val list = vm.backupCandidates
-    if (!vm.backupNeedsAccess && !vm.searchingBackup && list == null) return
-    val fmt = remember { java.text.SimpleDateFormat("M/d(E) HH:mm", java.util.Locale.KOREA) }
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("🔎 백업 파일 찾기", fontWeight = FontWeight.Bold)
-            when {
-                vm.backupNeedsAccess -> {
-                    Text("다운로드 폴더(카톡에서 저장한 파일 포함)에서 백업을 자동으로 찾으려면 '모든 파일 접근'을 한 번 켜 주세요. " +
-                         "켜고 돌아오면 바로 찾아요. 파일은 폰 밖으로 나가지 않아요.", style = MaterialTheme.typography.bodySmall)
-                    Button(onClick = { ctx.startActivity(ModelFinder.accessSettingsIntent(ctx)) }) { Text("권한 켜고 자동으로 찾기") }
-                }
-                vm.searchingBackup -> {
-                    Text("다운로드 폴더를 찾는 중…", style = MaterialTheme.typography.bodyMedium)
-                    LinearProgressIndicator(Modifier.fillMaxWidth())
-                }
-                list.isNullOrEmpty() ->
-                    Text("백업 파일을 못 찾았어요. 카톡으로 받은 파일이라면 카톡에서 '저장'을 누른 뒤 다시 찾거나, 직접 골라 주세요.",
-                        style = MaterialTheme.typography.bodySmall)
-                else -> {
-                    Text("${list.size}개 찾았어요 · 가장 최근 것이 맨 위예요", style = MaterialTheme.typography.bodySmall)
-                    list.take(5).forEachIndexed { i, c ->
-                        OutlinedCard(Modifier.fillMaxWidth()) {
-                            Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f)) {
-                                    Text((if (i == 0) "⭐ " else "") + fmt.format(c.created) + " 저장" + if (c.encrypted) " · 🔒" else "",
-                                        fontWeight = FontWeight.Bold)
-                                    Text(c.summary.ifEmpty { "쌤톡스 설정" }, style = MaterialTheme.typography.bodySmall)
-                                    Text(c.where, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                                Button(onClick = { vm.restoreCandidate(c) }) { Text("불러오기") }
-                            }
-                        }
-                    }
-                }
-            }
-            TextButton(onClick = onPickManually) { Text("직접 파일 고르기") }
-        }
-    }
-}
 
 private const val STEPS = 4
 
@@ -218,10 +171,9 @@ private fun WelcomeStep(vm: JarvisViewModel) {
     if (vm.status.startsWith("💾") || vm.status.startsWith("불러오지")) Text(vm.status, style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.primary)
     PrimaryButton("시작하기") { vm.onboardingStep = 1 }
-    TextButton(onClick = { vm.findBackups() }, modifier = Modifier.fillMaxWidth()) {
-        Text("💾 예전에 쓰던 설정 불러오기 (백업 파일 자동 찾기)")
+    TextButton(onClick = { restorePicker.launch(arrayOf("application/json", "*/*")) }, modifier = Modifier.fillMaxWidth()) {
+        Text("💾 예전에 쓰던 설정 불러오기 (다운로드/쌤톡스의 백업 파일 고르기)")
     }
-    BackupFinderPanel(vm, onPickManually = { restorePicker.launch(arrayOf("application/json", "*/*")) })
     // 모델 파일을 이미 다운로드 폴더에 받아 둔 경우: 진단·다운로드를 건너뛰고 바로 가져오기로
     TextButton(onClick = { vm.onboardingStep = 2 }, modifier = Modifier.fillMaxWidth()) {
         Text("모델 파일을 이미 받아 뒀어요 → 바로 가져오기")
@@ -340,9 +292,6 @@ private fun DownloadStep(vm: JarvisViewModel) {
          "이미 다운로드 폴더에 받아 뒀다면 ①은 건너뛰고 ② 파일 선택만 하면 돼요. (E4B·E2B 어느 파일이든 알아서 인식해요)",
         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-    // 이미 받아 둔 파일 자동 찾기
-    LaunchedEffect(Unit) { vm.scanDownloads() }
-    AutoFindCard(vm)
 
     // 데이터 요금 안내 (앱은 네트워크 상태 권한도 없어서 직접 확인하지 않고 사용자에게 물어봄)
     Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(
@@ -400,43 +349,6 @@ private fun DownloadStep(vm: JarvisViewModel) {
     PrimaryButton("다음", enabled = vm.hasModel && !vm.busy) { vm.onboardingStep = 3 }
 }
 
-/** 다운로드 폴더에 이미 받아 둔 모델을 찾아 한 번에 가져오는 카드. */
-@Composable
-private fun AutoFindCard(vm: JarvisViewModel) {
-    val ctx = LocalContext.current
-    if (vm.hasModel) return
-    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(
-        containerColor = MaterialTheme.colorScheme.primaryContainer,
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("🔎 이미 받아 둔 모델 찾기", fontWeight = FontWeight.Bold)
-            when {
-                !vm.fileAccess -> {
-                    Text("다운로드 폴더에 받아 둔 파일을 쌤톡스가 직접 찾아요. '모든 파일 접근'을 한 번 켜 주세요. " +
-                         "쌤톡스는 인터넷 권한이 없어서 파일이 폰 밖으로 나가지 않아요. 다 가져온 뒤 꺼도 돼요.",
-                        style = MaterialTheme.typography.bodyMedium)
-                    Button(onClick = { ctx.startActivity(ModelFinder.accessSettingsIntent(ctx)) },
-                        colors = ButtonDefaults.buttonColors(containerColor = Ssam.Sprout, contentColor = Ssam.Ink)) {
-                        Text("권한 켜고 자동으로 찾기")
-                    }
-                }
-                !vm.scanned -> Text("다운로드 폴더를 찾는 중…", style = MaterialTheme.typography.bodyMedium)
-                vm.found.isEmpty() -> {
-                    Text("다운로드 폴더에서 모델 파일을 못 찾았어요. 아래 ①로 받거나, 다른 폴더에 있다면 ② 파일 선택을 쓰세요.",
-                        style = MaterialTheme.typography.bodyMedium)
-                    OutlinedButton(onClick = { vm.scanDownloads() }) { Text("다시 찾기", color = Ssam.Chalk) }
-                }
-                else -> vm.found.take(3).forEach { f ->
-                    Text("찾았어요: ${f.model?.title ?: "모르는 모델"} · ${f.label}", style = MaterialTheme.typography.bodyMedium)
-                    Button(onClick = { vm.importFound(f) }, enabled = !vm.busy,
-                        colors = ButtonDefaults.buttonColors(containerColor = Ssam.Sprout, contentColor = Ssam.Ink)) {
-                        Text("이 파일 가져오기")
-                    }
-                }
-            }
-        }
-    }
-}
 
 @Composable
 private fun GuideCard(
@@ -466,7 +378,7 @@ private fun PermissionStep(vm: JarvisViewModel) {
     val ctx = LocalContext.current
     val notiPermLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { vm.refresh() }
 
-    StepTitle("4 / 4 · 권한", "마지막으로 두 가지만 허용해 주세요")
+    StepTitle("4 / 4 · 권한", "마지막으로 세 가지만 허용해 주세요")
     GuideCard(
         number = "1", title = "알림 접근",
         desc = "다른 앱(카톡, 학교 앱 등)의 알림을 모으려면 필요해요. 목록에서 쌤톡스를 켜 주세요.\n" +
@@ -484,9 +396,19 @@ private fun PermissionStep(vm: JarvisViewModel) {
         else ctx.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
             .putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName))
     }
+    GuideCard(
+        number = "3", title = "알람 및 리마인더",
+        desc = "정한 시각(예: 8:00 요약·밤 10시 하루 정리)에 딱 맞춰 정리하려면 필요해요. 목록에서 쌤톡스를 켜 주세요. 안 켜면 몇 분 늦을 수 있어요.",
+        button = if (vm.exactAlarm) "허용됨" else "설정 열기",
+        done = vm.exactAlarm, enabled = !vm.exactAlarm,
+    ) { ctx.startActivity(exactAlarmSettings(ctx)) }
     Text("권한을 켠 뒤부터 오는 알림이 모여요. 요약 시간(아침·저녁·N시간마다·수업 뒤)과 수업 중 모아 두기는 설정 → 🔕 모아 두기·요약 시간에서 정해요.",
         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     PrimaryButton(if (vm.listenerEnabled && vm.notiPermission) "쌤톡스 시작하기" else "나중에 하고 시작하기") {
         vm.finishOnboarding()
     }
 }
+
+/** ⏰ 알람 및 리마인더(정확한 시각 알람) 허용 화면 — 쌤톡스 항목으로 바로 */
+fun exactAlarmSettings(ctx: Context): Intent =
+    Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, android.net.Uri.parse("package:${ctx.packageName}"))

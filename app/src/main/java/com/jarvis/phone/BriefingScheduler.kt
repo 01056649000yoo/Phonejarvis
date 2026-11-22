@@ -75,7 +75,16 @@ object BriefingScheduler {
             i.putExtra(BriefingService.EXTRA_TOPUP_TIME, it.briefingTime).putExtra(BriefingService.EXTRA_TOPUP_TITLE, it.title)
                 .putExtra(BriefingService.EXTRA_TOPUP_BODY, it.body)
         }
-        ContextCompat.startForegroundService(ctx, i)
+        startService(ctx, i, label)
+    }
+
+    /**
+     * 백그라운드에서 요약 서비스 시작. 정확한 알람 권한이 없을 때(대략적인 시각 알람) 안드로이드가 시작을 막을 수 있어
+     * 앱이 죽지 않게 받고, 📝 최근 자동 요약에 남긴다.
+     */
+    fun startService(ctx: Context, i: Intent, label: String) {
+        try { ContextCompat.startForegroundService(ctx, i) }
+        catch (e: Exception) { AutoLog.add(ctx, label, "실패 · 백그라운드 시작 막힘(알람 및 리마인더 권한을 켜 주세요)") }
     }
 
     fun labelOf(kind: SummarySchedule.Kind, minute: Int): String {
@@ -118,8 +127,8 @@ class BriefingReceiver : BroadcastReceiver() {
                 BriefingScheduler.scheduleAll(ctx)        // 내일 하루 정리
                 // 다른 요약이 도는 중이면 그 요약이 끝난 뒤 이어서
                 if (BriefingService.active) BriefingService.dailyAfter = true
-                else ContextCompat.startForegroundService(ctx, Intent(ctx, BriefingService::class.java)
-                    .putExtra(BriefingService.EXTRA_LABEL, DailyDigest.LABEL).putExtra(BriefingService.EXTRA_DAILY, true))
+                else BriefingScheduler.startService(ctx, Intent(ctx, BriefingService::class.java)
+                    .putExtra(BriefingService.EXTRA_LABEL, DailyDigest.LABEL).putExtra(BriefingService.EXTRA_DAILY, true), DailyDigest.LABEL)
             }
             BriefingScheduler.ACTION_PREPARE -> {
                 if (kind != null) BriefingScheduler.startNow(ctx, BriefingScheduler.labelOf(kind, minute), prepare = true, auto = true)
@@ -154,9 +163,9 @@ class BriefingReceiver : BroadcastReceiver() {
                             // 그 뒤 온 알림은 이어서 요약해 같은 알림을 고쳐 씀(소리 없이) — 그 실행이 문자 답장 초안도 씀
                             if (pending > 0) BriefingScheduler.startNow(ctx, label, auto = true, topUp = ready)
                             // 새로 온 것은 없고 초안을 기다리는 답장할 문자만 있으면 초안만 씀(미리 준비 때는 결과가 늦지 않게 안 씀)
-                            else if (Briefings.hasPendingDrafts(ctx)) ContextCompat.startForegroundService(ctx,
+                            else if (Briefings.hasPendingDrafts(ctx)) BriefingScheduler.startService(ctx,
                                 Intent(ctx, BriefingService::class.java).putExtra(BriefingService.EXTRA_LABEL, label)
-                                    .putExtra(BriefingService.EXTRA_DRAFT_ONLY, true))
+                                    .putExtra(BriefingService.EXTRA_DRAFT_ONLY, true), label)
                         }
                     }
                     // 아직 준비 중이면(요약이 길어짐) 끝나는 대로 바로 알리게 표시

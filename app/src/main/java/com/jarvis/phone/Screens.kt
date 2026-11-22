@@ -33,10 +33,11 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** 이번 버전에서 바뀐 점 한 줄 (버전 올릴 때 같이 고치기). */
-private const val WHATS_NEW = "🗓 하루 정리 · 검색 색인 · 알림 원문 3개월 보관 · 알림 검색 · 요약 말투를 부드럽게 · 폰에 무리가 덜 가게 · 설치 첫날부터 알림 앱 정리 추천 · 걸린 시간 표시"
+private const val WHATS_NEW = "권한 줄이기(모든 파일 접근 뺌) · 🗓 AI 하루 정리 · 검색 색인 · 알림 원문 3개월 보관"
 
 /** 업데이트 내역 큰 창 (버전 올릴 때 같이 고치기) */
 private val WHATS_NEW_DETAIL = listOf(
+    "🔐 권한을 줄였어요" to "Play 스토어에 올릴 준비로 '모든 파일 접근' 권한을 뺐어요. 모델 파일과 백업 파일은 파일 고르기 창에서 한 번 골라요(다운로드 폴더가 바로 열려요). 하루 한 번 자동 백업은 권한 없이 그대로 다운로드/쌤톡스 폴더에 쌓여요. 정한 시각 알림은 '알람 및 리마인더'를 켜 두면 딱 맞춰 와요(설정 → 🔕 모아서 알림).",
     "🗓 하루 정리" to "매일 밤 10시(설정 → 🔕 모아서 알림에서 시각 바꾸기·끄기)에 그날 요약들을 AI가 다시 훑어 한 화면으로 정리해 드려요. ⭐ 중요 키워드·업무·일정을 1순위로, 학생·학부모·마감·답장할 연락을 그다음으로 올리고, 광고·배송 같은 앱 알림은 건수만 남겨요. ✅ 오늘 꼭 챙길 일 · 🙋 답장할 연락 · 📝 오늘 있었던 일 · 📅 내일 챙길 것, 모두 15줄 안쪽이에요. 폰이 뜨겁거나 배터리가 적으면 AI 없이 중요한 순서대로 20줄만 보내요.",
     "🔎 검색이 빨라졌어요" to "알림을 넣을 때 두 글자 조각 찾아보기(색인)를 같이 만들어, 3개월 치가 쌓여도 낱말 가운데 글자까지 금방 찾아요. 한 글자 낱말은 예전처럼 찾아요.",
     "📨 알림 원문 3개월까지" to "설정 → 🧹 저장 공간에서 받은 알림 원문을 3개월까지 남길 수 있어요(기본 7일). 오래된 메시지도 알림 탭 🔎 검색으로 찾을 수 있어요. 하루 1,000건이면 3개월에 25MB쯤 써요.",
@@ -1458,7 +1459,7 @@ private fun BackupCard(vm: JarvisViewModel) {
                 style = MaterialTheme.typography.bodySmall)
             Text(
                 if (vm.lastBackup > 0) "마지막 백업: ${fmt.format(vm.lastBackup)} · 하루 한 번 다운로드/쌤톡스 폴더에 자동 저장"
-                else "아직 백업이 없어요. '모든 파일 접근'이 켜져 있으면 하루 한 번 자동으로 저장해요.",
+                else "아직 백업이 없어요. 비밀번호를 정하면 하루 한 번 다운로드/쌤톡스 폴더에 자동으로 저장해요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
             )
             // 🔒 백업 비밀번호: 백업 파일을 이 비밀번호로 암호화 (학생·학부모 이름·번호 보호)
@@ -1497,9 +1498,8 @@ private fun BackupCard(vm: JarvisViewModel) {
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { vm.backupNow() }, enabled = vm.hasBackupPin) { Text("지금 백업") }
                 OutlinedButton(onClick = { export.launch("쌤톡스_백업.json") }, enabled = vm.hasBackupPin) { Text("파일로 내보내기") }
-                OutlinedButton(onClick = { vm.findBackups() }) { Text("🔎 백업 찾아서 불러오기") }
+                OutlinedButton(onClick = { importer.launch(arrayOf("application/json", "*/*")) }) { Text("📥 백업 파일 골라 불러오기") }
             }
-            BackupFinderPanel(vm, onPickManually = { importer.launch(arrayOf("application/json", "*/*")) })
             if (vm.status.startsWith("💾") || vm.status.startsWith("불러오지") || vm.status.startsWith("백업"))
                 Text(vm.status, style = MaterialTheme.typography.bodySmall)
         }
@@ -1696,6 +1696,15 @@ private fun SchedulePage(vm: JarvisViewModel) {
                 "모으는 앱(🌱 알림 앱 정리에서 켠 앱)의 알림은 도착하자마자 상태바에서 사라지고 쌤톡스에 모여요. 아래 정한 때 한 번에 요약해서 알려 드려요. " +
                 "전화·알람·재난 문자·인증번호는 언제나 그대로 와요.",
                 style = MaterialTheme.typography.bodySmall)
+        }
+    }
+    // ⏰ 알람 및 리마인더 권한이 없으면 정한 시각이 몇 분 밀릴 수 있음(Play 스토어 정책으로 사용자가 켜는 권한)
+    if (!vm.exactAlarm && (sc.digest || sc.dailyOn)) Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("⏰ 정한 시각에 딱 맞추려면", fontWeight = FontWeight.Bold)
+            Text("'알람 및 리마인더'를 허용해 주세요. 허용하지 않으면 요약·하루 정리가 몇 분 늦게 올 수 있어요.",
+                style = MaterialTheme.typography.bodySmall)
+            Button(onClick = { ctx.startActivity(exactAlarmSettings(ctx)) }) { Text("허용하러 가기") }
         }
     }
     // 🗓 하루 정리 (모아서 알림을 꺼도 따로)

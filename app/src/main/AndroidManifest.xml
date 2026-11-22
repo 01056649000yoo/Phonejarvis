@@ -7,8 +7,8 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
 
     <!-- 자동 브리핑: 정해진 시각 알람, 재부팅 후 재등록, 백그라운드 요약 실행, 결과 알림 -->
-    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
+    <!-- 정한 시각 알람은 사용자가 켜는 '알람 및 리마인더'(SCHEDULE_EXACT_ALARM)만 — USE_EXACT_ALARM 은 Play 정책상 알람·캘린더 앱 전용이라 뺌(2026-11-22) -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -17,9 +17,10 @@
     <!-- 수업 중·퇴근 모드에서 소리까지 끄기 (방해 금지, 선생님이 설정에서 허용할 때만) -->
     <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
 
-    <!-- 다운로드 폴더에 이미 받아 둔 모델 파일을 자동으로 찾기 (사용자가 켤 때만). 인터넷 권한이 없어 파일은 밖으로 나가지 않음 -->
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
-        tools:ignore="ScopedStorage" />
+    <!-- '모든 파일 접근'(MANAGE_EXTERNAL_STORAGE)은 쓰지 않음(2026-11-22 Play 스토어 준비) — 모델·백업은 파일 고르기, 자동 백업은 MediaStore.
+         라이브러리가 끼워 넣어도 제거 -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:node="remove" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" tools:node="remove" />
 
     <!-- 알림 앱 정리: 이 메시지 앱들이 설치돼 있는지만 확인 (알림이 0건일 때 안내하려고) -->
     <queries>
@@ -116,6 +117,8 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
                 <action android:name="android.intent.action.TIME_SET" />
                 <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <!-- '알람 및 리마인더'를 켜면 정확한 시각으로 다시 예약 -->
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
             </intent-filter>
         </receiver>
 

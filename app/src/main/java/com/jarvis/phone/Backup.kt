@@ -2,6 +2,7 @@ package com.jarvis.phone
 
 import android.content.Context
 import android.net.Uri
+import android.provider.MediaStore
 import android.os.Environment
 import org.json.JSONArray
 import org.json.JSONObject
@@ -32,8 +33,6 @@ object Backup {
     private fun meta(ctx: Context) = ctx.getSharedPreferences("backup_meta", Context.MODE_PRIVATE)
     fun lastBackupTime(ctx: Context) = meta(ctx).getLong("last", 0L)
 
-    fun dir(): File = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "쌤톡스")
-    fun file(): File = File(dir(), "쌤톡스_백업.json")
 
     // ── 만들기 ──
     fun toJson(ctx: Context): String {
@@ -74,17 +73,30 @@ object Backup {
     ).joinToString(" · ").ifEmpty { "기본 설정" }
 
     // ── 저장 ──
-    /** 다운로드/쌤톡스 폴더에 저장. 권한이 없으면 false */
+    /**
+     * 다운로드/쌤톡스 폴더에 저장 — 안드로이드 기본 저장 통로(MediaStore)로, 권한 없이(2026-11-22 Play 스토어 준비: '모든 파일 접근' 뺌).
+     * 이 앱이 만든 파일만 다시 열 수 있으므로 같은 파일을 덮어씀. 다시 설치하면 새 파일이 생기고(이름 뒤에 (1)), 불러오기는 파일 고르기로.
+     */
     fun saveToDownloads(ctx: Context): Boolean {
         if (!BackupCrypto.hasPin(ctx)) return false   // 🔒 비밀번호를 정해야 백업(암호화)
-        if (!ModelFinder.hasAccess()) return false
         return runCatching {
-            dir().mkdirs()
-            val tmp = File(dir(), "쌤톡스_백업.tmp")
-            tmp.writeText(fileText(ctx))
-            if (!tmp.renameTo(file())) { file().delete(); tmp.renameTo(file()) }
-            meta(ctx).edit().putLong("last", System.currentTimeMillis()).apply()
+            val text = fileText(ctx)
+            val cr = ctx.contentResolver
+            val uri = ownUri(ctx) ?: cr.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, android.content.ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, NAME)
+                put(MediaStore.MediaColumns.MIME_TYPE, "application/json")
+                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/쌤톡스/")
+            })!!
+            cr.openOutputStream(uri, "wt")!!.use { it.write(text.toByteArray()) }
+            meta(ctx).edit().putString("ms_uri", uri.toString()).putLong("last", System.currentTimeMillis()).apply()
         }.isSuccess
+    }
+
+    private const val NAME = "쌤톡스_백업.json"
+
+    /** 이 설치에서 만든 백업 파일(MediaStore). 지웠거나 없으면 null */
+    private fun ownUri(ctx: Context): Uri? = meta(ctx).getString("ms_uri", null)?.let(Uri::parse)?.takeIf { u ->
+        runCatching { ctx.contentResolver.query(u, arrayOf(MediaStore.MediaColumns._ID), null, null, null)?.use { it.moveToFirst() } == true }.getOrDefault(false)
     }
 
     /** 하루 한 번 자동 백업 (앱 열 때·자동 브리핑 끝날 때) */
@@ -100,16 +112,18 @@ object Backup {
     }.isSuccess
 
     // ── 찾기·불러오기 ──
-    /** 다운로드/쌤톡스에 백업이 있으면 (저장 시각, 요약). 권한이 없거나 없으면 null */
-    fun found(): Pair<Long, String>? {
-        if (!ModelFinder.hasAccess() || !file().exists()) return null
+    /** 이 설치에서 다운로드/쌤톡스에 저장한 백업이 있으면 (저장 시각, 요약). 없으면 null(다시 설치한 뒤엔 파일 고르기로) */
+    fun found(ctx: Context): Pair<Long, String>? {
+        val u = ownUri(ctx) ?: return null
         return runCatching {
-            val j = JSONObject(file().readText())
+            val j = JSONObject(ctx.contentResolver.openInputStream(u)!!.use { it.readBytes().toString(Charsets.UTF_8) })
             if (j.optString("format") != FORMAT) null else j.optLong("created") to j.optString("summary")
         }.getOrNull()
     }
 
-    fun restoreFromDownloads(ctx: Context, pin: String? = null): Result<String> = runCatching { restore(ctx, file().readText(), pin) }
+    fun restoreFromDownloads(ctx: Context, pin: String? = null): Result<String> = runCatching {
+        restoreFrom(ctx, ownUri(ctx) ?: error("백업 파일이 없어요."), pin).getOrThrow()
+    }
 
     fun restoreFrom(ctx: Context, uri: Uri, pin: String? = null): Result<String> = runCatching {
         restore(ctx, readSmall(ctx, uri), pin)
@@ -256,38 +270,5 @@ object BackupCrypto {
             javax.crypto.spec.GCMParameterSpec(128, unb64(j.getString("iv"))))
         return try { String(c.doFinal(unb64(j.getString("data"))), Charsets.UTF_8) }
         catch (e: javax.crypto.AEADBadTagException) { throw IllegalArgumentException("백업 비밀번호가 달라요.") }
-    }
-}
-
-/** 🔎 다운로드 폴더(하위 폴더 포함)에서 쌤톡스 백업 파일을 자동으로 찾기 */
-object BackupFinder {
-    data class Candidate(val file: File, val created: Long, val summary: String, val encrypted: Boolean) {
-        /** "Download/KakaoTalk" 처럼 어디 있는지 */
-        val where: String get() = file.parentFile?.let { p ->
-            val root = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-            if (p == root) "Download" else "Download/" + p.relativeTo(root).path
-        } ?: ""
-    }
-
-    /** 이름이 아니라 내용(쌤톡스 백업 표시)으로 알아봄. 최신순. 권한이 없으면 빈 목록 */
-    fun findAll(): List<Candidate> {
-        if (!ModelFinder.hasAccess()) return emptyList()
-        val root = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-        val out = mutableListOf<Candidate>()
-        fun scan(dir: File, depth: Int) {
-            dir.listFiles()?.forEach { f ->
-                when {
-                    f.isDirectory && depth < 3 && !f.name.startsWith(".") -> scan(f, depth + 1)
-                    f.isFile && f.name.endsWith(".json", ignoreCase = true) && f.length() in 50..2_000_000 ->
-                        runCatching {
-                            val j = JSONObject(f.readText())
-                            if (j.optString("format") == "ssamtox-backup")
-                                out += Candidate(f, j.optLong("created", f.lastModified()), j.optString("summary"), j.optBoolean("enc"))
-                        }
-                }
-            }
-        }
-        runCatching { scan(root, 0) }
-        return out.sortedByDescending { it.created }.distinctBy { it.created to it.summary }
     }
 }

@@ -131,24 +131,6 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    // ── 다운로드 폴더에서 모델 자동 찾기 ──
-    var fileAccess by mutableStateOf(ModelFinder.hasAccess())
-        private set
-    var found by mutableStateOf<List<ModelFinder.Found>>(emptyList())
-        private set
-    var scanned by mutableStateOf(false)
-        private set
-
-    fun scanDownloads() {
-        fileAccess = ModelFinder.hasAccess()
-        if (!fileAccess) return
-        viewModelScope.launch(Dispatchers.IO) {
-            val list = ModelFinder.find(selectedModel)
-            withContext(Dispatchers.Main) { found = list; scanned = true }
-        }
-    }
-
-    fun importFound(f: ModelFinder.Found) = importModel(Uri.fromFile(f.file))
 
     // ── 탭: 브리핑(결과만) / 설정 ──
     enum class Tab { BRIEFING, ALERTS, HISTORY, SETTINGS }
@@ -427,14 +409,14 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     var foundBackup by mutableStateOf<Pair<Long, String>?>(null)
         private set
     fun checkBackup() {
-        viewModelScope.launch { foundBackup = withContext(Dispatchers.IO) { Backup.found() } }
+        viewModelScope.launch { foundBackup = withContext(Dispatchers.IO) { Backup.found(getApplication()) } }
     }
     fun backupNow() {
         val ctx = getApplication<Application>()
         viewModelScope.launch {
             val ok = withContext(Dispatchers.IO) { Backup.saveToDownloads(ctx) }
             lastBackup = Backup.lastBackupTime(ctx)
-            status = if (ok) "💾 다운로드/쌤톡스 폴더에 백업했어요." else "백업하려면 '모든 파일 접근'이 필요해요. '파일로 내보내기'를 쓰면 권한 없이 저장할 수 있어요."
+            status = if (ok) "💾 다운로드/쌤톡스 폴더에 백업했어요." else "백업하지 못했어요. '파일로 내보내기'로 저장해 보세요."
         }
     }
     fun exportBackup(uri: Uri) {
@@ -445,25 +427,6 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
             status = if (ok) "💾 백업 파일을 저장했어요." else "백업 파일을 저장하지 못했어요."
         }
     }
-    // ── 🔎 백업 파일 자동 찾기 ──
-    /** null: 아직 안 찾음 / 빈 목록: 못 찾음 */
-    var backupCandidates by mutableStateOf<List<BackupFinder.Candidate>?>(null)
-        private set
-    var searchingBackup by mutableStateOf(false)
-        private set
-    /** 권한이 없어서 기다리는 중 (권한을 켜고 돌아오면 자동으로 찾음) */
-    var backupNeedsAccess by mutableStateOf(false)
-        private set
-    fun findBackups() {
-        if (!ModelFinder.hasAccess()) { backupNeedsAccess = true; return }
-        backupNeedsAccess = false
-        searchingBackup = true
-        viewModelScope.launch {
-            backupCandidates = withContext(Dispatchers.IO) { BackupFinder.findAll() }
-            searchingBackup = false
-        }
-    }
-    fun restoreCandidate(c: BackupFinder.Candidate) = restoreBackup(Uri.fromFile(c.file))
 
     /** 📥 받은 백업 파일: (uri, (저장 시각, 요약)). null이면 창 닫힘 */
     var incomingBackup by mutableStateOf<Pair<Uri, Pair<Long, String>>?>(null)
@@ -903,6 +866,9 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
 
     var hasModel by mutableStateOf(false)
         private set
+    /** ⏰ 정한 시각 정확히 알림(알람·리마인더 권한) — 없으면 몇 분 늦을 수 있음 */
+    var exactAlarm by mutableStateOf(true)
+        private set
     var todayItems by mutableStateOf<List<NotiItem>>(emptyList())
         private set
     /** 🔎 알림 검색: 낱말과 결과(null = 검색 안 함) */
@@ -937,13 +903,10 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         adCount = AdFilter.countToday(ctx)
         // 앱을 닫았다 다시 열었을 때 백그라운드 정리가 아직 돌고 있으면 "정리 중" 표시
         if (BriefingService.active && !bgRunning) { bgRunning = true; watchBackground() }
-        // 백업 찾기를 누르고 권한을 켜러 갔다가 돌아왔으면 바로 찾기
-        if (backupNeedsAccess && ModelFinder.hasAccess()) findBackups()
+        exactAlarm = BriefingScheduler.canExact(ctx.getSystemService(android.app.AlarmManager::class.java))
         lastBackup = Backup.lastBackupTime(ctx)
         reloadSchedule()
         autoLog = AutoLog.all(ctx)
-        // 모델 받기 단계에 있으면(권한 설정에서 돌아온 경우 포함) 다운로드 폴더를 다시 찾아봄
-        if (!onboardingDone && onboardingStep == 2) scanDownloads()
         if (onboardingDone) loadApps(ai = page == Page.APPS)
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { Storage.autoClean(ctx) }   // 🧹 보관 기간이 지난 기록 자동 정리 (6시간에 한 번)
