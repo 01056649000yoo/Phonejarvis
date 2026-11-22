@@ -164,10 +164,11 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
                 val have = recent.map { it.pkg }.toMutableSet()
                 val older = db.knownApps().filter { have.add(it.first) }.map { AppStat(it.first, it.second, 0, emptyList()) }
                 val added = AppFilter.addedApps(ctx).filter { have.add(it) }.map { AppStat(it, labelOf(it), 0, emptyList()) }
-                // 설치된 앱: 처음 정리 전에는 메시지·업무·알림 보내는 앱을 모두, 그 뒤에는 뺀 앱만(목록에서 사라지지 않게)
+                // 설치된 앱: 처음 정리 전에는 메시지·업무·알림 보내는 앱을 모두, 그 뒤에는 메시지·업무 앱(Gmail·캘린더 등)과 뺀 앱
+                // (정리 뒤 알림이 아직 없던 Gmail 이 목록에서 사라지던 것 — 2026-11-23)
                 val excluded = AppFilter.excluded(ctx)
                 val installed = installedApps(ctx)
-                    .filter { it.group <= 2 && (!appsApplied || it.pkg in excluded) && have.add(it.pkg) }
+                    .filter { it.group <= 2 && (!appsApplied || it.group <= 1 || it.pkg in excluded) && have.add(it.pkg) }
                     .map { AppStat(it.pkg, it.name, 0, emptyList()) }
                 recent + older + added + installed
             }
