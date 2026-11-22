@@ -33,10 +33,11 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** 이번 버전에서 바뀐 점 한 줄 (버전 올릴 때 같이 고치기). */
-private const val WHATS_NEW = "정한 시각에 요약이 꼭 와요(5분 전 준비) · 아침 요약에 어젯밤 메시지까지 · 위젯에 자동 요약 결과 · 보안 점검"
+private const val WHATS_NEW = "지난 요약을 날짜별로 · 요약 30일·원래 알림 7일 자동 정리"
 
 /** 업데이트 내역 큰 창 (버전 올릴 때 같이 고치기) */
 private val WHATS_NEW_DETAIL = listOf(
+    "📚 지난 요약을 날짜별로" to "지난 요약이 오늘·어제·날짜별 묶음으로 정리돼요. 오늘만 펼쳐 두고, 날짜를 누르면 그날 요약이 나와요. 요약은 30일, 원래 알림은 7일 지나면 저절로 지워져요(설정 → 🧹 저장 공간에서 바꾸기).",
     "⏰ 정한 시각에 요약이 꼭 와요" to "정한 시각 5분 전에 조용히 미리 요약해 두었다가 정각에 결과 알림만 보내요. 새 알림이 없어도 '새 알림 없음 · 마지막 요약 언제'를 알려 줘서 요약이 돌았는지 바로 알 수 있어요. (N시간마다 요약은 새 알림이 없으면 예전처럼 조용히 넘어가요)",
     "🚀 두 번째 요약부터 더 가볍게" to "AI 모델을 폰에 맞게 바꿔 둔 것(캐시)을 쌤톡스 전용 공간에 보관해요. 예전엔 폰이 저장공간을 정리할 때 지워져 매번 처음부터 다시 만드느라 느리고 뜨거워질 수 있었어요. 모델을 바꾸면 자동으로 비워요.",
     "🌅 아침 요약에 어젯밤 메시지도" to "예전엔 자동 요약이 '오늘 0시'부터만 모아서, 저녁 요약 뒤~자정에 온 메시지가 빠지고 새벽에 새 알림이 없으면 아침 요약이 조용히 넘어갔어요. 이제 지난 요약 바로 다음부터(최대 3일) 모두 요약해요.",
@@ -360,41 +361,73 @@ private fun AlertsTab(vm: JarvisViewModel) {
 
 @Composable
 private fun HistoryTab(vm: JarvisViewModel) {
-    val dayTimeFmt = remember { SimpleDateFormat("M/d HH:mm", Locale.KOREA) }
     vm.briefingDetail?.let { (b, items) -> BriefingDetailDialog(vm, b, items) }
     if (vm.briefings.isEmpty()) Card(Modifier.fillMaxWidth()) {
         Text("아직 요약이 없어요. 설정에서 정한 시각이 되면 저절로 쌓여요.", Modifier.padding(16.dp), style = MaterialTheme.typography.bodyMedium)
     }
-    // 지난 요약을 한 줄씩. 누르면 펼쳐 보기
+    // 지난 요약을 날짜별로 묶어 한 줄씩(2026-11-22 선생님: 요약이 길어지면 날짜별로). 오늘만 펼쳐 두고, 줄을 누르면 내용
     if (vm.briefings.isNotEmpty()) {
-        var open by rememberSaveable { mutableStateOf(true) }
-        Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("📚 요약 모음 · ${vm.briefings.size}개", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                    TextButton(onClick = { open = !open }) { Text(if (open) "접기" else "펼치기") }
-                }
-                AnimatedVisibility(visible = open, enter = expandVertically(Motion.size) + fadeIn(Motion.fade),
-                    exit = shrinkVertically(Motion.size) + fadeOut(Motion.fadeFast)) {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        vm.briefings.forEach { b ->
-                            var show by rememberSaveable(b.time) { mutableStateOf(false) }
-                            HorizontalDivider()
-                            Row(Modifier.fillMaxWidth().clickable { show = !show }.padding(vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically) {
-                                Text("${briefingIcon(b)} ${b.label} · ${dayTimeFmt.format(b.time)} · ${b.count}건",
-                                    Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                                Text(if (show) "▾" else "▸")
-                            }
-                            AnimatedVisibility(visible = show, enter = expandVertically(Motion.size) + fadeIn(Motion.fade),
-                                exit = shrinkVertically(Motion.size) + fadeOut(Motion.fadeFast)) {
-                                Text(b.text, style = MaterialTheme.typography.bodyMedium)
+        val timeFmt = remember { SimpleDateFormat("HH:mm", Locale.KOREA) }
+        val days = remember(vm.briefings) { vm.briefings.groupBy { SummarySchedule.startOfDay(it.time) }.toList() }
+        val today = SummarySchedule.startOfDay(System.currentTimeMillis())
+        Text("📚 요약 모음 · ${vm.briefings.size}개 · 요약은 ${Storage.label(vm.briefDays)}, 원래 알림은 ${Storage.label(vm.notiDays)} 지나면 저절로 지워져요 (설정 → 🧹 저장 공간)",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        days.forEach { (day, list) ->
+            var open by rememberSaveable(day) { mutableStateOf(day == today) }
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(Modifier.fillMaxWidth().clickable { open = !open }, verticalAlignment = Alignment.CenterVertically) {
+                        Text(dayTitle(day, today), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        Text("요약 ${list.size}개 · 알림 ${list.sumOf { it.count }}건", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(if (open) "  ▾" else "  ▸")
+                    }
+                    AnimatedVisibility(visible = open, enter = expandVertically(Motion.size) + fadeIn(Motion.fade),
+                        exit = shrinkVertically(Motion.size) + fadeOut(Motion.fadeFast)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            list.forEach { b ->
+                                var show by rememberSaveable(b.time) { mutableStateOf(false) }
+                                HorizontalDivider()
+                                Row(Modifier.fillMaxWidth().clickable { show = !show }.padding(vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically) {
+                                    Text(historyLine(b, timeFmt.format(b.time)),
+                                        Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                                    Text(if (show) "▾" else "▸")
+                                }
+                                AnimatedVisibility(visible = show, enter = expandVertically(Motion.size) + fadeIn(Motion.fade),
+                                    exit = shrinkVertically(Motion.size) + fadeOut(Motion.fadeFast)) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Text(b.text, style = MaterialTheme.typography.bodyMedium)
+                                        TextButton(onClick = { vm.openBriefingDetail(b) }) { Text("📄 원래 알림 보기") }
+                                    }
+                                }
                             }
                         }
                     }
                 }
             }
         }
+    }
+}
+
+/** 요약 모음 한 줄: 이름에 시각이 있으면 그대로(📋 12:00 요약), 미리 준비해 시각이 다르면 정리한 시각을, 없으면(아침·저녁) 시각을 붙임 */
+private fun historyLine(b: Briefing, hm: String): String {
+    val named = Regex("\\d{2}:\\d{2}").find(b.label)?.value
+    val head = if (b.label.firstOrNull()?.isLetterOrDigit() == false) b.label else "${briefingIcon(b)} ${b.label}"   // 🌅·📋·⏱ 처럼 이미 아이콘이 있으면 그대로
+    return when (named) {
+        null -> "$head · $hm"
+        hm -> head
+        else -> "$head · $hm 정리"
+    } + " · ${b.count}건"
+}
+
+/** 요약 모음 날짜 머리: 오늘 · 11/22 (일), 어제 · 11/21 (토), 11/20 (금) */
+private fun dayTitle(day: Long, today: Long): String {
+    val d = SimpleDateFormat("M/d (E)", Locale.KOREA).format(day)
+    return when (day) {
+        today -> "오늘 · $d"
+        SummarySchedule.addDays(today, -1) -> "어제 · $d"
+        else -> d
     }
 }
 

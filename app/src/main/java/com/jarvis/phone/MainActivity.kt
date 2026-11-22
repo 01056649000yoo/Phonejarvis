@@ -569,7 +569,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     /** 완료 알림을 눌러 들어왔을 때: 그 시각의 브리핑을 찾아 세부 내역 열기 */
     fun openBriefingDetail(time: Long) {
         viewModelScope.launch {
-            val b = withContext(Dispatchers.IO) { db.briefings(50).firstOrNull { it.time == time } } ?: return@launch
+            val b = withContext(Dispatchers.IO) { db.briefingAt(time) } ?: return@launch
             tab = Tab.BRIEFING; page = null
             if (b.time.toString() in hiddenBriefings) { hiddenBriefings = hiddenBriefings - b.time.toString(); saveSet("hidden_briefings", hiddenBriefings) }
             openBriefingDetail(b)

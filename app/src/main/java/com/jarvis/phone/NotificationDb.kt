@@ -127,8 +127,8 @@ class NotificationDb private constructor(ctx: Context) :
         )
     }
 
-    /** 브리핑 모음: 최근 브리핑들 (새것부터, 7일 보관) */
-    fun briefings(limit: Int = 30): List<Briefing> =
+    /** 브리핑 모음: 최근 브리핑들 (새것부터). 보관 기간(7~90일) 안의 것을 날짜별로 보여 주려고 넉넉히 */
+    fun briefings(limit: Int = 1000): List<Briefing> =
         readableDatabase.rawQuery(
             "SELECT time,from_time,label,count,text FROM briefing ORDER BY time DESC LIMIT $limit", null
         ).use { c -> buildList { while (c.moveToNext()) add(Briefing(c.getLong(0), c.getLong(1), c.getString(2), c.getInt(3), c.getString(4))) } }
@@ -191,6 +191,11 @@ class NotificationDb private constructor(ctx: Context) :
         }
         writableDatabase.insert("briefing", null, v)
     }
+
+    /** 그 시각의 브리핑 하나 (완료 알림을 눌렀을 때) */
+    fun briefingAt(time: Long): Briefing? =
+        readableDatabase.rawQuery("SELECT time,from_time,label,count,text FROM briefing WHERE time=?", arrayOf(time.toString()))
+            .use { c -> if (c.moveToFirst()) Briefing(c.getLong(0), c.getLong(1), c.getString(2), c.getInt(3), c.getString(4)) else null }
 
     fun lastBriefing(): Briefing? =
         readableDatabase.rawQuery(

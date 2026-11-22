@@ -54,7 +54,12 @@ class BriefingService : Service() {
             this, Notifications.ID_PROGRESS, Notifications.progress(this, "브리핑 준비 중…", title = title, quiet = prepare || topUp),
             if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0,
         )
-        if (running) return START_NOT_STICKY     // 이미 도는 중이면 겹쳐 실행하지 않음
+        if (running) {
+            // 이미 도는 중이면 겹쳐 실행하지 않음. 정각 5분 전 '미리 준비' 중에 위젯·앱에서 직접 요약을 누른 것이면
+            // 준비하던 요약을 끝나는 대로 바로 알림(누른 결과가 안 오는 것처럼 보이지 않게)
+            if (!prepare && !auto && preparing) showWhenDone = true
+            return START_NOT_STICKY
+        }
         running = true
         active = true
         AppScope.main.launch { SummaryWidget.refresh(this@BriefingService) }   // 🏠 위젯에 '요약 중…'
