@@ -164,8 +164,13 @@ class NotificationCollectorService : NotificationListenerService() {
         /** 인증번호·일회용 비밀번호처럼 남기면 안 되는 알림인지 */
         fun isSecretCode(t: String): Boolean = SECRET_WORDS.any { it in t } || OTP.containsMatchIn(t)
 
-        /** "[Web발신] … 123456" 같은 6자리 안팎 인증번호 */
-        private val OTP = Regex("""(인증|확인|본인)[^\n]{0,12}\d{4,8}""")
+        /**
+         * "[Web발신] 인증번호 [123456]" 같은 4~8자리 인증번호.
+         * 2026-11-24 점검: 예전엔 '확인' 뒤 12자 안에 숫자 4개면 인증번호로 봐서 "확인 부탁드려요 15000원",
+         * "확인 후 010-1234-5678로" 같은 학부모 메시지를 통째로 모으지 않았다 → '확인'만으로는 안 보고,
+         * 전화번호 조각(앞뒤 -)·금액(뒤에 원·,)·더 긴 숫자의 일부는 인증번호가 아님.
+         */
+        private val OTP = Regex("""(인증|본인\s?확인|확인\s?(번호|코드))[^\n]{0,12}?(?<![\d,.-])\d{4,8}(?![\d,.-]|\s?원)""")
 
         /** 시스템 잡음성 알림. 필요하면 추가하세요. */
         val IGNORED_PACKAGES = setOf(
