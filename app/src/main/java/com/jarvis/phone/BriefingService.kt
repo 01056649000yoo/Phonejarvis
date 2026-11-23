@@ -105,7 +105,11 @@ class BriefingService : Service() {
                 return@launch
             }
             if (draftOnly) {
-                try { runCatching { Briefings.draftPending(this@BriefingService) { } } }
+                try {
+                    runCatching { Briefings.draftPending(this@BriefingService) { } }
+                    // 🗓 초안을 쓰는 사이 하루 정리 시각이 왔으면 이어서(2026-11-24 점검: 이 길에서는 그날 하루 정리가 빠졌다)
+                    if (dailyAfter) { dailyAfter = false; runCatching { Briefings.runDaily(this@BriefingService) } }
+                }
                 finally {
                     runCatching { Summarizer.get(this@BriefingService).release() }
                     if (wake.isHeld) wake.release()
@@ -161,8 +165,6 @@ class BriefingService : Service() {
                 // ✉️ 문자 답장 초안: 결과 알림을 보낸 뒤에(미리 준비 중이면 정각 알림 뒤 BriefingReceiver 가 따로)
                 if (!(prepare && !showWhenDone)) runCatching { Briefings.draftPending(this@BriefingService) { s -> Notifications.notify(this@BriefingService,
                     Notifications.ID_PROGRESS, Notifications.progress(this@BriefingService, s, title = title, quiet = true)) } }
-                // 🗓 이 요약 중에 하루 정리 시각이 왔으면 이어서
-                if (dailyAfter) { dailyAfter = false; Briefings.runDaily(this@BriefingService) }
             } catch (s: Summarizer.StoppedException) {
                 if (auto) AutoLog.add(this@BriefingService, label, "중지됨")
                 Notifications.notify(this@BriefingService, Notifications.ID_RESULT,
@@ -172,6 +174,8 @@ class BriefingService : Service() {
                 Notifications.notify(this@BriefingService, Notifications.ID_RESULT,
                     Notifications.result(this@BriefingService, "$label 실패", "${t.javaClass.simpleName}: ${t.message}"))
             } finally {
+                // 🗓 이 요약 중에 하루 정리 시각이 왔으면 이어서 — 요약이 실패·중지돼도(2026-11-24 점검: 예전엔 성공했을 때만 해서 그날 하루 정리가 빠졌다)
+                if (dailyAfter) { dailyAfter = false; runCatching { Briefings.runDaily(this@BriefingService) } }
                 // 백그라운드에서 수 GB 모델을 계속 들고 있지 않도록 내림
                 runCatching { Summarizer.get(this@BriefingService).release() }
                 runCatching { Backup.autoBackup(this@BriefingService) }   // 💾 하루 한 번 자동 백업
