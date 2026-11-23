@@ -870,6 +870,25 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     /** ⏰ 정한 시각 정확히 알림(알람·리마인더 권한) — 없으면 몇 분 늦을 수 있음 */
     var exactAlarm by mutableStateOf(true)
         private set
+
+    // 🏠 홈 화면 위젯(2026-11-23 선생님: 설치하면 위젯도 바로 쓰게 안내)
+    var hasWidget by mutableStateOf(true)
+        private set
+    var widgetTipClosed by mutableStateOf(prefs.getBoolean("widget_tip_closed", false))
+        private set
+    fun closeWidgetTip() { prefs.edit().putBoolean("widget_tip_closed", true).apply(); widgetTipClosed = true }
+    private fun widgetCount(ctx: android.content.Context) = runCatching {
+        android.appwidget.AppWidgetManager.getInstance(ctx).getAppWidgetIds(android.content.ComponentName(ctx, SummaryWidgetReceiver::class.java)).size
+    }.getOrDefault(0)
+    /** 위젯을 홈 화면에 놓기: 폰이 지원하면 '홈 화면에 추가' 창, 아니면 직접 놓는 방법 안내 */
+    fun pinWidget() {
+        val ctx = getApplication<Application>()
+        val am = android.appwidget.AppWidgetManager.getInstance(ctx)
+        val ok = am.isRequestPinAppWidgetSupported &&
+            runCatching { am.requestPinAppWidget(android.content.ComponentName(ctx, SummaryWidgetReceiver::class.java), null, null) }.getOrDefault(false)
+        status = if (ok) "🏠 '홈 화면에 추가'를 누르면 위젯이 놓여요. 크기는 위젯을 길게 눌러 늘이고 줄일 수 있어요."
+            else "🏠 홈 화면 빈 곳을 길게 누르기 → 위젯 → 쌤톡스 '요약'을 끌어다 놓으세요."
+    }
     var todayItems by mutableStateOf<List<NotiItem>>(emptyList())
         private set
     /** 🔎 알림 검색: 낱말과 결과(null = 검색 안 함) */
@@ -918,6 +937,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         // 앱을 닫았다 다시 열었을 때 백그라운드 정리가 아직 돌고 있으면 "정리 중" 표시
         if (BriefingService.active && !bgRunning) { bgRunning = true; watchBackground() }
         exactAlarm = BriefingScheduler.canExact(ctx.getSystemService(android.app.AlarmManager::class.java))
+        hasWidget = widgetCount(ctx) > 0
         lastBackup = Backup.lastBackupTime(ctx)
         reloadSchedule()
         autoLog = AutoLog.all(ctx)

@@ -47,18 +47,19 @@ import java.util.Locale
  * 가장 최근 요약을 위젯 안에서 그대로 보여 주고(길면 위젯 안에서 스크롤),
  *   [📋 요약] = 지금까지 온 알림을 바로 요약(앱의 '지금 정리하기'와 같은 백그라운드 서비스) → 끝나면 위젯이 저절로 바뀜
  *   [⚙️]     = 앱을 열어 설정 탭으로
- * 위젯은 안드로이드가 30분보다 자주 새로 그리지 않아서, 요약 시작·끝·앱을 열 때·새 알림(10분에 한 번까지) 직접 새로 그린다.
+ * 위젯은 안드로이드가 30분보다 자주 새로 그리지 않아서, 요약 시작·끝·앱을 열 때 직접 새로 그린다.
+ * 2026-11-23 선생님: "위젯에서는 온 알림이 모이게 하지 말고 요약만" — 모인 알림 수(요약 N·새 알림 N건)는 보이지 않고,
+ * 요약 칸(🙋·💬·👥 내 묶음)만 그대로, 나머지 칸은 제목 한 줄로.
  */
 class SummaryWidget : GlanceAppWidget() {
 
-    private data class State(val briefing: Briefing?, val pending: Int, val running: Boolean,
+    private data class State(val briefing: Briefing?, val running: Boolean,
                              val lastAuto: AutoLog.Entry?, val next: SummarySchedule.Run?)
 
     private fun load(ctx: Context): State {
         val db = NotificationDb.get(ctx)
-        val rules = AppFilter.rules(ctx)
-        val pending = runCatching { db.since(Briefings.pendingFrom(db)).count { rules.allows(it) } }.getOrDefault(0)
-        return State(db.lastBriefing(), pending, BriefingService.active, AutoLog.last(ctx),
+        // ⚡ 미리 요약 기록은 위젯 ⏰ 줄에 안 보임(정한 시각 요약만)
+        return State(db.lastBriefing(), BriefingService.active, AutoLog.all(ctx).firstOrNull { it.label != PreSummary.LABEL },
             runCatching { BriefingScheduler.nextRun(ctx) }.getOrNull())
     }
 
@@ -108,7 +109,6 @@ class SummaryWidget : GlanceAppWidget() {
                 Text(
                     when {
                         s.running -> "요약 중…"
-                        s.pending > 0 -> "📋 요약 ${s.pending}"
                         else -> "📋 요약"
                     },
                     modifier = GlanceModifier.background(c.primaryContainer).cornerRadius(14.dp)
@@ -127,7 +127,7 @@ class SummaryWidget : GlanceAppWidget() {
             val lines = s.briefing?.text?.let { summaryOnly(it) }.orEmpty()
             if (lines.isEmpty()) {
                 Text(
-                    if (s.pending > 0) "새 알림 ${s.pending}건이 모였어요. 📋 요약을 누르면 여기에 정리돼요." else "알림이 모이면 📋 요약을 눌러 보세요. 정한 시각에는 저절로 요약해요.",
+                    "아직 요약이 없어요. 📋 요약을 누르면 여기에 정리돼요. 정한 시각에는 저절로 요약해요.",
                     modifier = GlanceModifier.clickable(openApp),
                     style = TextStyle(color = c.onSurface, fontSize = 13.sp),
                 )
@@ -147,14 +147,19 @@ class SummaryWidget : GlanceAppWidget() {
     companion object {
         const val EXTRA_OPEN_TAB = "open_tab"
 
-        /** 요약 글에서 위젯에 보일 줄: AI 요약 칸(🙋 답장할 연락·💬 사람 메시지)은 전부, 다른 칸(마감·학부모·업무·키워드·앱 알림)은 제목만 모아 한 줄 */
+        /**
+         * 요약 글에서 위젯에 보일 줄: AI 요약 칸(🙋 답장할 연락·💬 사람 메시지·👥 내 묶음 'OO 연락')은 전부,
+         * 원문 칸(마감·학부모·업무·키워드·앱 알림·정기 알림)은 제목만 모아 한 줄
+         */
         fun summaryOnly(text: String): List<String> {
             val blocks = text.trim().split(Regex("\\n\\s*\\n")).map { b -> b.lines().map { it.trimEnd() }.filter { it.isNotEmpty() } }.filter { it.isNotEmpty() }
-            val keep = blocks.filter { it[0].startsWith("🙋") || it[0].startsWith("💬") }.flatten()
-            val heads = blocks.filterNot { it[0].startsWith("🙋") || it[0].startsWith("💬") || it[0].startsWith("(") }.map { it[0] }
+            fun summarized(h: String) = h.startsWith("🙋") || h.startsWith("💬") || (" 연락 (" in h && !h.startsWith("👪"))
+            val keep = blocks.filter { summarized(it[0]) }.flatten()
+            // 🌡️·🔋 'AI 없이 정리했어요' 안내 문단은 칸이 아니라 빼기
+            val heads = blocks.filterNot { summarized(it[0]) || it[0].startsWith("(") || it[0].startsWith("🌡") || it[0].startsWith("🔋") }
+                .map { it[0].substringBefore(" — ") }
             return keep + (if (heads.isNotEmpty()) listOf("(" + heads.joinToString(" · ") + " — 눌러서 보기)") else emptyList())
         }
-        @Volatile private var lastNotiRefresh = 0L
 
         private val REV = longPreferencesKey("rev")
 
@@ -170,13 +175,6 @@ class SummaryWidget : GlanceAppWidget() {
             }
         }
 
-        /** 새 알림이 올 때: 위젯 '요약 N' 숫자를 10분에 한 번까지만 */
-        suspend fun refreshForNewNoti(ctx: Context) {
-            val now = System.currentTimeMillis()
-            if (now - lastNotiRefresh < 10 * 60_000L) return
-            lastNotiRefresh = now
-            refresh(ctx)
-        }
     }
 }
 

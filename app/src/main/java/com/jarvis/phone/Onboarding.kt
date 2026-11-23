@@ -402,6 +402,12 @@ private fun PermissionStep(vm: JarvisViewModel) {
         button = if (vm.exactAlarm) "허용됨" else "설정 열기",
         done = vm.exactAlarm, enabled = !vm.exactAlarm,
     ) { ctx.startActivity(exactAlarmSettings(ctx)) }
+    GuideCard(
+        number = "＋", title = "홈 화면 위젯 (선택)",
+        desc = "홈 화면에 쌤톡스 위젯을 놓으면 앱을 열지 않고 최근 요약을 바로 봐요. 📋 요약을 누르면 그 자리에서 새로 정리해요.",
+        button = if (vm.hasWidget) "놓음" else "위젯 놓기",
+        done = vm.hasWidget, enabled = !vm.hasWidget,
+    ) { vm.pinWidget() }
     Text("권한을 켠 뒤부터 오는 알림이 모여요. 요약 시간(아침·저녁·N시간마다·수업 뒤)과 수업 중 모아 두기는 설정 → 🔕 모아 두기·요약 시간에서 정해요.",
         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     PrimaryButton(if (vm.listenerEnabled && vm.notiPermission) "쌤톡스 시작하기" else "나중에 하고 시작하기") {
