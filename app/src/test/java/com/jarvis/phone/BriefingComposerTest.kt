@@ -52,11 +52,25 @@ class BriefingComposerTest {
         var calls = 0
         val r = BriefingComposer.compose(many + big, ask = { p ->
             calls++
-            if ("큰방" in p) "요점: 큰방 덩어리 $calls\n요청: 자료 올려 주세요\n답장: 필요" else "요점: 이야기\n요청: 없음\n답장: 아님"
+            when {
+                "나눠 요약한 것이 3개" in p -> "요점: 큰방 회의를 종합한 한 문장\n요청: 자료 올려 주세요, 명단 내 주세요, 사진 보내 주세요\n답장: 필요"
+                "큰방" in p -> "요점: 큰방 덩어리 $calls\n요청: 자료 올려 주세요\n답장: 필요"
+                else -> "요점: 이야기\n요청: 없음\n답장: 아님"
+            }
         })
-        assertEquals(14 + 3, calls)                                   // 작은 방 14곳 + 큰방 65개 → 30·30·5 세 덩어리
+        assertEquals(14 + 3 + 1, calls)                               // 작은 방 14곳 + 큰방 65개 → 30·30·5 세 덩어리 + 합치기 한 번
         assertFalse(r.people.contains("그 밖의 방: 방"))                // 빠진 방 없음
         assertTrue(r.people.contains("큰방") && r.people.contains("자료 올려 주세요"))
+        assertTrue(r.people, r.people.contains("큰방 회의를 종합한 한 문장") && !r.people.contains("큰방 덩어리"))   // 덩어리별 나열이 아님
+        assertFalse(r.people, r.people.contains("사진 보내 주세요"))                                                // 요청은 2개까지
+    }
+
+    @Test fun 합치기가_실패하면_덩어리_요약을_이어_붙인다() = runBlocking {
+        val big = (1..35).map { i -> kakao("큰방", "사람", "회의 이야기 $i " + "가".repeat(20)) }
+        var calls = 0
+        val r = BriefingComposer.compose(big, ask = { p -> calls++; if ("나눠 요약한 것이" in p) error("모델 오류") else "요점: 덩어리 $calls\n요청: 없음\n답장: 아님" })
+        assertEquals(3, calls)
+        assertTrue(r.people, r.people.contains("덩어리 1 / 덩어리 2"))
     }
 
     @Test fun 중지하면_거기까지_정리하고_나머지는_이름만() = runBlocking {
@@ -113,12 +127,19 @@ class BriefingComposerTest {
         assertTrue(r.people, talk.contains("택배기사") && talk.contains("문 앞에 둘까요"))
     }
 
-    @Test fun 짧은_1대1_메시지_세개까지는_모델_없이() = runBlocking {
+    @Test fun 한_사람의_여러_마디는_모델이_종합하고_한_마디만_원문() = runBlocking {   // 2026-11-23 선생님: 나열 말고 종합
         val items = listOf(kakao("", "도윤 아버님", "선생님 안녕하세요"), kakao("", "도윤 아버님", "내일 체험학습"), kakao("", "도윤 아버님", "도시락 싸야 하나요?"))
-        val r = BriefingComposer.compose(items, ask = { error("부르면 안 됨") })
-        assertTrue(r.people, r.people.contains("🙋 답장할 연락 (1)") && r.people.contains("도시락 싸야 하나요?"))
-        val two = BriefingComposer.compose(listOf(kakao("", "서윤 어머니", "2교시 후에 등교해도 될까요?"), kakao("", "서윤 어머니", "체육은 쉬게 해 주세요")), ask = { error("부르면 안 됨") })
-        assertTrue(two.people, two.people.contains("등교해도 될까요?") && two.people.contains("쉬게 해 주세요"))
+        var calls = 0
+        val r = BriefingComposer.compose(items, ask = { calls++; "요점: 내일 체험학습 도시락을 싸야 하는지 물음\n요청: 도시락 필요 여부 알려 달라고 함\n답장: 필요" })
+        assertEquals(1, calls)
+        assertTrue(r.people, r.people.contains("🙋 답장할 연락 (1)") && r.people.contains("도시락 필요 여부") && !r.people.contains(" / "))
+        val one = BriefingComposer.compose(listOf(kakao("", "서윤 어머니", "2교시 후에 등교해도 될까요?"), kakao("", "서윤 어머니", "ㅎㅎ")), ask = { error("부르면 안 됨") })
+        assertTrue(one.people, one.people.contains("등교해도 될까요?"))
+    }
+
+    @Test fun 요청은_두_개까지() {
+        assertEquals("가, 나", BriefingComposer.topAsks("가, 나, 다"))
+        assertEquals("명단 올려 달라고 함", BriefingComposer.topAsks("명단 올려 달라고 함"))
     }
 
     @Test fun 단톡방_여러_메시지는_짧아도_모델로() = runBlocking {

@@ -129,4 +129,35 @@ class BriefingSimulationTest {
         File("build/briefing-simulation.md").writeText(report)
         println(report)
     }
+    /** 2026-11-23 선생님 "한 사람 메시지는 종합해서 핵심만" — 같은 사람이 짧게 여러 번·길게 40번·부탁 여럿. 예전(덩어리 이어 붙이기)과 나란히 */
+    @Test fun 한_사람_메시지_종합() = runBlocking {
+        assumeTrue("OLLAMA_MODEL 이 없어 시뮬레이션을 건너뜀", model.isNotEmpty())
+        var t = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.KOREA).parse("2026-11-23 08:00")!!.time
+        fun k(room: String, who: String, text: String) = NotiItem(0, "com.kakao.talk", "카카오톡", who, text, (t + 60_000).also { t = it }, room)
+        val short3 = listOf(k("", "도윤 아버님", "선생님 안녕하세요"), k("", "도윤 아버님", "내일 체험학습 가는 날이죠"), k("", "도윤 아버님", "도시락 싸야 하나요?"))
+        val topics = listOf(
+            "학예회 연습 때문에 이번 주 방과후 시간이 바뀝니다", "수요일은 4시까지 강당 리허설이에요", "의상은 흰 티셔츠에 청바지로 통일했어요",
+            "소품은 각 반에서 준비해 주세요", "학부모 초대장은 목요일에 나눠 줄게요", "사진 촬영은 학부모회에서 맡기로 했어요",
+            "리허설 날 1교시는 그대로 수업합니다", "음향 담당은 박선생님이 해 주시기로 했어요", "무대 순서는 3반-1반-2반 그대로예요",
+            "공연 시간은 반별 7분을 넘기지 말아 주세요",
+        )
+        val long40 = (0 until 40).map { i -> k("6학년 동학년방", "김부장", "(${i / 10 + 1}차 안내) " + topics[i % topics.size] + if (i % 10 == 9) " 금요일까지 반별 참가 명단 단톡에 올려 주세요." else "") }
+        val asks = listOf(k("", "서윤 어머니", "선생님 서윤이 내일 병원 때문에 2교시 후 등교해도 될까요? 그리고 체육은 쉬게 해 주시고요, 지난번 가정통신문 회신서 한 장 더 보내 주실 수 있나요? 급식 우유도 당분간 빼 주세요. 상담 날짜도 다음 주로 바꿀 수 있을까요?"))
+        val cases = listOf("짧은 1:1 세 마디" to short3, "동학년방 김부장 40개" to long40, "부탁 다섯 개" to asks)
+        val out = StringBuilder("# 한 사람 메시지 종합 시뮬레이션 ($model, 가짜 대화)\n")
+        for ((name, items) in cases) {
+            // 예전: 30개씩 덩어리 요약을 이어 붙이기 / 짧은 1:1 3개까지 원문 이어 붙이기 / 요청 쉼표로 모두
+            val conv = BriefingComposer.conversations(items)[0]
+            val before = if (items.size in 2..3 && items.all { it.text.length <= 60 }) "원문 이어 붙임: " + items.joinToString(" / ") { it.text }
+                else items.chunked(BriefingComposer.CHUNK).map { ch -> val c = BriefingComposer.Conversation(conv.app, conv.room, ch); BriefingComposer.parse(c, ollama(BriefingComposer.prompt(c))) }
+                    .let { BriefingComposer.merge(conv, it) }.let { "요점: ${it.point}\n요청: ${it.ask}" }
+            var calls = 0
+            val t0 = System.currentTimeMillis()
+            val r = BriefingComposer.compose(items, ask = { calls++; ollama(it) })
+            val sec = (System.currentTimeMillis() - t0) / 1000
+            out.append("\n## $name (${items.size}건)\n### 예전\n```\n$before\n```\n### 지금 (AI ${calls}번, ${sec}초)\n```\n${r.people}\n```\n")
+        }
+        File("build/briefing-person-sim.md").writeText(out.toString())
+        println(out)
+    }
 }

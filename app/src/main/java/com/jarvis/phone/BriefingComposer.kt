@@ -31,7 +31,8 @@ object BriefingComposer {
     const val ROOM_CHARS = 1600       // 한 번에 넣는 글자 상한(최근 메시지부터 채움) — 2400 에서 줄임
     const val LINE_CHARS = 200        // 메시지 한 개에서 넣는 글자(300 에서 줄임)
     const val SHORT_CHARS = 60        // 이보다 짧은 메시지만 있는 1:1 대화(3개까지)는 모델 없이
-    const val SHORT_MAX_MSGS = 3
+    const val SHORT_MAX_MSGS = 1      // 2026-11-23 선생님: 한 사람 말은 종합해서 — 원문 그대로는 한 마디일 때만(3개까지 이어 붙이니 나열처럼 보임)
+    const val MAX_ASKS = 2            // 요청 칸은 가장 중요한 것 2개까지(여러 개를 쉼표로 늘어놓으면 핵심이 흐려짐)
     const val MAX_ANSWER_TOKENS = 200 // 세 줄 답의 상한 — 넘게 쓰지 않게(모델은 한 글자씩 만들어 길수록 느림)
     private val URL = Regex("https?://\\S+")
 
@@ -86,7 +87,8 @@ object BriefingComposer {
         ---
         위 메시지만 보고 정확히 세 줄로 답해. 다른 말, 꾸밈, 별표는 쓰지 마.
         요점: 가장 중요한 내용 하나를 40자 안쪽 한 문장으로. 날짜·시간·장소·숫자는 메시지 그대로.
-        요청: 사용자에게 해 달라거나 묻거나 허락을 구하는 것(…해 주세요, …해도 될까요, …줄래?)을 구체적으로(무엇을, 언제까지). 여러 개면 쉼표로. 없으면 없음.
+        요점은 메시지를 하나씩 옮기지 말고 여러 메시지를 종합한 핵심 한 문장으로 써.
+        요청: 사용자에게 해 달라거나 묻거나 허락을 구하는 것(…해 주세요, …해도 될까요, …줄래?)을 구체적으로(무엇을, 언제까지). 여러 개면 가장 중요한 것 2개까지 쉼표로. 없으면 없음.
               단톡방에서 '각 반', '모두', '선생님들'에게 하는 부탁과 '너'에게 하는 부탁도 사용자에게 하는 요청이다.
         답장: 사용자가 답하거나 해야 할 일이 있으면 필요, 없으면 아님.
         말투: 보낸 사람이 한 말을 부드럽게 옮겨(…하자고 함, …해 달라고 함, …라고 함). '지시', '명령', '통보', '언급' 같은 딱딱한 말은 쓰지 마.
@@ -112,8 +114,24 @@ object BriefingComposer {
         val reply3 = field("답장")
         // 요청이 있으면 답장할 연락이다 — 큰 모델(E4B)이 요청을 적고도 '답장: 아님'이라 하는 일이 있었다(2026-11-21 시뮬레이션)
         val need = ask.isNotEmpty() || reply3.startsWith("필요")
-        return RoomSummary(conv, soften(point).take(160), soften(ask).take(160), need, byModel = true)
+        return RoomSummary(conv, soften(point).take(160), soften(topAsks(ask)).take(160), need, byModel = true)
     }
+
+    /** 요청을 쉼표로 나눠 앞의 [MAX_ASKS]개만(같은 말은 한 번) */
+    fun topAsks(ask: String): String = ask.split(Regex("\\s*[,，]\\s*")).map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(MAX_ASKS).joinToString(", ")
+
+    /** 30개 넘는 방을 나눠 요약한 것들을 한 문장으로 다시 합치는 질문 */
+    fun combinePrompt(conv: Conversation, parts: List<RoomSummary>): String = """
+        너는 교사인 사용자의 비서야. '${conv.room}'(${conv.app})에 온 메시지 ${conv.items.size}개를 시간 순서로 나눠 요약한 것이 ${parts.size}개 있어.
+        ---
+        ${parts.mapIndexed { i, p -> "${i + 1}) 요점: ${p.point} / 요청: ${p.ask.ifEmpty { "없음" }}" }.joinToString("\n        ")}
+        ---
+        이것을 하나로 합쳐 정확히 세 줄로 답해. 다른 말, 꾸밈, 별표는 쓰지 마. 하나씩 나열하지 말고 종합해.
+        요점: 대화 전체의 핵심을 50자 안쪽 한 문장으로. 나중에 정해진 것이 앞의 것보다 중요해. 날짜·시간·장소·숫자는 그대로.
+        요청: 사용자에게 하는 요청 중 가장 중요한 것 2개까지 쉼표로. 없으면 없음.
+        답장: 사용자가 답하거나 해야 할 일이 있으면 필요, 없으면 아님.
+        말투: …하자고 함, …해 달라고 함처럼 부드럽게. '지시', '명령', '통보', '언급' 같은 딱딱한 말은 쓰지 마.
+    """.trimIndent()
 
     // 2026-11-22 선생님: "'다음에 연락해' 문자를 '지시'라고 씀" — 모델이 말에 딱딱한 이름표를 붙이면 부드럽게
     private val STIFF = listOf(
@@ -133,9 +151,9 @@ object BriefingComposer {
     fun direct(conv: Conversation): RoomSummary? {
         val texts = conv.items.map { it.text.replace('\n', ' ').trim() }
         if (texts.all { isChatter(it) }) return if (texts.size == 1) RoomSummary(conv, "", "", false, byModel = false) else null
-        val oneToOne = conv.items.all { it.room.isEmpty() }
-        if (texts.size > (if (oneToOne) SHORT_MAX_MSGS else 1) || texts.any { it.length > SHORT_CHARS }) return null
         val said = conv.items.zip(texts).filterNot { isChatter(it.second) }
+        // 'ㅋㅋ' 같은 말은 세지 않고, 뜻 있는 말이 한 마디뿐일 때만(1:1·단톡 같음)
+        if (said.size > SHORT_MAX_MSGS || said.any { it.second.length > SHORT_CHARS }) return null
         val who = conv.who(said.last().first).let { if (it.isNotEmpty()) "$it: " else "" }
         val point = who + said.joinToString(" / ") { it.second }
         // 물음·부탁이 든 말은 모두(1:1 에서 두 번 물으면 둘 다 — 앞의 물음이 빠지던 것)
@@ -189,7 +207,8 @@ object BriefingComposer {
         val leftover = mutableListOf<Conversation>()
         var cut: String? = null
         // 모델에 묻는 횟수(진행 표시용): 대화방마다 30개씩 나눈 덩어리 수
-        val total = convs.filter { direct(it) == null }.sumOf { (it.items.size + CHUNK - 1) / CHUNK }
+        // 30개 넘는 방은 덩어리 요약을 한 번 더 합치므로 +1
+        val total = convs.filter { direct(it) == null }.sumOf { ((it.items.size + CHUNK - 1) / CHUNK).let { n -> if (n > 1) n + 1 else n } }
         var asked = 0
         for (conv in convs) {
             direct(conv)?.let { rooms += it; continue }
@@ -203,7 +222,17 @@ object BriefingComposer {
                 parts += parse(part, ask(prompt(part)))
             }
             if (parts.isEmpty()) { leftover += conv; continue }
-            rooms += merge(conv, parts)
+            if (parts.size > 1 && cut == null) cut = stopReason()
+            rooms += if (parts.size > 1 && cut == null) {
+                asked++
+                onStatus("요약 중… $asked/$total")
+                // 덩어리 요약을 한 문장으로 다시 합침(2026-11-23) — 실패하거나 형식이 깨지면 예전처럼 이어 붙임
+                val fallback = conv.items.last().text.replace('\n', ' ').take(80)
+                try { parse(conv, ask(combinePrompt(conv, parts))) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { null }
+                    ?.takeIf { it.point.isNotBlank() && it.point != fallback }
+                    ?.let { it.copy(needReply = it.needReply || parts.any { p -> p.needReply }) }
+                    ?: merge(conv, parts)
+            } else merge(conv, parts)
         }
         // 명부·키워드가 안 나오는 방은 답장할 연락에서 뺌(요청은 💬 줄에 → 로 남김)
         rooms.replaceAll { if (it.needReply && !replyAllowed(it.conv)) it.copy(needReply = false) else it }
