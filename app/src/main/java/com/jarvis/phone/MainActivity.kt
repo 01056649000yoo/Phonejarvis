@@ -74,7 +74,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     /** 🎯 중요한 대화만 요약 (기본 켬) */
     var focusTalk by mutableStateOf(Briefings.focusOn(getApplication<Application>()))
         private set
-    fun setFocusTalk(on: Boolean) { Briefings.setFocus(getApplication<Application>(), on); focusTalk = on }
+    fun changeFocusTalk(on: Boolean) { Briefings.setFocus(getApplication<Application>(), on); focusTalk = on }
     fun setDndAuto(on: Boolean) { Dnd.setAuto(getApplication<Application>(), on); quietRev++ }
     fun setHideWhen(h: QuietMode.Hide) {
         quiet { putString("hide_when", h.name) }

@@ -1796,7 +1796,7 @@ private fun SchedulePage(vm: JarvisViewModel) {
                 Text(if (vm.focusTalk) "명부·키워드·사람 묶음·업무 앱, '선생님'을 부르거나 나에게 묻는 대화만 AI가 요약해요. 그 밖의 방은 이름과 건수만 적어요."
                     else "모든 대화방을 AI가 요약해요.", style = MaterialTheme.typography.bodySmall)
             }
-            Switch(checked = vm.focusTalk, onCheckedChange = { vm.setFocusTalk(it) })
+            Switch(checked = vm.focusTalk, onCheckedChange = { vm.changeFocusTalk(it) })
         }
     }
     // 🗓 하루 정리 (모아서 알림을 꺼도 따로)
