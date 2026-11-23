@@ -26,7 +26,7 @@ object DailyDigest {
     private fun merge(briefings: List<Briefing>, taskPart: String): Pair<String, Map<String, Int>> {
         val reply = LinkedHashMap<String, String>()      // 방 → 줄 (최근 것이 이김)
         val talk = LinkedHashMap<String, Pair<String, Int>>()   // 방 → (줄, 건수 합)
-        val others = linkedMapOf<String, LinkedHashSet<String>>()   // 칸 머리 → 줄들
+        val others = linkedMapOf<String, LinkedHashMap<String, Pair<String, Int>>>()   // 칸 머리 → (사람·앱 → (줄, 건수 합))
         val apps = LinkedHashMap<String, Int>()
         for (b in briefings) {
             for (block in b.text.trim().split(Regex("\\n\\s*\\n"))) {
@@ -53,8 +53,18 @@ object DailyDigest {
                             apps[app] = (apps[app] ?: 0) + n.toInt()
                         }
                     }
-                    head.startsWith("👪") || head.startsWith("💼") || head.startsWith("⭐") || head.startsWith("👥") || " 연락 (" in head ->
-                        others.getOrPut(head.substringBefore(" (")) { LinkedHashSet() }.addAll(items)
+                    head.startsWith("👪") || head.startsWith("💼") || head.startsWith("⭐") || head.startsWith("👥") || " 연락 (" in head -> {
+                        val sec = others.getOrPut(head.substringBefore(" (")) { LinkedHashMap() }
+                        // 👥 사람·💼 앱 줄 '- 이름 (N건) · 시각: …' 은 사람·앱마다 하나로(최근 줄, 건수 합) — 요약마다 건수·시각이 달라
+                        // 같은 사람이 여러 번 쌓이던 것(2026-11-24 점검). 건수 없는 줄(⭐ 등)은 같은 줄만 한 번
+                        items.forEach { l ->
+                            val n = Regex("^- .+? \\((\\d+)건\\)").find(l)?.groupValues?.get(1)?.toIntOrNull()
+                            if (n == null) { sec.remove(l); sec[l] = l to 0; return@forEach }
+                            val k = l.substringBefore(" (")
+                            val sum = (sec.remove(k)?.second ?: 0) + n
+                            sec[k] = l.replaceFirst(Regex("\\(\\d+건\\)"), "(${sum}건)") to sum
+                        }
+                    }
                     // 🕘 구간·📌 마감(새로 만듦)·⏱ 시간·안내 줄은 넣지 않음
                 }
             }
@@ -66,7 +76,7 @@ object DailyDigest {
             if (taskPart.isNotBlank()) append(taskPart.trim()).append("\n\n")
             // 읽는 순서(2026-11-23): 👥 사람 묶음(예전 👪 포함) → ⭐ 키워드 → 💼 업무·일정 → 💬 대화 요약(🙋 먼저) → 📦 앱 알림
             fun rank(h: String) = when { h.startsWith("⭐") -> 1; h.startsWith("💼") -> 2; else -> 0 }
-            others.entries.sortedBy { rank(it.key) }.forEach { (h, l) -> section(h, l.toList().takeLast(10)) }
+            others.entries.sortedBy { rank(it.key) }.forEach { (h, l) -> section(h, l.values.map { it.first }.takeLast(10)) }
             if (reply.isNotEmpty() || talk.isNotEmpty()) {
                 append("💬 대화 요약 (${reply.size + talk.size}개 방" + (if (reply.isNotEmpty()) " · 🙋 답장 ${reply.size}" else "") + ")\n")
                 reply.values.reversed().forEach { append(it).append('\n') }
@@ -95,7 +105,8 @@ object DailyDigest {
 
     /** 하루 정리 재료 한 줄. rank 1 = ⭐ 키워드·💼 업무·일정, 2 = 학생·학부모·마감·답장할 연락·사람 묶음, 3 = 그 밖의 대화방 */
     data class Line(val rank: Int, val tag: String, val text: String, val weight: Int = 0)
-    data class Material(val lines: List<Line>, val apps: Map<String, Int>, val briefings: Int, val count: Int)
+    data class Material(val lines: List<Line>, val apps: Map<String, Int>, val briefings: Int, val count: Int,
+                        /** 그날 요약들이 덮은 가장 이른 시각(월요일 아침 요약은 주말부터 덮음) */ val from: Long = 0L)
 
     const val MAX_LINES = 20
     private val RANK_CAP = mapOf(1 to 8, 2 to 8)   // 1·2순위가 많아도 3순위 자리가 조금은 남게
@@ -132,7 +143,7 @@ object DailyDigest {
         }
         // 📌 마감은 2순위 맨 뒤에 3줄까지 — 할 일이 많은 날 답장할 연락·학부모 자리를 밀어내지 않게
         taskPart.lines().filter { it.startsWith("- ") }.take(3).forEach { lines += Line(2, "📌 마감", body(it)) }
-        return Material(lines, apps, briefings.size, briefings.sumOf { it.count })
+        return Material(lines, apps, briefings.size, briefings.sumOf { it.count }, briefings.minOfOrNull { it.fromTime } ?: 0L)
     }
 
     /** 순위대로 MAX_LINES 줄까지(1·2순위는 각 8줄까지, 3순위는 건수 많은 방부터, 남는 자리는 다시 1·2순위로) */
@@ -240,7 +251,10 @@ object DailyDigest {
         val body = (ai ?: plain(picked)).ifBlank { "오늘은 따로 챙길 알림이 없었어요." }
         val tail = listOfNotNull(appsLine(m.apps).ifEmpty { null },
             if (left > 0) "(덜 중요한 ${left}줄은 뺐어요 · 📚 지난 요약에 그날 요약이 모두 있어요)" else null)
-        return ("요약 ${m.briefings}번 · 알림 ${m.count}건을 중요한 것부터 정리했어요.\n\n" + body +
+        // 그날 첫 요약이 전날(주말)부터 덮었으면 어디서부터인지 밝힘 — 월요일 '오늘 있었던 일'에 주말 일이 섞여 보이던 것(2026-11-24 점검)
+        val since = if (now != null && m.from in 1 until SummarySchedule.startOfDay(now))
+            " (${SimpleDateFormat("M/d (E) HH:mm", Locale.KOREA).format(m.from)}부터)" else ""
+        return ("요약 ${m.briefings}번 · 알림 ${m.count}건${since}을 중요한 것부터 정리했어요.\n\n" + body +
             (if (tail.isNotEmpty()) "\n\n" + tail.joinToString("\n") else "")) to (ai != null)
     }
 

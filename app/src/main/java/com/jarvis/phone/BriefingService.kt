@@ -357,7 +357,9 @@ object Briefings {
         val isWorkApp = AppFilter.isWorkApp(ctx)
         // 💼 업무 앱은 '정기 알림' 짐작으로 빼지 않음(2026-11-24 점검: 메일은 제목이 보낸 사람이라 매일 비슷한 시각에 메일을 주는 동료가
         // 🔁 건수로만 남았다). 선생님이 직접 뺀 꼴은 업무 앱도 뺌
-        val (quiet, loud) = items.partition { Routine.isQuiet(it, if (isWorkApp(it.app, it.pkg)) emptySet() else routine, muted, keywords) }
+        val (quiet, loud) = items.partition { Routine.isQuiet(it, if (isWorkApp(it.app, it.pkg)) emptySet() else routine, muted, keywords) ||
+            // 메일로 온 업체 안내(Google·OO은행·카드사…)는 💼 업무 요약에 넣지 않고 건수만(2026-11-24 점검 — 하루 정리에 Google Gemini 안내)
+            (isMail(it) && AdFilter.isBusinessName(it.title) && !AppFilter.hasRealKeyword(keywords, it.title, it.text, it.room)) }
         val workItems = loud.filter { isWorkApp(it.app, it.pkg) }
         val book = People.customBook(ctx)
         // 한 사람은 한 묶음에만(묶음 순서대로 먼저 맞는 곳) — 그 연락은 아래 대화 요약에 다시 나오지 않음
@@ -368,6 +370,10 @@ object Briefings {
             listOfNotNull(workItems.takeIf { it.isNotEmpty() }?.let { w -> BriefingComposer.Group(BriefingComposer.WORK_TITLE, w.map { it.app to it }) })
         return Split(quiet, loud, workItems, groups, loud - workItems.toSet() - hits.map { it.third }.toSet())
     }
+
+    /** 메일 앱 알림인가(제목이 보낸 사람) — 캘린더 같은 다른 업무 앱은 제목이 일정 이름이라 업체 이름 거르기를 하지 않음 */
+    private val MAIL = Regex("(?i)(mail|메일|outlook|아웃룩)")
+    fun isMail(n: NotiItem) = MAIL.containsMatchIn(n.app + " " + n.pkg)
 
     /** ⏱ 48초 · 모델 불러오기 21초(GPU) · AI 2번 27초 — 어디서 시간이 드는지 실제 폰에서 보려고 */
     fun timingLine(totalMs: Long, s: Summarizer.Stats, thermal: Int? = null): String {

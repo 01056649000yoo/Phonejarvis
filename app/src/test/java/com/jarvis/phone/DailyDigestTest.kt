@@ -91,6 +91,20 @@ class DailyDigestTest {
         assertTrue(out, "윤하율" in out)
     }
 
+    @Test fun 사람_묶음_줄은_요약마다_쌓이지_않고_한_사람_한_줄() {
+        fun brief(t: Long, n: Int, hm: String, said: String) = Briefing(t, 0, "📋 요약", n, "🏠 가족 연락 (1명 · ${n}건)\n- 김민수 선생님 (${n}건) · $hm: $said")
+        val t = DailyDigest.compose(listOf(brief(1, 2, "09:00", "아침 회의"), brief(2, 3, "15:00", "회의 4시로")), "")
+        assertEquals(t, 1, Regex("김민수 선생님").findAll(t).count())
+        assertTrue(t, "- 김민수 선생님 (5건) · 15:00: 회의 4시로" in t)
+    }
+
+    @Test fun 첫_요약이_주말부터면_머리에_밝힘() = kotlinx.coroutines.runBlocking {
+        val day = SummarySchedule.startOfDay(System.currentTimeMillis())
+        val m = DailyDigest.Material(listOf(DailyDigest.Line(3, "💬 대화", "가")), emptyMap(), 2, 10, from = day - 2 * 24 * 3600_000L)
+        assertTrue(DailyDigest.write(m, now = day + 22 * 3600_000L).first.startsWith("요약 2번 · 알림 10건 ("))
+        assertTrue(DailyDigest.write(m.copy(from = day + 3600_000L), now = day + 22 * 3600_000L).first.startsWith("요약 2번 · 알림 10건을"))
+    }
+
     @Test fun 업체_이름은_사람이_아님_앱_건수는_모두() {
         listOf("토스", "IBK기업은행", "뱅크샐러드", "Google Gemini", "토스뱅크", "국민카드").forEach { assertTrue(it, AdFilter.isBusinessName(it)) }
         listOf("김진수", "권지혜 선생님", "토스트", "6학년 동학년방", "류성하").forEach { assertFalse(it, AdFilter.isBusinessName(it)) }
