@@ -45,7 +45,8 @@ class SummaryPolishTest {
             n("박", "젠슨 황 컴백 ㄷㄷ", 6, room = "투자 수다방"), n("최", "도파민 솟는다", 7, room = "투자 수다방"),       // 단톡 잡담
         )
         val seen = mutableListOf<String>()
-        val r = BriefingComposer.compose(items, ask = { p -> seen += p; "요점: 정리함\n요청: 없음" }, focus = true)
+        // 명부에 없는 사람들(compose 기본값은 모든 방을 명부로 봄 — 앱은 늘 실제 명부 규칙을 넘김)
+        val r = BriefingComposer.compose(items, ask = { p -> seen += p; "요점: 정리함\n요청: 없음" }, replyAllowed = { false }, focus = true)
         assertTrue(seen.toString(), seen.none { "비트코인" in it || "젠슨" in it })      // 잡담 방은 AI 도 안 부름
         val other = r.people.lines().first { it.startsWith("- 그 밖의 방") }
         assertTrue(other, "서울_개복치(캔디) 2건" in other && "투자 수다방 2건" in other)
