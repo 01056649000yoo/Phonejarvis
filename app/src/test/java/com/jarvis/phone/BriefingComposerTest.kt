@@ -73,6 +73,7 @@ class BriefingComposerTest {
         assertEquals(listOf("김부장: 학예회 명단 금요일까지 올려 달라고 함", "이선생: 버스 인원 확인해 달라고 함"),
             BriefingComposer.fixAskNames(listOf("이선생: 학예회 명단 금요일까지 올려 달라고 함", "이선생: 버스 인원 확인해 달라고 함"), conv))
         assertEquals(listOf("버스 인원 확인해 달라고 함"), BriefingComposer.fixAskNames(listOf("홍길동: 버스 인원 확인해 달라고 함"), conv))   // 방에 없는 이름은 뗌
+        assertEquals(listOf("이선생: 현장학습 버스 인원 확인해 달라고 함"), BriefingComposer.fixAskNames(listOf("현장학습 버스 인원 확인해 달라고 함"), conv))   // 이름 없으면 찾아 붙임
         // 줄마다 말한 사람 이름이 붙음(1:1 도)
         val one = BriefingComposer.conversations(listOf(kakao("", "민준 어머님", "도시락 싸야 하나요?"), kakao("", "민준 어머님", "감사합니다 선생님")))[0]
         assertTrue(BriefingComposer.transcript(one).contains("민준 어머님: 도시락"))

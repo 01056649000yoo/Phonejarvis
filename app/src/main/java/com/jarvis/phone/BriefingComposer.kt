@@ -25,7 +25,8 @@ object BriefingComposer {
 
     /** 모델이 돌려준 세 줄(또는 규칙으로 만든 값) */
     /** fellBack: 모델 답에 원문에 없는 숫자가 있어 버렸음 — 한 번 더 물어볼 신호 */
-    data class RoomSummary(val conv: Conversation, val point: String, val ask: String, val needReply: Boolean, val byModel: Boolean, val fellBack: Boolean = false)
+    data class RoomSummary(val conv: Conversation, val point: String, val ask: String, val needReply: Boolean, val byModel: Boolean, val fellBack: Boolean = false,
+                           /** 요약 줄에 못 들어간 부탁 수(단톡방) — '외 부탁 N건' */ val extra: Int = 0)
 
     const val CHUNK = 30              // 대화방 하나에서 모델에 한 번에 넣는 메시지 수 — 넘으면 30개씩 나눠 요약한 뒤 합침(2026-11-21 선생님)
     // 2026-11-22 빠르게(선생님: "2건인데 오래 걸림"): 넣는 글·받는 글을 줄이고, 짧은 1:1 은 모델 없이
@@ -78,18 +79,72 @@ object BriefingComposer {
         .map { (key, list) -> Conversation(key.first, key.second, list.sortedBy { it.time }) }
         .sortedByDescending { it.last }
 
-    /** 모델에 넣는 대화 내용: 최근 메시지부터 ROOM_CHARS 안에서, 시간 순서로 */
-    fun transcript(conv: Conversation): String {
+    // 시뮬레이션으로 고르는 값(2026-11-23 — 긴 글이 섞인 방에서 앞 메시지·긴 공지 끝이 빠지던 것)
+    @Volatile var roomChars = ROOM_CHARS      // AI 에 한 번에 넣는 글자
+    @Volatile var lineChars = LINE_CHARS      // 메시지 한 개에서 넣는 글자
+    @Volatile var chunkByChars = false        // true: 방을 글자 수로 나눔(빠지는 메시지 없음) · false: 30개씩(예전)
+    @Volatile var keepTail = false            // true: lineChars 넘는 긴 글은 앞 1/4 … 끝 3/4 (부탁은 대개 끝에)
+    const val MAX_PROMPT_TOKENS = 3000        // 폰 AI 작업 공간 4096 — 질문이 이보다 클 것 같으면 덩어리를 반으로
+    private const val PROMPT_OVERHEAD_TOKENS = 700   // 질문의 규칙·예시 부분
+
+    /** 질문 토큰 어림(한글 글자당 0.75, 그 밖 0.5 — 넉넉히. 맥미니 Gemma 로 잰 한글 위주 글은 글자당 약 0.57) */
+    fun estTokens(text: String): Int = text.sumOf { c -> if (c in '가'..'힣') 0.75 else 0.5 }.toInt()
+
+    /** AI 에 넣는 한 줄: '시각 보낸 사람: 내용'(링크는 [링크], 길면 lineChars 에서 자르거나 끝을 살림) */
+    private fun lineOf(conv: Conversation, n: NotiItem): String {
         val fmt = SimpleDateFormat("HH:mm", Locale.KOREA)
+        // 모든 줄에 말한 사람(1:1 도 보낸 사람) — AI 가 누가 한 말인지 섞지 않게(2026-11-23)
+        val who = conv.who(n).ifEmpty { n.title.trim() }.let { if (it.isNotEmpty()) "$it: " else "" }
+        val body = n.text.replace('\n', ' ').replace(URL, "[링크]").trim()
+        val cut = when {
+            body.length <= lineChars -> body
+            keepTail -> body.take(lineChars / 4) + " … " + body.takeLast(lineChars - lineChars / 4)
+            else -> body.take(lineChars)
+        }
+        return "${fmt.format(n.time)} $who$cut"
+    }
+
+    // 부탁처럼 보이는 문장(넘치는 부탁 세기용 — 물음표 잡담은 빼고 '해 주세요·부탁·제출' 같은 말만)
+    private val REQUEST = Regex("(주세요|주시면|주실|부탁|알려 ?주|확인해|내 ?주|올려 ?주|보내 ?주|제출|참석해|도와주)")
+
+    /**
+     * 요약 줄에 못 들어간 부탁 수(2026-11-23 — 단톡방 부탁은 3개만 보이므로 나머지는 '외 부탁 N건'). AI 없이 원문에서 셈:
+     * 부탁 문장 중 보이는 요점·부탁과 겹치지 않는 것(보낸 사람·문장별 한 번).
+     */
+    fun extraAsks(conv: Conversation, shown: String): Int =
+        // 메시지마다 마지막 부탁 문장 하나만(공지 가운데 '궁금하면 말씀해 주세요' 같은 인사말은 안 셈), 숫자·괄호만 다른 같은 말은 한 번
+        conv.items.filterNot { isFiller(it.text) }.mapNotNull { n ->
+            n.text.replace('\n', ' ').split(Regex("(?<=[?？.!])\\s+")).map { it.trim() }
+                .lastOrNull { it.length >= 12 && REQUEST.containsMatchIn(it) && !it.endsWith("?") }
+        }.distinctBy { it.replace(Regex("[\\d()\\[\\]\\s]"), "").take(24) }
+            .count { sent -> overlap(sent.replace(ENDING, ""), shown) < 0.4 }
+
+    /** 방 하나를 AI 에 넣을 덩어리로: 글자 수 기준이면 한 덩어리가 roomChars 안에 다 들어가게(잡담은 0자로 셈) */
+    fun chunksOf(conv: Conversation, items: List<NotiItem>): List<List<NotiItem>> {
+        if (!chunkByChars) return items.chunked(CHUNK)
+        val out = mutableListOf<MutableList<NotiItem>>(); var size = 0
+        for (n in items) {
+            val len = if (isFiller(n.text)) 0 else lineOf(conv, n).length + 1
+            if (out.isEmpty() || (size + len > roomChars && out.last().any { !isFiller(it.text) })) { out += mutableListOf<NotiItem>(); size = 0 }
+            out.last() += n; size += len
+        }
+        // 🛡️ 토큰 안전장치: 영어·숫자·주소가 많아 질문이 폰 한도를 넘을 것 같으면 그 덩어리를 반으로(한 줄이 될 때까지)
+        fun fit(ch: List<NotiItem>): List<List<NotiItem>> {
+            val est = PROMPT_OVERHEAD_TOKENS + estTokens(ch.filterNot { isFiller(it.text) }.joinToString("\n") { lineOf(conv, it) })
+            return if (est <= MAX_PROMPT_TOKENS || ch.size <= 1) listOf(ch) else ch.chunked((ch.size + 1) / 2).flatMap { fit(it) }
+        }
+        return out.flatMap { fit(it) }
+    }
+
+    /** 모델에 넣는 대화 내용: 최근 메시지부터 roomChars 안에서, 시간 순서로 */
+    fun transcript(conv: Conversation): String {
         val picked = ArrayDeque<String>()
         var size = 0
         // 'ㅋㅋ'·'네 알겠습니다' 같은 말은 빼고(모두 그런 말이면 그대로) — 넣는 글이 줄어 빠르고, 모델이 잡담을 요점으로 삼지 않음
         val meaningful = conv.items.filterNot { isFiller(it.text) }.ifEmpty { conv.items }
         for (n in meaningful.asReversed()) {
-            // 모든 줄에 말한 사람(1:1 도 보낸 사람) — AI 가 누가 한 말인지 섞지 않게(2026-11-23)
-            val who = conv.who(n).ifEmpty { n.title.trim() }.let { if (it.isNotEmpty()) "$it: " else "" }
-            val line = "${fmt.format(n.time)} $who${n.text.replace('\n', ' ').replace(URL, "[링크]").trim().take(LINE_CHARS)}"
-            if (size + line.length > ROOM_CHARS && picked.isNotEmpty()) break
+            val line = lineOf(conv, n)
+            if (size + line.length > roomChars && picked.isNotEmpty()) break
             picked.addFirst(line); size += line.length + 1
         }
         return picked.joinToString("\n")
@@ -229,10 +284,20 @@ object BriefingComposer {
         val said = conv.items.groupBy { conv.who(it).ifEmpty { it.title.trim() } }.filterKeys { it.isNotEmpty() }
             .mapValues { (_, l) -> l.joinToString(" ") { it.text } }
         // 1:1 은 보낸 사람이 하나뿐 — 'OO 어머니: …' 처럼 붙은 이름은 떼기(줄 머리에 이미 있음)
-        if (said.size < 2) return asks.map { a -> a.substringBefore(':', "").trim().let { n -> if (n.isNotEmpty() && (n in said.keys || conv.room.contains(n) || n.contains(conv.room))) a.substringAfter(':').trim() else a } }
+        // 한 사람뿐인 대화(1:1, 또는 👥 묶음에서 '김민수 선생님'·'김민수'처럼 앱마다 이름만 다른 한 사람)
+        val oneSender = said.keys.all { a -> said.keys.all { b -> a.contains(b) || b.contains(a) } }
+        if (said.size < 2 || oneSender) return asks.map { a -> a.substringBefore(':', "").trim().let { n -> if (n.isNotEmpty() && (n in said.keys || conv.room.contains(n) || n.contains(conv.room))) a.substringAfter(':').trim() else a } }
         return asks.map { a ->
             val name = a.substringBefore(':', "").trim()
-            if (name.isEmpty() || name.length > 20) return@map a
+            if (name.isEmpty()) {
+                // 이름 없이 온 부탁: 원문에서 그 말을 한 사람이 뚜렷하면 이름을 붙임 — 누가 부탁했는지(2026-11-23).
+                // 두 글자 조각이 35% 넘게 겹치고, 두 번째로 닮은 사람보다 0.1 넘게 더 닮았을 때만(공지들이 같은 배경 문단을 나눠 써도 헷갈리지 않게)
+                val core0 = a.replace(ENDING, "")
+                val ranked = said.map { (k, t) -> k to overlap(core0, t) }.sortedByDescending { it.second }
+                val top = ranked.firstOrNull(); val second = ranked.getOrNull(1)?.second ?: 0.0
+                return@map if (top != null && top.second >= 0.35 && top.second - second > 0.1) "${top.first}: $a" else a
+            }
+            if (name.length > 20) return@map a
             val body = a.substringAfter(':').trim()
             val core = body.replace(ENDING, "")
             val owner = said.keys.firstOrNull { it == name || name.contains(it) || it.contains(name) }
@@ -387,14 +452,14 @@ object BriefingComposer {
         val todos = convs.sortedWith(compareBy<Conversation> { rank(it) }.thenByDescending { it.last })
             .map { conv -> val c = validCache(conv, cache, since); Todo(conv, c, freshOf(conv, c)) }
         // 모델에 묻는 횟수(진행 표시용): 새 메시지를 30개씩 나눈 덩어리 수(30개 넘으면 앞 덩어리 정리에 이어서 고쳐 씀)
-        val total = todos.filter { it.fresh.isNotEmpty() && (it.prev != null || direct(it.conv) == null) }.sumOf { (it.fresh.size + CHUNK - 1) / CHUNK }
+        val total = todos.filter { it.fresh.isNotEmpty() && (it.prev != null || direct(it.conv) == null) }.sumOf { chunksOf(it.conv, it.fresh).size }
         var asked = 0
         for ((conv, c, fresh) in todos) {
             var prev: RoomSummary? = c?.let { RoomSummary(conv, it.point, it.ask, it.needReply, byModel = true) }
             if (fresh.isEmpty() && prev != null) { rooms += prev; continue }        // 미리 요약해 둔 그대로
             if (prev == null) direct(conv)?.let { rooms += it; continue }
             var covered = c?.count ?: 0
-            for (chunk in fresh.chunked(CHUNK)) {
+            for (chunk in chunksOf(conv, fresh)) {
                 if (cut == null) cut = stopReason()
                 if (cut != null) break
                 asked++
@@ -425,6 +490,8 @@ object BriefingComposer {
         leftover.removeAll { keyOf(it) in groupKeys }
         // 명부·키워드가 안 나오는 방은 답장할 연락에서 뺌(요청은 💬 줄에 → 로 남김)
         rooms.replaceAll { if (it.needReply && !replyAllowed(it.conv)) it.copy(needReply = false) else it }
+        // 단톡방: 줄에 못 들어간 부탁 수(AI 없이 원문에서) — 전부는 세부 내역에서
+        rooms.replaceAll { r -> if (r.byModel && r.conv.items.any { it.room.isNotEmpty() }) r.copy(extra = extraAsks(r.conv, r.point + " " + r.ask)) else r }
         // 방 순서는 최근에 온 것부터
         rooms.sortByDescending { it.conv.last }
         val notes = buildList {
@@ -462,6 +529,8 @@ object BriefingComposer {
     }.trimEnd().let { if (it.isEmpty()) it else it + "\n\n" }
 
     /** 사람 메시지 요약 → 화면 글 */
+    private fun more(r: RoomSummary) = if (r.extra > 0) " · 외 부탁 ${r.extra}건(세부 내역)" else ""
+
     fun render(rooms: List<RoomSummary>, leftover: List<Conversation>, notes: List<String>): String = buildString {
         val fmt = SimpleDateFormat("HH:mm", Locale.KOREA)
         val replies = rooms.filter { it.needReply }
@@ -469,7 +538,7 @@ object BriefingComposer {
             append("🙋 답장할 연락 (${replies.size})\n")
             replies.forEach { r ->
                 val detail = if (r.ask.isNotEmpty() && r.byModel && !r.point.contains(r.ask)) "${r.ask} (${r.point})" else r.ask.ifEmpty { r.point }
-                append("- ${r.conv.room} · ${fmt.format(r.conv.last)}: $detail\n")
+                append("- ${r.conv.room} · ${fmt.format(r.conv.last)}: $detail" + more(r) + "\n")
             }
             append("\n")
         }
@@ -481,7 +550,7 @@ object BriefingComposer {
             talk.forEach { r ->
                 append("- ${r.conv.room} (${r.conv.items.size}건): ${r.point}")
                 if (r.ask.isNotEmpty() && !r.point.contains(r.ask)) append(" → ${r.ask}")   // 짧은 한 마디는 요점이 곧 물음이라 두 번 쓰지 않음
-                append("\n")
+                append(more(r) + "\n")
             }
             if (others.isNotEmpty()) {
                 append("- 그 밖의 방: " + others.joinToString(", ") { "${it.room} ${it.items.size}건" } + "\n")

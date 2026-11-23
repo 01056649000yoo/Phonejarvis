@@ -208,4 +208,73 @@ class BriefingEvalTest {
         File("build/briefing-bulk-${System.getenv("EVAL_TAG") ?: "now"}.md").writeText(report)
         println(report)
     }
+    /** 프롬프트 토큰 수까지 받는 부르기(폰 작업 공간 4096 안에 드는지 보려고) */
+    private fun ollamaT(prompt: String): Pair<String, Int> {
+        val body = """{"model":${q(model)},"prompt":${q(prompt)},"stream":false,"think":false,"keep_alive":"1m","options":{"temperature":0.2,"num_ctx":8192,"num_predict":${BriefingComposer.MAX_ANSWER_TOKENS}}}"""
+        val c = URI("http://127.0.0.1:11434/api/generate").toURL().openConnection() as HttpURLConnection
+        c.requestMethod = "POST"; c.doOutput = true; c.setRequestProperty("content-type", "application/json")
+        c.connectTimeout = 10_000; c.readTimeout = 300_000
+        c.outputStream.use { it.write(body.toByteArray()) }
+        val text = c.inputStream.bufferedReader().readText()
+        val resp = Regex("\"response\":\"((?:\\\\.|[^\"\\\\])*)\"").find(text)?.groupValues?.get(1)
+            ?.replace("\\n", "\n")?.replace("\\\"", "\"")?.replace("\\\\", "\\")
+            ?.replace(Regex("\\\\u([0-9a-fA-F]{4})")) { it.groupValues[1].toInt(16).toChar().toString() }.orEmpty()
+        val tok = Regex("\"prompt_eval_count\":(\\d+)").find(text)?.groupValues?.get(1)?.toInt() ?: 0
+        return resp to tok
+    }
+
+    /**
+     * 💬 10분 사이 100개 쏟아지는 단톡(2026-11-23 선생님: 카톡은 10분에 100개도 — 긴 글이 섞이면 빠질 수 있음).
+     * 짧은 잡담 사이에 긴 공지 8개(끝에 사람마다 다른 부탁). 설정마다: AI 가 본 부탁 수·요약에 남은 부탁 수·AI 횟수·시간·가장 큰 프롬프트 토큰.
+     */
+    @Test fun 쏟아지는_단톡_글자수() = runBlocking {
+        assumeTrue("OLLAMA_MODEL 이 없어 건너뜀", model.isNotEmpty())
+        ollama("안녕")
+        val asks = listOf("김부장" to "명단", "이선생" to "버스", "박선생" to "의상", "정교감" to "평가", "최부장" to "예산", "한부장" to "연수", "오선생" to "강당", "윤선생" to "급식")
+        val longTail = mapOf("명단" to "그래서 각 반 학예회 참가 명단을 금요일까지 단톡에 올려 주세요.", "버스" to "현장학습 버스 인원은 수요일까지 확인해서 알려 주세요.",
+            "의상" to "공연 의상은 흰 티셔츠로 통일했으니 반별로 미리 준비해 주세요.", "평가" to "2학기 평가 계획서는 다음 주 월요일까지 교무실로 내 주세요.",
+            "예산" to "학년 예산 사용 내역을 정리해서 목요일까지 공유 부탁드립니다.", "연수" to "수요일 연수는 3시 시청각실이니 꼭 참석해 주세요.",
+            "강당" to "리허설 날 강당 의자 배치를 각 반에서 도와주세요.", "급식" to "체험학습 날 급식 취소 인원을 내일까지 행정실에 알려 주세요.")
+        val filler = "이번 주는 행사가 많아서 일정이 조금 복잡합니다. 지난번 회의에서 이야기한 내용을 다시 정리하면, 학년 전체가 움직이는 행사라 안전 지도와 이동 동선을 미리 점검해야 하고, 학부모 안내도 함께 나가야 합니다. 세부 사항은 첨부한 계획서를 참고해 주시고 궁금한 점은 언제든 말씀해 주세요. "
+        val chat = listOf("네 알겠습니다", "확인했어요", "ㅋㅋㅋ", "감사합니다~", "저도 그렇게 할게요", "혹시 시간 바뀌면 알려 주세요", "넵", "좋아요 그렇게 해요", "저희 반은 조금 늦을 수도 있어요", "회의실 어디였죠?")
+        val room = "6학년 동학년방"
+        // 1,100자 넘는 공지(끝에 '사진' 부탁)와 영어·숫자가 많은 긴 공지(끝에 '자료' 부탁)를 더함 — 끝 살리기·토큰 안전장치 확인
+        val veryLong = "[긴 공지] " + filler + filler + filler + filler + "학예회 당일 사진은 각 반 담임이 찍어서 금요일까지 학년 드라이브에 올려 주세요."
+        val english = "[Notice] Please review the following schedule. " + (1..14).joinToString(" ") { "Session $it: 09:${10 + it} - 10:${20 + it} Room B-$it (zoom id 8${it}3-4${it}5-77${it}) https://example.org/s$it" } +
+            " 마지막으로 수업 자료는 화요일까지 공유 폴더에 올려 주세요."
+        val extraTail = mapOf("사진" to "학년 드라이브에 올려 주세요", "자료" to "공유 폴더에 올려 주세요")
+        val items = (0 until 100).map { j ->
+            when {
+                j % 12 == 5 && j / 12 < asks.size -> { val (who, key) = asks[j / 12]; k(room, who, "[${j / 12 + 1}번째 안내] " + filler + filler.take(120) + longTail[key]) }
+                j == 50 -> k(room, "학년부장", veryLong)
+                j == 80 -> k(room, "정보부장", english)
+                else -> k(room, listOf("오선생", "윤선생", "김부장", "이선생", "박선생")[j % 5], chat[j % chat.size] + " ($j)")
+            }
+        }
+        val longTailAll = longTail + extraTail
+        val keys = asks.map { it.second } + listOf("사진", "자료")
+        val avgLong = items.filter { it.text.length > 200 }.map { it.text.length }.average().toInt()
+        val out = StringBuilder("# 10분 100개 단톡 — 글자 수 비교 ($model)\n\n긴 공지 ${keys.size}개(평균 ${avgLong}자, 부탁은 공지 끝) + 짧은 잡담 ${100 - keys.size}개\n\n| 나누기 | 한 번 넣는 글자 | 메시지 한 개 | AI 본 부탁 | 요약에 남은 부탁 | AI 횟수 | 시간 | 가장 큰 프롬프트 |\n|---|---|---|---|---|---|---|---|\n")
+        val detail = StringBuilder()
+        data class Cfg(val name: String, val byChars: Boolean, val room: Int, val line: Int, val tail: Boolean)
+        val configs = listOf(Cfg("지금(30개씩)", false, 1600, 200, false), Cfg("처음 추천", true, 3200, 600, false), Cfg("절충안", true, 2400, 600, true))
+        out.setLength(0)
+        out.append("# 10분 100개 단톡 — 지금·처음 추천·절충안 ($model)\n\n긴 공지 8개(평균 ${avgLong}자) + 1,100자 공지 1개 + 영어·숫자 공지 1개(${english.length}자), 부탁은 모두 글 끝 · 나머지는 짧은 잡담\n\n")
+        out.append("| 설정 | 한 번 넣는 글자 / 메시지 한 개 | AI 본 부탁 | 요약에 보인 부탁 | '외 부탁' 표시 | AI 횟수 | 시간 | 가장 큰 질문 |\n|---|---|---|---|---|---|---|---|\n")
+        for (c in configs) {
+            BriefingComposer.chunkByChars = c.byChars; BriefingComposer.roomChars = c.room; BriefingComposer.lineChars = c.line; BriefingComposer.keepTail = c.tail
+            val seen = mutableSetOf<String>(); var calls = 0; var maxTok = 0
+            val t0 = System.currentTimeMillis()
+            val r = BriefingComposer.compose(items, ask = { p -> calls++; val tr = p.substringAfter("---\n").substringBefore("\n---"); keys.filter { longTailAll[it]!!.take(12) in tr }.forEach { seen += it }; val (a, t) = ollamaT(p); maxTok = maxOf(maxTok, t); a })
+            val sec = (System.currentTimeMillis() - t0) / 1000.0
+            val text = r.people
+            val kept = keys.count { it in text }
+            val extra = Regex("외 부탁 (\\d+)건").find(text)?.groupValues?.get(1) ?: "-"
+            out.append("| ${c.name} | ${c.room} / ${c.line}${if (c.tail) " (끝 살림)" else ""} | ${seen.size}/${keys.size} | $kept/${keys.size} | $extra | $calls | ${sec}초 | $maxTok 토큰 |\n")
+            detail.append("\n### ${c.name}\n```\n$text\n```\n")
+        }
+        BriefingComposer.chunkByChars = false; BriefingComposer.roomChars = BriefingComposer.ROOM_CHARS; BriefingComposer.lineChars = BriefingComposer.LINE_CHARS; BriefingComposer.keepTail = false
+        File("build/briefing-flood.md").writeText(out.toString() + detail)
+        println(out.toString() + detail)
+    }
 }
