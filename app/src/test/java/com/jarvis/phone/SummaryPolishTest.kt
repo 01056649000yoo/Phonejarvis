@@ -51,9 +51,11 @@ class SummaryPolishTest {
 
     @Test fun 중요한_대화만_요약_잡담은_이름만() = runBlocking {
         val items = listOf(
-            n("서울_개복치(캔디)", "비트코인 손실 났다가 본전 왔어", 1), n("서울_개복치(캔디)", "이더리움도 올랐네", 2),        // 사적 잡담 1:1
+            n("캔디", "비트코인 손실 났다가 본전 왔어", 1, room = "코인방"), n("햅삐", "이더리움도 올랐네", 2, room = "코인방"), // 단톡 잡담
             n("김지우맘", "선생님 내일 준비물이 뭔가요?", 3),                                                           // 선생님을 부름
             n("친구", "오늘 저녁 같이 먹을래?", 4),                                                                    // 1:1 물음
+            n("정구영", "어제 말한 책 찾았어", 8),                                                                     // 1:1 은 물음이 없어도 요약
+            n("뉙릭", "ㅋㅋ", 9),                                                                                     // 1:1 이라도 맞장구뿐이면 이름만
             n("이선생", "내일까지 각 반 명단 내 주세요", 5, room = "6학년 동학년"),                                       // 단톡 + 기한 있는 부탁
             n("박", "젠슨 황 컴백 ㄷㄷ", 6, room = "투자 수다방"), n("최", "도파민 솟는다", 7, room = "투자 수다방"),       // 단톡 잡담
         )
@@ -62,8 +64,8 @@ class SummaryPolishTest {
         val r = BriefingComposer.compose(items, ask = { p -> seen += p; "요점: 정리함\n요청: 없음" }, replyAllowed = { false }, focus = true)
         assertTrue(seen.toString(), seen.none { "비트코인" in it || "젠슨" in it })      // 잡담 방은 AI 도 안 부름
         val other = r.people.lines().first { it.startsWith("- 그 밖의 방") }
-        assertTrue(other, "서울_개복치(캔디) 2건" in other && "투자 수다방 2건" in other)
-        listOf("김지우맘", "친구", "6학년 동학년").forEach { assertFalse(it, it in other); assertTrue(it, it in r.people) }
+        assertTrue(other, "코인방 2건" in other && "투자 수다방 2건" in other && "뉙릭" in other)
+        listOf("김지우맘", "친구", "6학년 동학년", "정구영").forEach { assertFalse(it, it in other); assertTrue(it, it in r.people) }
         // 끄면 예전처럼 모든 방을 AI 로
         val all = mutableListOf<String>()
         BriefingComposer.compose(items, ask = { p -> all += p; "요점: 정리함\n요청: 없음" }, focus = false)

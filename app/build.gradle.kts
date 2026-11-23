@@ -12,8 +12,8 @@ android {
         applicationId = "com.jarvis.phone"
         minSdk = 31          // Galaxy Z Fold4 (Android 14+) 기준
         targetSdk = 36
-        versionCode = 66
-        versionName = "1.12.1"
+        versionCode = 67
+        versionName = "1.12.2"
     }
 
     // 🔐 배포용 서명 키: 저장소에 두지 않고 GitHub Secrets → 빌드할 때만 환경 변수로 받음
