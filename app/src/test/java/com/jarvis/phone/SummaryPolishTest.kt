@@ -49,7 +49,7 @@ class SummaryPolishTest {
         assertFalse(BriefingComposer.isFiller("선배님 내일 몇 시에 가요?"))
     }
 
-    @Test fun 중요한_대화만_요약_잡담은_이름만() = runBlocking {
+    @Test fun 잡담은_간단히_많으면_핵심_요약() = runBlocking {
         val items = listOf(
             n("캔디", "비트코인 손실 났다가 본전 왔어", 1, room = "코인방"), n("햅삐", "이더리움도 올랐네", 2, room = "코인방"), // 단톡 잡담
             n("김지우맘", "선생님 내일 준비물이 뭔가요?", 3),                                                           // 선생님을 부름
@@ -59,13 +59,19 @@ class SummaryPolishTest {
             n("이선생", "내일까지 각 반 명단 내 주세요", 5, room = "6학년 동학년"),                                       // 단톡 + 기한 있는 부탁
             n("박", "젠슨 황 컴백 ㄷㄷ", 6, room = "투자 수다방"), n("최", "도파민 솟는다", 7, room = "투자 수다방"),       // 단톡 잡담
         )
+        val big = (1..6).map { n("동창$it", "주말 등산 코스 이야기 $it", 20L + it, room = "동창 모임") }      // 많은 잡담 → 핵심 요약
         val seen = mutableListOf<String>()
         // 명부에 없는 사람들(compose 기본값은 모든 방을 명부로 봄 — 앱은 늘 실제 명부 규칙을 넘김)
-        val r = BriefingComposer.compose(items, ask = { p -> seen += p; "요점: 정리함\n요청: 없음" }, replyAllowed = { false }, focus = true)
-        assertTrue(seen.toString(), seen.none { "비트코인" in it || "젠슨" in it })      // 잡담 방은 AI 도 안 부름
+        val r = BriefingComposer.compose(items + big, ask = { p -> seen += p; "요점: 등산 코스를 정함\n요청: 없음" }, replyAllowed = { false }, focus = true)
+        assertTrue(seen.toString(), seen.none { "비트코인" in it || "젠슨" in it })      // 몇 마디뿐인 잡담 방은 AI 없이
+        assertTrue(seen.toString(), seen.any { "등산" in it })                            // 많으면 AI 핵심 요약
+        assertTrue(r.people, "투자 수다방 (2건): 박: 젠슨 황 컴백" in r.people && "최: 도파민" in r.people)   // 간단한 내용은 보임
+        assertTrue(r.people, "코인방 (2건): 캔디: 비트코인" in r.people)
+        assertTrue(r.people, "동창 모임 (6건)" in r.people)
         val other = r.people.lines().first { it.startsWith("- 그 밖의 방") }
-        assertTrue(other, "코인방 2건" in other && "투자 수다방 2건" in other && "뉙릭" in other)
-        listOf("김지우맘", "친구", "6학년 동학년", "정구영").forEach { assertFalse(it, it in other); assertTrue(it, it in r.people) }
+        assertEquals("- 그 밖의 방: 뉙릭 1건", other)                                   // 맞장구뿐인 방만 이름
+        listOf("김지우맘", "친구", "6학년 동학년", "정구영").forEach { assertTrue(it, it in r.people) }
+        assertFalse(r.people, "🙋 투자 수다방" in r.people)
         // 끄면 예전처럼 모든 방을 AI 로
         val all = mutableListOf<String>()
         BriefingComposer.compose(items, ask = { p -> all += p; "요점: 정리함\n요청: 없음" }, focus = false)

@@ -448,6 +448,18 @@ object BriefingComposer {
         return cut.trimEnd(' ', '[', '(', '<', '{', '-', ',', '·', ':') + "…"
     }
 
+    /** 이보다 적은 마디의 잡담 방은 AI 없이 그 말을 짧게, 많으면 AI 핵심 요약 */
+    const val PEEK_MAX = 3
+    private fun said(conv: Conversation) = conv.items.filter { hasWords(it.text) && !isFiller(it.text) }
+
+    /** AI 없이 간단한 내용: 뜻 있는 말을 '보낸 사람: 말' 로 이어 90자 안쪽. 답장 표시(🙋)는 붙이지 않음 */
+    fun peek(conv: Conversation): RoomSummary {
+        val point = clip(said(conv).joinToString(" / ") { m ->
+            conv.who(m).let { if (it.isNotEmpty()) "$it: " else "" } + condenseAll(m.text.replace('\n', ' ').trim())
+        }, 90)
+        return RoomSummary(conv, point, "", false, byModel = false)
+    }
+
     /** 뜻 있는 글자(완성 한글·영문·숫자)가 하나라도 있는가 */
     fun hasWords(s: String) = s.any { it in '가'..'힣' || it.isLetterOrDigit() && it.code < 0x3130 }
 
@@ -587,8 +599,8 @@ object BriefingComposer {
             if (conv.app == WORK_TITLE && isCalendar(conv)) { rooms += calendar(conv); continue }
             // 🙏 인사·맞장구뿐인 방은 요약 줄 없이 '그 밖의 방'에 이름만(2026-11-24: '감사합니다 선배님 !!')
             if (conv.items.all { isFiller(it.text) }) { rooms += RoomSummary(conv, "", "", false, byModel = false); continue }
-            // 🎯 중요한 대화만 요약 — 사적 잡담 방은 '그 밖의 방'에 이름·건수만(AI 도 안 부름)
-            if (focus && keyOf(conv) !in groupKeys && !important(conv, replyAllowed)) { rooms += RoomSummary(conv, "", "", false, byModel = false); continue }
+            // 🎯 온 연락은 간단한 내용까지, 많으면 핵심 요약(2026-11-24 선생님) — 중요하지 않은 방이 몇 마디뿐이면 AI 없이 그 말을 짧게
+            if (focus && keyOf(conv) !in groupKeys && !important(conv, replyAllowed) && said(conv).size <= PEEK_MAX) { rooms += peek(conv); continue }
             if (fresh.isEmpty() && prev != null) { rooms += prev; continue }        // 미리 요약해 둔 그대로
             if (prev == null) direct(conv)?.let { rooms += it; continue }
             var covered = c?.count ?: 0
