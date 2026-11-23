@@ -9,6 +9,8 @@ import androidx.compose.material3.Typography
 import androidx.compose.material3.Shapes
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -24,7 +26,7 @@ object Ssam {
     val Night = Color(0xFF1B211E)
 }
 
-private val Light = lightColorScheme(
+internal val SsamLight = lightColorScheme(
     primary = Ssam.Board, onPrimary = Ssam.Chalk,
     primaryContainer = Ssam.Board, onPrimaryContainer = Ssam.Chalk,
     secondary = Color(0xFF4F7A45), onSecondary = Color.White,
@@ -42,7 +44,7 @@ private val Light = lightColorScheme(
     outline = Color(0xFF8A9690), outlineVariant = Color(0xFFE3DCCB),
 )
 
-private val Dark = darkColorScheme(
+internal val SsamDark = darkColorScheme(
     primary = Ssam.Sprout, onPrimary = Color(0xFF10301F),
     primaryContainer = Ssam.Board, onPrimaryContainer = Ssam.Chalk,
     secondary = Color(0xFFB9D9AE), onSecondary = Color(0xFF1E3A1A),
@@ -91,6 +93,9 @@ object Space {
     val xs = 4.dp; val s = 8.dp; val m = 12.dp; val l = 16.dp; val card = 20.dp; val xl = 24.dp; val xxl = 32.dp
 }
 
+/** 칸·카드 제목: 화면 읽기(TalkBack)가 '제목'으로 읽어 칸 사이를 건너뛸 수 있게 (DESIGN.md 접근성) */
+fun androidx.compose.ui.Modifier.asHeading() = this.then(androidx.compose.ui.Modifier.semantics { heading() })
+
 /** 모서리: 카드 20, 창 28 — 둥글고 부드럽게 */
 private val SsamShapes = Shapes(
     extraSmall = RoundedCornerShape(8.dp), small = RoundedCornerShape(12.dp),
@@ -100,7 +105,7 @@ private val SsamShapes = Shapes(
 /** 폰 설정의 다크 모드를 따라 밝은(분필 크림)/어두운(밤 칠판) 테마. */
 @Composable
 fun SsamTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = if (isSystemInDarkTheme()) Dark else Light, typography = SsamType, shapes = SsamShapes, content = content)
+    MaterialTheme(colorScheme = if (isSystemInDarkTheme()) SsamDark else SsamLight, typography = SsamType, shapes = SsamShapes, content = content)
 }
 
 /**

@@ -71,7 +71,8 @@ class SummaryWidget : GlanceAppWidget() {
         provideContent {
             val rev = currentState<Preferences>()[REV] ?: 0L
             val state = remember(rev) { load(context) }
-            GlanceTheme { Content(context, state) }
+            // 위젯도 앱과 같은 쌤톡스 색(칠판 그린·크림) — 기본 보라색 대신(2026-11-23 디자인 정리)
+            GlanceTheme(colors = androidx.glance.material3.ColorProviders(light = SsamLight, dark = SsamDark)) { Content(context, state) }
         }
     }
 
@@ -134,10 +135,23 @@ class SummaryWidget : GlanceAppWidget() {
             } else {
                 LazyColumn(GlanceModifier.fillMaxSize()) {
                     items(lines) { line ->
-                        val head = !line.startsWith("-") && !line.startsWith(" ") && !line.startsWith("(")
-                        Text(line, modifier = GlanceModifier.fillMaxWidth().padding(top = if (head) 6.dp else 1.dp).clickable(openApp),
-                            style = TextStyle(color = if (head) c.primary else c.onSurface,
-                                fontWeight = if (head) FontWeight.Bold else FontWeight.Normal, fontSize = if (head) 13.sp else 12.sp))
+                        // 앱의 요약 화면(SummaryText)과 같은 꼴: 칸 제목 굵게 · 사람 이름 굵게 + 시각·건수 옅게 / 내용은 다음 줄
+                        when {
+                            line.startsWith("-") -> {
+                                val l = splitLine(line)
+                                Column(GlanceModifier.fillMaxWidth().padding(top = 4.dp).clickable(openApp)) {
+                                    if (l.who.isNotEmpty() || l.meta.isNotEmpty()) Row {
+                                        if (l.who.isNotEmpty()) Text(l.who, style = TextStyle(color = c.onSurface, fontWeight = FontWeight.Bold, fontSize = 12.sp), maxLines = 1)
+                                        if (l.meta.isNotEmpty()) Text((if (l.who.isEmpty()) "" else "  ") + l.meta, style = TextStyle(color = c.onSurfaceVariant, fontSize = 11.sp), maxLines = 1)
+                                    }
+                                    Text(l.body, style = TextStyle(color = c.onSurface, fontSize = 12.sp))
+                                }
+                            }
+                            line.startsWith("(") -> Text(line, modifier = GlanceModifier.fillMaxWidth().padding(top = 8.dp).clickable(openApp),
+                                style = TextStyle(color = c.onSurfaceVariant, fontSize = 11.sp))
+                            else -> Text(line, modifier = GlanceModifier.fillMaxWidth().padding(top = 8.dp).clickable(openApp),
+                                style = TextStyle(color = c.primary, fontWeight = FontWeight.Bold, fontSize = 13.sp))
+                        }
                     }
                 }
             }

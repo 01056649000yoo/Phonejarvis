@@ -192,7 +192,7 @@ private fun Header(vm: JarvisViewModel, tab: JarvisViewModel.Tab) {
         JarvisViewModel.Tab.HISTORY -> "지난 요약" to "최근 요약 ${vm.briefings.size}개"
         JarvisViewModel.Tab.SETTINGS -> "설정" to "쌤톡스 v${vm.appVersion} · 알림은 폰 밖으로 나가지 않아요"
     }
-    Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+    Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         SsamLogo(36.dp)
         Text(title, style = MaterialTheme.typography.headlineMedium)
     }
@@ -240,7 +240,7 @@ private fun MenuGroup(rows: List<Triple<String, String, () -> Unit>>) {
                 if (i > 0) HorizontalDivider(Modifier.padding(start = 16.dp))
                 Row(Modifier.fillMaxWidth().clickable(onClick = onClick).heightIn(min = 60.dp).padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically) {
-                    Text(title, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, maxLines = 1)
+                    Text(title, Modifier.weight(1f), style = MaterialTheme.typography.labelLarge, maxLines = 1)
                     Text(status, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1, modifier = Modifier.padding(start = 8.dp).widthIn(max = 140.dp),
                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
@@ -272,9 +272,9 @@ private fun BriefingTab(vm: JarvisViewModel) {
     }
     // 🏠 위젯을 아직 안 놓았으면 한 번 권함(닫으면 다시 안 보임 — 설정에서 언제든)
     if (!vm.hasWidget && !vm.widgetTipClosed) Card(Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(start = 16.dp, top = 10.dp, bottom = 10.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("🏠 홈 화면에 요약 위젯", fontWeight = FontWeight.Bold)
+                Text("🏠 홈 화면에 요약 위젯", style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading())
                 Text("앱을 열지 않고 최근 요약을 바로 봐요.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -286,10 +286,10 @@ private fun BriefingTab(vm: JarvisViewModel) {
         onDismissRequest = { whatsNewOpen = false; vm.closeWhatsNew() },
         title = { Text("🆕 v${vm.appVersion} 바뀐 점") },
         text = {
-            Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 WHATS_NEW_DETAIL.forEach { (title, body) ->
                     Column {
-                        Text(title, fontWeight = FontWeight.Bold)
+                        Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading())
                         Text(body, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
@@ -318,7 +318,7 @@ private fun BriefingTab(vm: JarvisViewModel) {
             vm.bgRunning -> "백그라운드에서 정리 중… 다 되면 알림"
             vm.pendingCount > 0 -> "지금 정리하기 (새 알림 ${vm.pendingCount}건)"
             else -> "새 알림이 없어요 · 모두 정리됨"
-        }, fontWeight = FontWeight.Bold)
+        })
     }
     if (!vm.bgRunning && vm.pendingCount > 0) Text("🔔 누르면 백그라운드에서 정리하고 앱은 닫혀요. 다 되면 알림이 오고, 누르면 세부 내역을 볼 수 있어요.",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -369,7 +369,7 @@ private fun AlertsTab(vm: JarvisViewModel) {
         Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.secondaryContainer,
             contentColor = MaterialTheme.colorScheme.onSecondaryContainer)) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("아직 요약 안 한 알림 ${vm.pendingItems.size}건", style = MaterialTheme.typography.titleMedium)
@@ -380,7 +380,7 @@ private fun AlertsTab(vm: JarvisViewModel) {
                     TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "접기" else "더 보기") }
                 }
                 // 접어 두면 최근 3건만, 펼치면 30건
-                Column(Modifier.animateContentSize(Motion.size), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(Modifier.animateContentSize(Motion.size), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     run {
                         vm.pendingItems.takeLast(if (expanded) 30 else 3).reversed().forEach {
                             Text("${timeFmt.format(it.time)} [${it.app}] ${it.title}: ${it.text}",
@@ -403,8 +403,8 @@ private fun AlertsTab(vm: JarvisViewModel) {
 private fun MutedShapesCard(vm: JarvisViewModel) {
     if (vm.mutedShapes.isEmpty()) return
     Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("🔕 요약에서 뺀 알림 ${vm.mutedShapes.size}가지", fontWeight = FontWeight.Bold)
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("🔕 요약에서 뺀 알림 ${vm.mutedShapes.size}가지", style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading())
             Text("이런 알림은 모으지만 요약·하루 정리에는 넣지 않아요. 매일 같은 시각에 오는 알림은 쌤톡스가 알아서 빼고 요약 끝에 건수만 적어요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             vm.mutedShapes.sorted().forEach { k ->
@@ -428,7 +428,7 @@ private fun SearchResults(vm: JarvisViewModel) {
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     list.forEach { n ->
         Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 val who = if (n.room.isNotEmpty() && n.title != n.room) "${n.room} · ${n.title}" else n.title
                 Text("$who · ${n.app} · ${fmt.format(n.time)}", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
@@ -468,16 +468,16 @@ private fun HistoryTab(vm: JarvisViewModel) {
         days.forEach { (day, list) ->
             var open by rememberSaveable(day) { mutableStateOf(day == today) }
             Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(Modifier.fillMaxWidth().clickable { open = !open }, verticalAlignment = Alignment.CenterVertically) {
-                        Text(dayTitle(day, today), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        Text(dayTitle(day, today), style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading().weight(1f))
                         Text("요약 ${list.size}개 · 알림 ${list.sumOf { it.count }}건", style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text(if (open) "  ▾" else "  ▸")
                     }
                     AnimatedVisibility(visible = open, enter = expandVertically(Motion.size) + fadeIn(Motion.fade),
                         exit = shrinkVertically(Motion.size) + fadeOut(Motion.fadeFast)) {
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             list.forEach { b ->
                                 var show by rememberSaveable(b.time) { mutableStateOf(false) }
                                 HorizontalDivider()
@@ -515,7 +515,7 @@ private fun ReplyDraftsCard(vm: JarvisViewModel) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth().clickable { open = !open }, verticalAlignment = Alignment.CenterVertically) {
-                Text("✉️ 답장할 문자 · ${vm.replyDrafts.size}", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Text("✉️ 답장할 문자 · ${vm.replyDrafts.size}", style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading().weight(1f))
                 Text(if (open) "▾" else "▸")
             }
             if (open) {
@@ -524,7 +524,7 @@ private fun ReplyDraftsCard(vm: JarvisViewModel) {
                 vm.replyDrafts.forEach { d ->
                     HorizontalDivider()
                     var text by rememberSaveable(d.sender, d.lastTime, d.draft) { mutableStateOf(d.draft) }
-                    Text("${d.sender} · ${timeFmt.format(d.lastTime)}", fontWeight = FontWeight.Bold)
+                    Text("${d.sender} · ${timeFmt.format(d.lastTime)}", style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading())
                     Text("“${d.question}”", style = MaterialTheme.typography.bodyMedium, maxLines = 3)
                     if (vm.draftingFor == d.sender) {
                         Text("✏️ 초안 쓰는 중… (처음엔 모델을 불러오느라 30초쯤)", style = MaterialTheme.typography.bodySmall)
@@ -534,7 +534,7 @@ private fun ReplyDraftsCard(vm: JarvisViewModel) {
                     }
                     if (d.draft.isNotEmpty() || text.isNotEmpty()) {
                         OutlinedTextField(value = text, onValueChange = { text = it }, modifier = Modifier.fillMaxWidth(), minLines = 2)
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(onClick = {
                                 // [ ] 빈칸(AI가 모르는 사실)을 채우지 않고 나가지 않게
                                 if (Regex("\\[[^\\]]*\\]").containsMatchIn(text)) {
@@ -603,11 +603,11 @@ private fun TodayAllPage(vm: JarvisViewModel) {
     rooms.forEach { (key, list) ->
             var open by rememberSaveable(key.first + key.second) { mutableStateOf(false) }
             Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.animateContentSize(Motion.size).clickable { open = !open }.padding(14.dp),
+                Column(Modifier.animateContentSize(Motion.size).clickable { open = !open }.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text(key.second, fontWeight = FontWeight.Bold, maxLines = 1)
+                            Text(key.second, style = MaterialTheme.typography.titleSmall, maxLines = 1, modifier = Modifier.asHeading())
                             Text("${key.first} · ${list.size}건 · 마지막 ${timeFmt.format(list.maxOf { it.time })}",
                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
@@ -648,7 +648,7 @@ private fun BriefingDetailDialog(vm: JarvisViewModel, b: Briefing, items: List<N
             }
         },
         text = {
-            Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 SummaryText(b.text)
                 HorizontalDivider()
                 TextButton(onClick = { showRaw = !showRaw }) {
@@ -659,7 +659,7 @@ private fun BriefingDetailDialog(vm: JarvisViewModel, b: Briefing, items: List<N
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         items.groupBy { it.app to it.roomOrTitle }.forEach { (k, list) ->
                             Column {
-                                Text("${k.first} · ${k.second} (${list.size})", fontWeight = FontWeight.Bold,
+                                Text("${k.first} · ${k.second} (${list.size})",
                                     style = MaterialTheme.typography.labelLarge)
                                 list.sortedBy { it.time }.forEach { n ->
                                     val who = if (n.room.isNotEmpty() && n.title != n.room) "${n.title}: " else ""
@@ -780,7 +780,7 @@ private fun PeoplePage(vm: JarvisViewModel) {
     })
     Button(onClick = { making = true }, modifier = Modifier.fillMaxWidth().height(52.dp),
         colors = ButtonDefaults.buttonColors(containerColor = Ssam.Sprout, contentColor = Ssam.Ink)) {
-        Text("＋ 묶음 만들기", fontWeight = FontWeight.Bold)
+        Text("＋ 묶음 만들기", style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading())
     }
     val hidden = vm.groups.filter { it.hidden }
     if (hidden.isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically) {
@@ -810,7 +810,7 @@ private fun GroupNameDialog(title: String, initEmoji: String, initName: String, 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (suggest) {
                     Text("눌러서 바로 고르기", style = MaterialTheme.typography.labelMedium)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         People.SUGGESTIONS.forEach { (e, n) -> AssistChip(onClick = { emoji = e; name = n }, label = { Text("$e $n") }) }
                     }
                 }
@@ -869,13 +869,13 @@ private fun CustomGroupCard(vm: JarvisViewModel, g: PeopleGroup) {
             Text("＋ 이름 넣기", style = MaterialTheme.typography.titleMedium)
             OutlinedTextField(value = raw, onValueChange = { raw = it }, minLines = 3, modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text("예) 김교감, 박부장, 이선생 … 쉼표·줄바꿈 아무렇게나") })
-            Button(onClick = { if (vm.addMembers(g.id, raw) > 0) raw = "" }, enabled = raw.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("넣기", fontWeight = FontWeight.Bold) }
+            Button(onClick = { if (vm.addMembers(g.id, raw) > 0) raw = "" }, enabled = raw.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("넣기") }
             Text("알림에 뜨는 이름 그대로 넣으세요. 그 이름이 보낸 알림이나, 내용에 그 이름이 나온 알림을 이 묶음으로 모아요.",
                 style = MaterialTheme.typography.bodySmall)
             val recent = vm.recentSenders.filter { it !in members }
             if (recent.isNotEmpty()) {
                 Text("최근 연락한 사람에서 고르기 · 누르면 바로 들어가요", style = MaterialTheme.typography.labelMedium)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     recent.forEach { s -> AssistChip(onClick = { vm.addMembers(g.id, s) }, label = { Text("+ $s") }) }
                 }
             }
@@ -886,7 +886,7 @@ private fun CustomGroupCard(vm: JarvisViewModel, g: PeopleGroup) {
             Text("${g.title} ${members.size}명", style = MaterialTheme.typography.titleMedium)
             if (members.isEmpty()) Text("아직 없어요. 위에 이름을 넣어 주세요.", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 members.forEach { n -> InputChip(selected = true, onClick = { vm.removeMember(g.id, n) }, label = { Text("$n  ✕") }) }
             }
         }
@@ -937,12 +937,12 @@ private fun ParentsPage(vm: JarvisViewModel) {
                 onClick = { if (vm.addParentsRaw(raw) > 0) raw = "" },
                 enabled = raw.isNotBlank(),
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text("넣기", fontWeight = FontWeight.Bold) }
+            ) { Text("넣기") }
             Text("알림에 뜨는 이름 그대로 넣으면 돼요. '맘·아빠' 같은 관계는 있으면 같이 알아보고, 우리 반 학생 이름이 들어 있으면 그 학생 학부모로 묶어요.",
                 style = MaterialTheme.typography.bodySmall)
             if (vm.recentSenders.isNotEmpty()) {
                 Text("최근 연락한 사람에서 고르기 · 누르면 바로 들어가요", style = MaterialTheme.typography.labelMedium)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     vm.recentSenders.forEach { s -> AssistChip(onClick = { vm.addParentsRaw(s) }, label = { Text("+ $s") }) }
                 }
             }
@@ -959,7 +959,7 @@ private fun ParentsPage(vm: JarvisViewModel) {
             var picked by rememberSaveable { mutableStateOf<String?>(null) }
             if (groups.isNotEmpty()) Text("이름을 누르면 연결한 이름·번호를 보고 지울 수 있어요.", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 groups.forEach { (label, links) ->
                     val student = links.first().student.takeIf { it in vm.students }
                     AssistChip(onClick = { picked = label },
@@ -976,7 +976,7 @@ private fun ParentsPage(vm: JarvisViewModel) {
                     text = {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text("이 이름·번호가 들어간 알림을 이 학부모 연락으로 모아요. ✕ 를 누르면 그것만 빠져요.", style = MaterialTheme.typography.bodySmall)
-                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 links.forEach { l -> InputChip(selected = true, onClick = { vm.removeParentLink(l) }, label = { Text("${l.match}  ✕") }) }
                             }
                             if (student != null) TextButton(onClick = { picked = null; vm.openStudent(student) }) { Text("🧒 $student 학생 기록 ›") }
@@ -1023,8 +1023,8 @@ private fun SystemSettings(vm: JarvisViewModel) {
 private fun AppCleanupCard(vm: JarvisViewModel) {
     val recs = vm.appRecs
     Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.animateContentSize(Motion.size).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("🌱 알림 앱 정리", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Column(Modifier.animateContentSize(Motion.size).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("🌱 알림 앱 정리", style = MaterialTheme.typography.titleMedium)
             Text(
                 run {
                     // 알림을 보낸 앱 / 아직 알림이 없는 설치된 앱(처음 정리 전 미리 추천)
@@ -1045,12 +1045,12 @@ private fun AppCleanupCard(vm: JarvisViewModel) {
                     "ℹ️ 이 목록에는 폰에 알림이 온 앱(알림 접근을 켤 때 알림창에 있던 것 포함)이 나와요. 처음 정리하기 전에는 " +
                     "아직 알림이 없는 설치된 앱도 이름을 보고 미리 추천해요. 카톡·문자·밴드 같은 메시지·SNS 앱은 " +
                     "그 앱의 알림을 켜 두어야 쌤톡스가 모을 수 있어요.",
-                    Modifier.padding(10.dp), style = MaterialTheme.typography.bodySmall,
+                    Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall,
                 )
             }
             // ＋ 앱 추가: 기본은 모든 앱을 모으고, 뺄 앱만 끔. 목록에 없는 앱은 여기서 추가(2026-11-21 선생님: 눈에 안 띈다 → 꽉 찬 버튼)
             Button(onClick = { vm.openAddApps() }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
-                Text("＋ 목록에 없는 앱 추가하기", fontWeight = FontWeight.Bold)
+                Text("＋ 목록에 없는 앱 추가하기", style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading())
             }
             Text("모든 앱 알림을 기본으로 모아요. 아래 목록에서 뺄 앱만 끄고, 목록에 없는 앱은 위 버튼으로 추가하세요.",
                 style = MaterialTheme.typography.bodySmall)
@@ -1070,11 +1070,10 @@ private fun AppCleanupCard(vm: JarvisViewModel) {
             // 설치돼 있는데 알림이 0건인 메시지 앱 (카톡 등): 원인 안내 + 그 앱의 알림 설정 바로 열기
             if (vm.silentApps.isNotEmpty()) {
                 val ctx = LocalContext.current
-                Text("⚠️ 알림이 안 들어오는 메시지 앱", style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.tertiary)
+                Text("⚠️ 알림이 안 들어오는 메시지 앱", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary)
                 vm.silentApps.forEach { (pkg, name) ->
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("$name · 최근 7일 0건", fontWeight = FontWeight.Medium)
+                        Text("$name · 최근 7일 0건", style = MaterialTheme.typography.labelLarge)
                         Text(
                             if (pkg == "com.kakao.talk")
                                 "카톡 알림이 꺼져 있거나, PC 카톡을 쓰는 중이라 폰 알림이 멈춰 있을 수 있어요. " +
@@ -1082,7 +1081,7 @@ private fun AppCleanupCard(vm: JarvisViewModel) {
                             else "이 앱의 알림이 꺼져 있으면 쌤톡스도 모을 수 없어요.",
                             style = MaterialTheme.typography.bodySmall,
                         )
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedButton(onClick = {
                                 ctx.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
                                     .putExtra(Settings.EXTRA_APP_PACKAGE, pkg))
@@ -1100,11 +1099,11 @@ private fun AppCleanupCard(vm: JarvisViewModel) {
             if (recs.isNotEmpty() && pending.isNotEmpty()) {
                 val drop = pending.count { !it.keep }
                 if (vm.appsApplied) Text("🆕 새로 알림을 보낸 앱 ${pending.size}개: " + pending.take(3).joinToString(", ") { it.stat.app },
-                    fontWeight = FontWeight.Medium)
+                    style = MaterialTheme.typography.labelLarge)
                 Button(
                     onClick = { vm.applyAppRecs() },
                     modifier = Modifier.fillMaxWidth().height(52.dp),
-                ) { Text(if (drop > 0) "추천대로 적용 (앱 ${drop}개 빼기)" else "추천대로 적용", fontWeight = FontWeight.Bold) }
+                ) { Text(if (drop > 0) "추천대로 적용 (앱 ${drop}개 빼기)" else "추천대로 적용") }
                 Text("또는 아래에서 앱마다 켜고 끄세요. 끈 앱은 모으지도, 요약하지도 않아요.",
                     style = MaterialTheme.typography.bodySmall)
             } else if (recs.isNotEmpty()) {
@@ -1123,21 +1122,20 @@ private fun AppCleanupCard(vm: JarvisViewModel) {
                     val g = AppAdvisor.group(r.stat, imp)
                     val msg = g == 0
                     if (i == 0 || g != AppAdvisor.group(recs[i - 1].stat, imp)) {
-                        if (g < 2) Text(if (g == 0) "💬 메시지·SNS 앱" else "💼 업무·일정 · ⭐ 중요 앱", style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
+                        if (g < 2) Text(if (g == 0) "💬 메시지·SNS 앱" else "💼 업무·일정 · ⭐ 중요 앱", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
                         else TextButton(onClick = { showOthers = !showOthers }, contentPadding = PaddingValues(0.dp)) {
                             Text("📱 그 밖의 앱 ${others.size}개 (빼기 추천 ${others.count { !it.keep }}) " +
                                 if (showOthers) "▾ 접기" else "▸ 펼치기",
-                                color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                                color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
                         }
                     }
                     if (g == 2 && !showOthers) return@forEachIndexed
                     val keepNow = r.stat.pkg !in vm.excludedApps
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         AppIcon(r.stat.pkg, 32.dp)
                         Column(Modifier.weight(1f)) {
                             Text("${r.stat.app} · " + if (r.stat.count > 0) "${r.stat.count}건" else "최근 7일 0건",
-                                fontWeight = FontWeight.Medium)
+                                style = MaterialTheme.typography.labelLarge)
                             Text((if (r.keep) "추천: 모으기 — " else "추천: 빼기 — ") + r.reason,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = if (r.keep) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.tertiary)
@@ -1184,7 +1182,7 @@ private fun StoragePage(vm: JarvisViewModel) {
         containerColor = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             val u = vm.storageUsage
-            Text("💾 지금 쓰는 공간 " + (u?.let { Storage.size(it.bytes) } ?: "…"), fontWeight = FontWeight.Bold,
+            Text("💾 지금 쓰는 공간 " + (u?.let { Storage.size(it.bytes) } ?: "…"),
                 style = MaterialTheme.typography.titleMedium)
             if (u != null) Text("받은 알림 ${u.noti}건 · 브리핑 ${u.briefings}개 · 학생 기록 ${u.logs}건 · 할 일 ${u.tasks}개",
                 style = MaterialTheme.typography.bodySmall)
@@ -1192,7 +1190,7 @@ private fun StoragePage(vm: JarvisViewModel) {
         }
     }
     Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("⏳ 보관 기간", style = MaterialTheme.typography.titleMedium)
             RetentionRow("📨 받은 알림 원문", "브리핑 세부 내역의 '원래 알림'도 이 기간만큼 볼 수 있어요", Storage.NOTI_CHOICES, vm.notiDays) {
                 vm.setRetention("noti_days", it) }
@@ -1204,7 +1202,7 @@ private fun StoragePage(vm: JarvisViewModel) {
     }
     Button(onClick = { vm.cleanNow() }, enabled = !vm.cleaning, modifier = Modifier.fillMaxWidth().height(52.dp),
         colors = ButtonDefaults.buttonColors(containerColor = Ssam.Sprout, contentColor = Ssam.Ink)) {
-        Text(if (vm.cleaning) "정리하는 중…" else "🧹 지금 정리하기", fontWeight = FontWeight.Bold)
+        Text(if (vm.cleaning) "정리하는 중…" else "🧹 지금 정리하기")
     }
     OutlinedButton(onClick = { confirmClear = true }, enabled = !vm.cleaning, modifier = Modifier.fillMaxWidth()) {
         Text("받은 알림 원문 모두 지우기")
@@ -1223,8 +1221,8 @@ private fun StoragePage(vm: JarvisViewModel) {
 @Composable
 private fun RetentionRow(title: String, hint: String, choices: List<Int>, value: Int, onPick: (Int) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(title, fontWeight = FontWeight.Medium)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(title, style = MaterialTheme.typography.labelLarge)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             choices.forEach { d -> FilterChip(selected = value == d, onClick = { onPick(d) }, label = { Text(Storage.label(d)) }) }
         }
         Text(hint, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1241,7 +1239,7 @@ private fun AddAppDialog(vm: JarvisViewModel, apps: List<JarvisViewModel.Addable
         onDismissRequest = { vm.closeAddApps() },
         title = { Text("＋ 앱 추가") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("추가한 앱은 알림이 오면 바로 모아요. 그 앱의 알림이 켜져 있어야 해요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 OutlinedTextField(value = q, onValueChange = { q = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
@@ -1256,15 +1254,14 @@ private fun AddAppDialog(vm: JarvisViewModel, apps: List<JarvisViewModel.Addable
                     shown.groupBy { it.group }.toSortedMap().forEach { (g, list) ->
                         if (g == 3 && !searching) {
                             TextButton(onClick = { showOthers = !showOthers }, contentPadding = PaddingValues(0.dp)) {
-                                Text("${titles[g]} ${list.size}개 " + if (showOthers) "▾ 접기" else "▸ 펼치기",
-                                    fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+                                Text("${titles[g]} ${list.size}개 " + if (showOthers) "▾ 접기" else "▸ 펼치기", style = MaterialTheme.typography.labelLarge)
                             }
                             if (!showOthers) return@forEach
-                        } else Text(titles[g], fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge,
+                        } else Text(titles[g], style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 8.dp))
                         list.forEach { a ->
                             Row(Modifier.fillMaxWidth().clickable { vm.addApp(a.pkg, a.name) }.padding(vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 AppIcon(a.pkg, 36.dp)
                                 Column(Modifier.weight(1f)) {
                                     Text(a.name)
@@ -1306,19 +1303,19 @@ private fun ParentCard(vm: JarvisViewModel) {
     val open = vm.parentContacts.filter { it.key !in vm.handledKeys }
     val needReply = open.count { it.category.needsReply }
     Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.animateContentSize(Motion.size).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(Modifier.animateContentSize(Motion.size).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(if (open.isEmpty()) "👪 학부모 연락 · 오늘 처리할 연락이 없어요"
                  else "👪 학부모 연락 ${open.size}건 · 답장 필요 $needReply",
-                fontWeight = FontWeight.Bold)
+                style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading())
             open.forEach { c ->
                 HorizontalDivider()
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(c.displayName + if (c.link == null && c.students.isNotEmpty()) " · 🧒 " + c.students.joinToString(", ") else "",
-                        fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), maxLines = 1)
+                        style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading().weight(1f), maxLines = 1)
                     Surface(shape = MaterialTheme.shapes.small,
                         color = if (c.category.needsReply) Ssam.Blush.copy(alpha = 0.25f) else Ssam.Sprout.copy(alpha = 0.3f)) {
                         Text(c.category.label + if (c.category.needsReply) " · 답장 필요" else "",
-                            Modifier.padding(horizontal = 8.dp, vertical = 2.dp), style = MaterialTheme.typography.labelSmall)
+                            Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall)
                     }
                     Text(timeFmt.format(c.last.time), style = MaterialTheme.typography.bodySmall)
                 }
@@ -1365,11 +1362,11 @@ private fun TasksCard(vm: JarvisViewModel) {
     var input by rememberSaveable { mutableStateOf("") }
     val open = vm.tasks.filter { !it.done }
     Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.animateContentSize(Motion.size).padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.animateContentSize(Motion.size).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 val today = open.count { it.dLabel() == "오늘" || it.dLabel() == "지남" }
                 Text(if (open.isEmpty()) "📌 할 일·마감 · 없어요" else "📌 할 일·마감 ${open.size}건" + if (today > 0) " · 오늘 $today" else "",
-                    fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading().weight(1f))
                 TextButton(onClick = { adding = !adding }) { Text(if (adding) "닫기" else "＋ 추가") }
             }
             if (open.isEmpty() && !adding) Text("\"내일까지 제출\", \"금요일 회의 14:30\" 같은 연락이 오면 여기에 자동으로 모여요.",
@@ -1377,7 +1374,7 @@ private fun TasksCard(vm: JarvisViewModel) {
             if (adding) {
                 OutlinedTextField(value = input, onValueChange = { input = it }, singleLine = true,
                     placeholder = { Text("할 일 (예: 체험학습 동의서 걷기)") }, modifier = Modifier.fillMaxWidth())
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf("오늘" to 0, "내일" to 1, "모레" to 2).forEach { (label, d) ->
                         Button(onClick = { vm.addTask(input, d); input = ""; adding = false }, enabled = input.isNotBlank()) { Text(label) }
                     }
@@ -1396,7 +1393,7 @@ private fun TasksCard(vm: JarvisViewModel) {
                         "지남", "오늘" -> Ssam.Blush.copy(alpha = 0.3f)
                         "D-1" -> Ssam.Sprout.copy(alpha = 0.35f)
                         else -> MaterialTheme.colorScheme.surfaceVariant
-                    }) { Text(label, Modifier.padding(horizontal = 8.dp, vertical = 2.dp), style = MaterialTheme.typography.labelMedium) }
+                    }) { Text(label, Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelMedium) }
                 }
             }
             if (open.size > 5) TextButton(onClick = { showAll = !showAll }) { Text(if (showAll) "접기" else "${open.size - 5}건 더 보기") }
@@ -1425,7 +1422,7 @@ private fun StudentsCard(vm: JarvisViewModel) {
             else {
                 Text("학생 ${vm.students.size}명 · 눌러서 👪 학부모 연결·기록 보기", style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     vm.students.forEach { name ->
                         val n = vm.studentCounts[name] ?: 0
                         InputChip(selected = n > 0, onClick = { vm.openStudent(name) },
@@ -1446,7 +1443,7 @@ private fun StudentDialog(vm: JarvisViewModel, name: String, entries: List<Stude
         onDismissRequest = { vm.closeStudent() },
         title = { Text("🧒 $name") },
         text = {
-            Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 ParentLinkSection(vm, name)
                 HorizontalDivider()
                 Text("📒 기록 ${entries.size}건", style = MaterialTheme.typography.titleMedium)
@@ -1478,10 +1475,10 @@ private fun ParentLinkSection(vm: JarvisViewModel, student: String) {
     Text("👪 학부모 연결", style = MaterialTheme.typography.titleMedium)
     Text("연결하면 문자·카톡·밴드·하이클래스·학교종이 어디서 온 연락이든 \"${if (student.length == 3) student.substring(1) else student} $relation\" 연락으로 정리돼요.",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    if (mine.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    if (mine.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         mine.forEach { l -> InputChip(selected = true, onClick = { vm.removeParentLink(l) }, label = { Text("${l.relation} · ${l.match}  ✕") }) }
     }
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         listOf("어머님", "아버님", "보호자").forEach { r -> FilterChip(selected = relation == r, onClick = { relation = r }, label = { Text(r) }) }
     }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1492,7 +1489,7 @@ private fun ParentLinkSection(vm: JarvisViewModel, student: String) {
     if (vm.recentSenders.isNotEmpty()) {
         Text("최근 연락한 사람에서 고르기 ($relation)", style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             vm.recentSenders.forEach { s -> AssistChip(onClick = { vm.addParentLink(student, relation, s) }, label = { Text("+ $s") }) }
         }
     }
@@ -1525,7 +1522,7 @@ private fun BackupCard(vm: JarvisViewModel) {
             var changing by rememberSaveable { mutableStateOf(false) }
             if (!vm.hasBackupPin || changing) {
                 Text(if (vm.hasBackupPin) "🔒 새 백업 비밀번호" else "🔒 먼저 백업 비밀번호를 정해 주세요 (6자 이상, 글자·숫자)",
-                    fontWeight = FontWeight.Medium, color = Ssam.Blush)
+                    style = MaterialTheme.typography.labelLarge, color = Ssam.Blush)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(value = pinInput, onValueChange = { pinInput = it.filterNot { c -> c.isWhitespace() }.take(20) },
                         singleLine = true, placeholder = { Text("6자 이상") }, modifier = Modifier.weight(1f),
@@ -1580,7 +1577,7 @@ private fun RoomPickerDialog(vm: JarvisViewModel, pkg: String, name: String) {
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 // ＋ 방 이름 직접 추가: 다른 앱은 카톡 방 목록을 읽을 수 없어서, 아직 알림이 안 온 방은 이름으로 미리 넣음
                 var newRoom by rememberSaveable { mutableStateOf("") }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(value = newRoom, onValueChange = { newRoom = it }, singleLine = true,
                         modifier = Modifier.weight(1f), placeholder = { Text("방 이름 직접 추가") })
                     OutlinedButton(onClick = { vm.addRoom(pkg, newRoom); newRoom = "" }, enabled = newRoom.isNotBlank()) { Text("추가") }
@@ -1597,7 +1594,7 @@ private fun RoomPickerDialog(vm: JarvisViewModel, pkg: String, name: String) {
                     // 방 줄을 눌러도 모으기 켜기·끄기
                     Row(Modifier.fillMaxWidth().clickable { vm.setRoom(pkg, room, !on) }, verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text(room, maxLines = 1, fontWeight = FontWeight.Medium)
+                            Text(room, maxLines = 1, style = MaterialTheme.typography.labelLarge)
                             Text(when {
                                     count > 0 -> "최근 7일 ${count}건"
                                     roomLast(vm, room) > 0 -> "마지막 알림 " + SimpleDateFormat("M/d", Locale.KOREA).format(roomLast(vm, room))
@@ -1625,7 +1622,7 @@ private fun KeywordCard(vm: JarvisViewModel) {
             Text("⭐ 중요 키워드", style = MaterialTheme.typography.titleMedium)
             Text("이 단어가 들어간 알림은 브리핑 맨 위에 따로 모아 보여 줘요. 끈 방에서 와도 놓치지 않아요.",
                 style = MaterialTheme.typography.bodySmall)
-            if (vm.keywords.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (vm.keywords.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 vm.keywords.forEach { w ->
                     InputChip(selected = true, onClick = { vm.removeKeyword(w) }, label = { Text("$w  ✕") })
                 }
@@ -1634,9 +1631,9 @@ private fun KeywordCard(vm: JarvisViewModel) {
             val recs = vm.keywordRecs.filter { it.first !in vm.keywords }
             if (recs.isNotEmpty()) {
                 Text(if (vm.aiBusy) "🌱 최근 알림에서 찾은 추천 · AI가 더 살펴보는 중…" else "🌱 최근 알림에서 찾은 추천",
-                    style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     recs.forEach { (w, n) -> AssistChip(onClick = { vm.addKeyword(w) }, label = { Text("+ $w · ${n}번") }) }
                 }
                 OutlinedButton(onClick = { vm.addAllKeywordRecs() }) { Text("추천 모두 추가") }
@@ -1645,7 +1642,7 @@ private fun KeywordCard(vm: JarvisViewModel) {
             if (recs.isEmpty() && suggestions.isNotEmpty()) {
                 Text("눌러서 추가", style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     suggestions.forEach { w -> AssistChip(onClick = { vm.addKeyword(w) }, label = { Text("+ $w") }) }
                 }
             }
@@ -1666,7 +1663,7 @@ private fun SetupCard(
     Card(Modifier.fillMaxWidth()) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text((if (done) "✅ " else "⬜ ") + title, fontWeight = FontWeight.Bold)
+                Text((if (done) "✅ " else "⬜ ") + title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading())
                 Text(desc, style = MaterialTheme.typography.bodySmall)
             }
             OutlinedButton(onClick = onClick, enabled = enabled) { Text(button) }
@@ -1739,10 +1736,10 @@ private fun SchedulePage(vm: JarvisViewModel) {
     // 큰 스위치 하나
     Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(
         containerColor = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("🔕 모아서 알림", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text("🔕 모아서 알림", style = MaterialTheme.typography.titleLarge)
                     Text(if (sc.digest) "켜짐 · " + vm.nextRunText() else "꺼짐 · 알림은 평소처럼 오고, 요약은 📋 요약 탭에서 직접 눌러요.",
                         style = MaterialTheme.typography.bodyMedium)
                 }
@@ -1758,8 +1755,8 @@ private fun SchedulePage(vm: JarvisViewModel) {
     }
     // ⏰ 알람 및 리마인더 권한이 없으면 정한 시각이 몇 분 밀릴 수 있음(Play 스토어 정책으로 사용자가 켜는 권한)
     if (!vm.exactAlarm && (sc.digest || sc.dailyOn)) Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("⏰ 정한 시각에 딱 맞추려면", fontWeight = FontWeight.Bold)
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("⏰ 정한 시각에 딱 맞추려면", style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading())
             Text("'알람 및 리마인더'를 허용해 주세요. 허용하지 않으면 요약·하루 정리가 몇 분 늦게 올 수 있어요.",
                 style = MaterialTheme.typography.bodySmall)
             Button(onClick = { ctx.startActivity(exactAlarmSettings(ctx)) }) { Text("허용하러 가기") }
@@ -1767,10 +1764,10 @@ private fun SchedulePage(vm: JarvisViewModel) {
     }
     // 🗓 하루 정리 (모아서 알림을 꺼도 따로)
     Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("🗓 하루 정리", fontWeight = FontWeight.Bold)
+                    Text("🗓 하루 정리", style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading())
                     Text(if (sc.dailyOn) "매일 ${hm(sc.dailyMinute)}에 오늘 요약들을 한 번에 모아 알려 드려요." else "꺼짐",
                         style = MaterialTheme.typography.bodySmall)
                 }
@@ -1789,21 +1786,21 @@ private fun SchedulePage(vm: JarvisViewModel) {
     // 언제 알려 줄까
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("⏰ 정한 시각에 알림", fontWeight = FontWeight.Bold)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("⏰ 정한 시각에 알림", style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading())
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 sc.times.forEach { m -> InputChip(selected = true, onClick = { vm.removeTime(m) }, label = { Text("${hm(m)}  ✕") }) }
                 AssistChip(onClick = { pick(if (sc.times.isEmpty()) 8 * 60 else 12 * 60) { vm.addTime(it) } }, label = { Text("＋ 시각 더하기") })
             }
             if (sc.times.isEmpty() && sc.intervalHours == 0) AssistChip(onClick = { vm.addTime(8 * 60); vm.addTime(17 * 60) },
                 label = { Text("아침 8:00 · 저녁 17:00 넣기") })
             HorizontalDivider(Modifier.padding(vertical = 4.dp))
-            Text("⏱ 몇 시간마다 알림", fontWeight = FontWeight.Bold)
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("⏱ 몇 시간마다 알림", style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading())
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf(0, 1, 2, 3, 4).forEach { h ->
                     FilterChip(selected = sc.intervalHours == h, onClick = { vm.setInterval(h) }, label = { Text(if (h == 0) "안 함" else "${h}시간마다") })
                 }
             }
-            if (sc.intervalHours > 0) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (sc.intervalHours > 0) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 AssistChip(onClick = { pick(sc.intervalFrom) { vm.setIntervalFrom(it) } }, label = { Text(hm(sc.intervalFrom)) })
                 Text("~")
                 AssistChip(onClick = { pick(sc.intervalTo) { vm.setIntervalTo(it) } }, label = { Text(hm(sc.intervalTo)) })
@@ -1819,7 +1816,7 @@ private fun SchedulePage(vm: JarvisViewModel) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("🔇 소리도 끄기(방해 금지)", fontWeight = FontWeight.Medium)
+                    Text("🔇 소리도 끄기(방해 금지)", style = MaterialTheme.typography.labelLarge)
                     Text(if (dnd) "✅ 켜 두면 모으는 동안 메시지·알림 소리와 진동이 꺼져요. 📞 전화와 알람은 그대로 울려요."
                          else "숨기기만 하면 알림이 울린 다음에 사라져서 소리는 나요. 켜면 폰 설정의 방해 금지 권한 화면으로 가요 — 쌤톡스를 허용하고 돌아오세요.",
                         style = MaterialTheme.typography.bodySmall)
@@ -1832,7 +1829,7 @@ private fun SchedulePage(vm: JarvisViewModel) {
             HorizontalDivider()
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("📅 주말·공휴일엔 쉬기", fontWeight = FontWeight.Medium)
+                    Text("📅 주말·공휴일엔 쉬기", style = MaterialTheme.typography.labelLarge)
                     Text("켜면 토·일·공휴일(대체공휴일 포함)에는 모으지 않고 알림이 평소처럼 와요.", style = MaterialTheme.typography.bodySmall)
                 }
                 Switch(checked = sc.restSkip, onCheckedChange = { vm.setRestSkip(it) })
@@ -1844,8 +1841,8 @@ private fun SchedulePage(vm: JarvisViewModel) {
     }
     // 📝 최근 자동 요약: 정한 시각에 실제로 돌았는지·결과(새 알림 없음도) 확인
     Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("📝 최근 자동 요약", fontWeight = FontWeight.Bold)
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("📝 최근 자동 요약", style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading())
             val fmt = remember { SimpleDateFormat("M/d(E) HH:mm", Locale.KOREA) }
             if (vm.autoLog.isEmpty()) Text("아직 자동으로 돈 요약이 없어요. 정한 시각이 지나면 여기에 결과가 남아요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

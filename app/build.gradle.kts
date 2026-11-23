@@ -70,6 +70,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     // 🏠 홈 화면 위젯(Compose 와 같은 방식)
     implementation("androidx.glance:glance-appwidget:1.1.1")
+    implementation("androidx.glance:glance-material3:1.1.1")   // 위젯도 쌤톡스 색(앱과 같은 colorScheme)
     // 맥미니에서 요약 규칙 시험·시뮬레이션(src/test)
     testImplementation("junit:junit:4.13.2")
     implementation("androidx.core:core-ktx:1.16.0")

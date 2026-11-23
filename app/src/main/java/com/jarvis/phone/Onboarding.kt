@@ -83,7 +83,7 @@ fun OnboardingScreen(vm: JarvisViewModel) {
 
     Column(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 20.dp, vertical = 16.dp)) {
         // 단계 표시
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(bottom = 16.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 16.dp)) {
             repeat(STEPS) { i ->
                 Box(Modifier.height(6.dp).weight(1f).clip(CircleShape).background(
                     if (i <= vm.onboardingStep) MaterialTheme.colorScheme.primary
@@ -92,7 +92,7 @@ fun OnboardingScreen(vm: JarvisViewModel) {
         }
         Column(
             Modifier.weight(1f).verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             // 🎬 단계 이동: 앞으로는 오른쪽에서, 뒤로는 왼쪽에서 넘어옴
             AnimatedContent(
@@ -104,7 +104,7 @@ fun OnboardingScreen(vm: JarvisViewModel) {
                 },
                 label = "step",
             ) { step ->
-                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     when (step) {
                         0 -> WelcomeStep(vm)
                         1 -> DiagnoseStep(vm)
@@ -120,13 +120,13 @@ fun OnboardingScreen(vm: JarvisViewModel) {
 @Composable
 private fun StepTitle(kicker: String, title: String) {
     Text(kicker, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.secondary)
-    Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+    Text(title, style = MaterialTheme.typography.headlineSmall)
 }
 
 @Composable
 private fun PrimaryButton(text: String, enabled: Boolean = true, onClick: () -> Unit) {
     Button(onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth().height(56.dp)) {
-        Text(text, fontWeight = FontWeight.Bold)
+        Text(text, style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading())
     }
 }
 
@@ -136,7 +136,7 @@ private fun WelcomeStep(vm: JarvisViewModel) {
     Spacer(Modifier.height(24.dp))
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { SsamLogo(112.dp) }
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("쌤톡스", style = MaterialTheme.typography.displayMedium, fontWeight = FontWeight.Bold,
+        Text("쌤톡스", style = MaterialTheme.typography.displayMedium,
             color = MaterialTheme.colorScheme.primary)
         Text("선생님을 위한 디지털 디톡스", style = MaterialTheme.typography.titleMedium)
     }
@@ -146,7 +146,7 @@ private fun WelcomeStep(vm: JarvisViewModel) {
         contentColor = MaterialTheme.colorScheme.onPrimaryContainer)) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("톡은 쌤톡스가 지켜볼게요.\n선생님은 잠시 쉬세요.",
-                style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                style = MaterialTheme.typography.titleLarge)
             Bullet("학부모 연락, 학급 단톡, 일정 알림을 모아 두고")
             Bullet("정한 시각에 AI가 할 일 중심으로 한 번에 정리해요")
             Bullet("모든 처리는 폰 안에서. 알림 내용이 인터넷으로 나가지 않아요")
@@ -161,8 +161,8 @@ private fun WelcomeStep(vm: JarvisViewModel) {
     if (found != null) {
         val fmt = remember { java.text.SimpleDateFormat("M/d HH:mm", java.util.Locale.KOREA) }
         Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("💾 지난 설정을 찾았어요", fontWeight = FontWeight.Bold)
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("💾 지난 설정을 찾았어요", style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading())
                 Text("${fmt.format(found.first)} 저장 · ${found.second}", style = MaterialTheme.typography.bodyMedium)
                 Button(onClick = { vm.restoreBackup(null) }) { Text("불러오기") }
             }
@@ -185,7 +185,7 @@ private fun WelcomeStep(vm: JarvisViewModel) {
 @Composable
 private fun Bullet(text: String) {
     Row(verticalAlignment = Alignment.Top) {
-        Box(Modifier.padding(top = 8.dp, end = 10.dp).size(6.dp).clip(CircleShape).background(Ssam.Sprout))
+        Box(Modifier.padding(top = 8.dp, end = 12.dp).size(6.dp).clip(CircleShape).background(Ssam.Sprout))
         Text(text, style = MaterialTheme.typography.bodyLarge)
     }
 }
@@ -204,7 +204,7 @@ private fun DiagnoseStep(vm: JarvisViewModel) {
             SpecRow("남은 저장공간", "%.1fGB".format(d.freeGb))
         }
     }
-    Text("✔ ${d.reason}", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold,
+    Text("✔ ${d.reason}", style = MaterialTheme.typography.titleSmall,
         color = MaterialTheme.colorScheme.primary)
     d.warning?.let {
         Text("⚠ $it", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.tertiary)
@@ -221,7 +221,7 @@ private fun DiagnoseStep(vm: JarvisViewModel) {
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(m.title, fontWeight = FontWeight.Bold)
+                        Text(m.title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading())
                         Text(m.sizeText, style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                         if (m == d.recommended) Badge(containerColor = MaterialTheme.colorScheme.primary,
@@ -253,7 +253,7 @@ private fun ModelCompare() {
     )
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("🔍 두 모델 차이", fontWeight = FontWeight.Bold)
+            Text("🔍 두 모델 차이", style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading())
             rows.forEachIndexed { i, (label, a, b) ->
                 if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 Row(verticalAlignment = Alignment.Top) {
@@ -276,7 +276,7 @@ private fun ModelCompare() {
 private fun SpecRow(label: String, value: String) {
     Row {
         Text(label, Modifier.width(110.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, fontWeight = FontWeight.Medium)
+        Text(value, style = MaterialTheme.typography.labelLarge)
     }
 }
 
@@ -297,7 +297,7 @@ private fun DownloadStep(vm: JarvisViewModel) {
     Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(
         containerColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.12f))) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("📶 와이파이에서 받으세요", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.tertiary)
+            Text("📶 와이파이에서 받으세요", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.asHeading())
             Text("모바일 데이터(LTE·5G)로 받으면 약 ${m.sizeText}가 데이터에서 빠져요. " +
                  "요금제에 따라 데이터 초과 요금이 나올 수 있어요.",
                 style = MaterialTheme.typography.bodyMedium)
@@ -359,12 +359,12 @@ private fun GuideCard(
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.Top) {
             Box(Modifier.size(32.dp).clip(CircleShape).background(
                 if (done) Ssam.Sprout else MaterialTheme.colorScheme.primary), contentAlignment = Alignment.Center) {
-                Text(if (done) "✓" else number, fontWeight = FontWeight.Bold,
+                Text(if (done) "✓" else number, style = MaterialTheme.typography.titleSmall,
                     color = if (done) Ssam.Ink else MaterialTheme.colorScheme.onPrimary)
             }
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(title, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading())
                 Text(desc, style = MaterialTheme.typography.bodyMedium)
                 OutlinedButton(onClick = onClick, enabled = enabled) { Text(button) }
             }
