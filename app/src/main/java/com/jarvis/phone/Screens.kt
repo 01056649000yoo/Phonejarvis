@@ -23,6 +23,8 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -488,7 +490,7 @@ private fun HistoryTab(vm: JarvisViewModel) {
                                 AnimatedVisibility(visible = show, enter = expandVertically(Motion.size) + fadeIn(Motion.fade),
                                     exit = shrinkVertically(Motion.size) + fadeOut(Motion.fadeFast)) {
                                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        Text(b.text, style = MaterialTheme.typography.bodyMedium)
+                                        SummaryText(b.text)
                                         TextButton(onClick = { vm.openBriefingDetail(b) }) { Text("📄 원래 알림 보기") }
                                     }
                                 }
@@ -647,7 +649,7 @@ private fun BriefingDetailDialog(vm: JarvisViewModel, b: Briefing, items: List<N
         },
         text = {
             Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(b.text, style = MaterialTheme.typography.bodyLarge)
+                SummaryText(b.text)
                 HorizontalDivider()
                 TextButton(onClick = { showRaw = !showRaw }) {
                     Text(if (showRaw) "▾ 원래 알림 접기" else "▸ 원래 알림 ${items.size}건 보기")
@@ -685,20 +687,24 @@ private fun BriefingCard(vm: JarvisViewModel, b: Briefing, primary: Boolean, onH
     Card(Modifier.fillMaxWidth(), colors = if (primary) CardDefaults.cardColors(
         containerColor = MaterialTheme.colorScheme.primaryContainer,
         contentColor = MaterialTheme.colorScheme.onPrimaryContainer) else CardDefaults.cardColors()) {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
-            Row(Modifier.fillMaxWidth().clickable { vm.toggleBriefing(b) }, verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.padding(horizontal = Space.card, vertical = Space.l)) {
+            Row(Modifier.fillMaxWidth().clickable { vm.toggleBriefing(b) }.semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("${briefingIcon(b)} ${b.label}", style = MaterialTheme.typography.titleMedium)
-                    Text("${fmt.format(b.time)} · 알림 ${b.count}건", style = MaterialTheme.typography.labelMedium)
+                    Text(b.label, style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
+                    Text("${fmt.format(b.time)} · 알림 ${b.count}건", style = MaterialTheme.typography.labelMedium,
+                        color = LocalContentColor.current.copy(alpha = 0.7f))
                 }
-                Text(if (collapsed) "▸ 펼치기" else "▾ 접기", style = MaterialTheme.typography.labelLarge)
+                Text(if (collapsed) "펼치기 ▾" else "접기 ▴", style = MaterialTheme.typography.labelLarge,
+                    color = LocalContentColor.current.copy(alpha = 0.8f))
             }
             // 🎬 접기·펼치기: 아래로 스르륵
             AnimatedVisibility(visible = !collapsed, enter = expandVertically(Motion.size) + fadeIn(Motion.fade),
                 exit = shrinkVertically(Motion.size) + fadeOut(Motion.fadeFast)) {
                 Column {
-                    Spacer(Modifier.height(8.dp))
-                    Text(b.text, style = MaterialTheme.typography.bodyLarge)
+                    HorizontalDivider(Modifier.padding(vertical = Space.l), color = LocalContentColor.current.copy(alpha = 0.15f))
+                    // 🧾 줄의 꼴을 보고 칸 제목·사람·시각·내용을 나눠 그림(SummaryText)
+                    SummaryText(b.text, accent = if (primary) Ssam.Sprout else MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.height(Space.s))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         TextButton(onClick = { vm.openBriefingDetail(b) }) {
                             Text("📄 세부 내역", color = MaterialTheme.colorScheme.onPrimaryContainer)

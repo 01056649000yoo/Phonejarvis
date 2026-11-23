@@ -83,6 +83,14 @@ private val SsamType = Typography().run {
     )
 }
 
+/**
+ * 📏 간격 단계(2026-11-23 디자인 규칙 — DESIGN.md): 4 · 8 · 12 · 16 · 24 · 32 만 씀(10·14·6 같은 값 쓰지 않기).
+ * 카드 안쪽 l(16)·20, 칸 사이 l, 줄 사이 s, 화면 양옆 xl 안팎.
+ */
+object Space {
+    val xs = 4.dp; val s = 8.dp; val m = 12.dp; val l = 16.dp; val card = 20.dp; val xl = 24.dp; val xxl = 32.dp
+}
+
 /** 모서리: 카드 20, 창 28 — 둥글고 부드럽게 */
 private val SsamShapes = Shapes(
     extraSmall = RoundedCornerShape(8.dp), small = RoundedCornerShape(12.dp),
