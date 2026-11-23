@@ -106,37 +106,20 @@ object People {
     private fun norm(s: String) = s.filterNot { it.isWhitespace() || it in "()[]<>-" }
 
     /** 이 알림이 어느 묶음의 누구 것인지: 보낸 사람·방 이름에 이름이 있으면(2글자 이상), 없으면 내용에 있으면(3글자 이상) */
-    fun find(book: List<Pair<PeopleGroup, List<String>>>, n: NotiItem): Pair<PeopleGroup, String>? {
+    /** bodyToo=false: 보낸 사람·방 이름으로만(요약에서 사람별로 묶을 때 — 내용에 이름이 나온 것은 그 사람이 보낸 게 아님) */
+    fun find(book: List<Pair<PeopleGroup, List<String>>>, n: NotiItem, bodyToo: Boolean = true): Pair<PeopleGroup, String>? {
         if (book.isEmpty()) return null
         val who = listOf(n.title, n.room).filter { it.isNotBlank() }.map(::norm)
         for ((g, names) in book) for (name in names) {
             val m = norm(name)
             if (m.length >= 2 && who.any { it == m || it.contains(m) }) return g to name
         }
+        if (!bodyToo) return null
         val body = norm(n.text)
         for ((g, names) in book) for (name in names) {
             val m = norm(name)
             if (m.length >= 3 && body.contains(m)) return g to name
         }
         return null
-    }
-
-    /** 브리핑용: 묶음별 연락 (규칙, 즉시). 없으면 빈 문자열 */
-    fun section(book: List<Pair<PeopleGroup, List<String>>>, items: List<NotiItem>): Pair<String, Set<NotiItem>> {
-        val hits = items.mapNotNull { n -> find(book, n)?.let { (g, name) -> Triple(g, name, n) } }
-        if (hits.isEmpty()) return "" to emptySet()
-        val fmt = java.text.SimpleDateFormat("HH:mm", java.util.Locale.KOREA)
-        val text = buildString {
-            hits.groupBy { it.first.id }.forEach { (_, list) ->
-                val g = list.first().first
-                append("${g.title} 연락 (${list.size}건)\n")
-                list.distinctBy { it.third.title + it.third.text }.takeLast(8).forEach { (_, name, n) ->
-                    val where = if (n.room.isNotBlank() && n.room != n.title) " [${n.room}]" else ""
-                    append("- ${fmt.format(n.time)} $name$where: ${n.text.replace('\n', ' ').take(60)}\n")
-                }
-                append("\n")
-            }
-        }
-        return text to hits.map { it.third }.toSet()
     }
 }

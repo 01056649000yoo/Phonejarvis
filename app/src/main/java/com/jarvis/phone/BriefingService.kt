@@ -277,17 +277,17 @@ object Briefings {
 
         val start = System.currentTimeMillis()
         summarizer.resetStats()
+        // 🔁 정기·자동 알림(매일 같은 시각·봇·직접 뺀 꼴)은 요약에서 빼고 건수 한 줄 — 나머지(loud)만 정리
+        val split = splitForAi(ctx, items)
         // ⭐ 키워드 알림: AI 없이 규칙으로 찾아 맨 위에 (놓치지 않게)
-        val keywordPart = keywordSection(items, rules.keywords)
+        val keywordPart = keywordSection(split.loud, rules.keywords)
         // 👪 학부모 연락: 지정한 학부모 방의 연락을 분류해 맨 위에 (규칙, 즉시)
         val parentPart = if (People.isVisible(ctx, "parents")) parentSection(ParentAdvisor.contacts(ctx, items)) else ""
         // 📌 오늘·내일 마감 (할 일 목록에서, 끝내지 않은 것)
         items.forEach { runCatching { TaskExtractor.save(ctx, it) } }
         val taskPart = taskSection(db.tasks())
-        // 💼 업무·일정 앱 알림, 👥 직접 만든 묶음의 사람 연락은 AI 없이 바로 — 나머지(rest)만 AI 로
-        val split = splitForAi(ctx, items)
+        // 💼 업무·일정 앱 알림은 AI 없이 바로, 👥 내 묶음은 사람별로 묶어 AI, 나머지(rest)도 AI
         val workPart = workSection(split.work)
-        val peoplePart = split.peoplePart
         val rest = split.rest
         // ⚡ 미리 요약해 둔 방(PreSummary)은 다시 묻지 않음 — 이번 구간(from)의 것만
         val cache = PreSummary.load(ctx, from)
@@ -296,9 +296,9 @@ object Briefings {
         val load = PhoneLoad.state(ctx)
         val skipAi = PhoneLoad.skipAiReason(load)
         val ai = when {
-            rest.isEmpty() -> null
-            skipAi != null -> BriefingComposer.compose(rest, ask = { "" }, replyAllowed = { c -> c.items.any { rules.mentionsRoster(it) } }, cache = cache, since = from)
-            else -> summarizer.summarize(rest, onStatus, { c -> c.items.any { rules.mentionsRoster(it) } }, cache, from)
+            rest.isEmpty() && split.groups.isEmpty() -> null
+            skipAi != null -> BriefingComposer.compose(rest, ask = { "" }, replyAllowed = { c -> c.items.any { rules.mentionsRoster(it) } }, cache = cache, since = from, groups = split.groups)
+            else -> summarizer.summarize(rest, onStatus, { c -> c.items.any { rules.mentionsRoster(it) } }, cache, from, groups = split.groups)
         }
         // ✉️ 답장할 문자: 🙋 답장할 연락 중 문자(1:1)만 올리고, 모델이 켜진 김에 초안을 5건까지 미리
         // ✉️ 답장할 문자는 목록에만 올림 — 초안은 요약 알림을 보낸 뒤에 씀(결과가 늦어지지 않게, draftPending)
@@ -307,7 +307,7 @@ object Briefings {
         val aiPeople = ai?.people?.takeIf { it.isNotBlank() }?.let { it + "\n\n" } ?: ""
         val now = System.currentTimeMillis()
         val timing = timingLine(now - start, summarizer.stats, PhoneLoad.state(ctx).thermal)
-        val text = ((taskPart + parentPart + aiPeople + peoplePart + workPart + keywordPart + (ai?.apps ?: "")).trim()
+        val text = ((taskPart + parentPart + aiPeople + (ai?.groups ?: "") + workPart + keywordPart + (ai?.apps ?: "") + Routine.line(split.quiet)).trim()
             .ifEmpty { "요약할 알림이 없어요." }) + (if (skipAi != null && rest.isNotEmpty()) "\n\n$skipAi" else "") + "\n\n($timing)"
         // time = 이번 요약이 덮은 마지막 시각 (다음 요약은 이 다음부터)
         db.insertBriefing(Briefing(time = cutoff, fromTime = from, label = label, count = items.size, text = text))
@@ -320,13 +320,22 @@ object Briefings {
         return Outcome("$label · 알림 ${items.size}건", range + "\n\n" + text, cutoff, timing)
     }
 
-    /** 요약할 알림을 AI 없이 바로 쓰는 것(💼 업무·일정, 👥 내 묶음)과 AI 로 정리할 것(rest)으로 나눔 — 요약·미리 요약 공용 */
-    data class Split(val work: List<NotiItem>, val peoplePart: String, val rest: List<NotiItem>)
+    /**
+     * 요약할 알림 나누기 — 요약·미리 요약 공용:
+     * 🔁 quiet(정기·자동·직접 뺀 꼴, 건수만) / 💼 work(업무·일정, AI 없이) / 👥 groups(내 묶음, 사람별 AI) / rest(나머지, AI)
+     */
+    data class Split(val quiet: List<NotiItem>, val loud: List<NotiItem>, val work: List<NotiItem>,
+                     val groups: List<BriefingComposer.Group>, val rest: List<NotiItem>)
     fun splitForAi(ctx: Context, items: List<NotiItem>): Split {
+        val keywords = AppFilter.rules(ctx).keywords
+        val routine = Routine.keys(ctx); val muted = Routine.muted(ctx)
+        val (quiet, loud) = items.partition { Routine.isQuiet(it, routine, muted, keywords) }
         val important = AppFilter.importantApps(ctx)
-        val workItems = items.filter { AppAdvisor.isWork(it.app, it.pkg) || it.pkg in important }
-        val (peoplePart, peopleItems) = People.section(People.customBook(ctx), items - workItems.toSet())
-        return Split(workItems, peoplePart, items - workItems.toSet() - peopleItems)
+        val workItems = loud.filter { AppAdvisor.isWork(it.app, it.pkg) || it.pkg in important }
+        val book = People.customBook(ctx)
+        val hits = (loud - workItems.toSet()).mapNotNull { n -> People.find(book, n, bodyToo = false)?.let { (g, name) -> Triple(g, name, n) } }
+        val groups = hits.groupBy { it.first.id }.map { (_, l) -> BriefingComposer.Group(l.first().first.title, l.map { it.second to it.third }) }
+        return Split(quiet, loud, workItems, groups, loud - workItems.toSet() - hits.map { it.third }.toSet())
     }
 
     /** ⏱ 48초 · 모델 불러오기 21초(GPU) · AI 2번 27초 — 어디서 시간이 드는지 실제 폰에서 보려고 */
@@ -422,7 +431,8 @@ object Briefings {
     fun keywordSection(items: List<NotiItem>, keywords: List<String>): String {
         if (keywords.isEmpty()) return ""
         val fmt = java.text.SimpleDateFormat("HH:mm", java.util.Locale.KOREA)
-        val hits = items.filter { AppFilter.hasKeyword(keywords, it.title, it.text, it.room) }
+        // 광고·자동 알림은 빼고, 키워드가 부르는 말(OO님)로만 든 것도 뺌(2026-11-23)
+        val hits = items.filter { AppFilter.hasRealKeyword(keywords, it.title, it.text, it.room) && !AdFilter.isAd(it.title, it.text) }
             .distinctBy { it.roomOrTitle to it.text }
             .takeLast(10).reversed()
         if (hits.isEmpty()) return ""

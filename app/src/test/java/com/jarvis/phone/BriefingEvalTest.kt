@@ -127,4 +127,39 @@ class BriefingEvalTest {
         File("build/briefing-presummary.md").writeText(report)
         println(report)
     }
+    /** 2026-11-23 잡음 거르기: 광고(이름 든)·대표번호·봇·매일 오는 알림·가족 묶음이 섞인 하루를 요약 흐름대로 */
+    @Test fun 잡음_거르기() = runBlocking {
+        assumeTrue("OLLAMA_MODEL 이 없어 건너뜀", model.isNotEmpty())
+        ollama("안녕")
+        val day = 24L * 3600 * 1000
+        val now = t + 7 * day
+        fun at(n: NotiItem, time: Long) = n.copy(time = time)
+        val weatherWeek = (0 until 6).map { NotiItem(0, "com.weather", "날씨", "오늘 ${it + 2}도 맑음", "미세먼지 보통", now - (6 - it) * day) }
+        val today = listOf(
+            sms("1588-1234", "홍길동님 이번 주 특별 혜택! 겨울 패딩 최대 70% 할인 쿠폰을 확인하세요"),
+            sms("02-345-6789", "[OO병원] 홍길동님 11/25(화) 10:30 진료 예약 안내입니다"),
+            sms("01055551234", "선생님 지호 엄마예요. 지호가 내일 현장체험학습에 못 갈 것 같아요. 체험학습 신청서 다시 내야 하나요?"),
+            k("", "자비스", "서버 점검: 모두 정상 (빌드 48)"),
+            k("", "엄마", "일요일 할머니 생신 점심 12시 한정식집이야"),
+            sms("엄마", "너는 꽃 좀 사 와 줄래?"),
+            k("우리 가족", "엄마", "늦지 말고 와"),
+            k("우리 가족", "동생", "나 케이크 사 갈게"),
+            k("6학년 동학년방", "교감", "홍길동 선생님 내일 8시 30분 교무회의 자료 부탁드려요"),
+            NotiItem(0, "com.weather", "날씨", "오늘 5도 맑음", "미세먼지 보통", now),
+        ).map { at(it, now + (t++ % 1000) * 1000) }
+        val rules = AppFilter.Rules(emptySet(), emptySet(), listOf("홍길동", "체험학습"), adFilter = true, people = listOf("엄마", "동생"))
+        val kept = today.filter { rules.allows(it) }
+        val routine = Routine.detect(weatherWeek + kept)
+        val (quiet, loud) = kept.partition { Routine.isQuiet(it, routine, emptySet(), rules.keywords) }
+        val book = listOf(PeopleGroup("g", "🏠", "가족", "custom") to listOf("엄마", "동생"))
+        val hits = loud.mapNotNull { n -> People.find(book, n, bodyToo = false)?.let { (g, name) -> Triple(g, name, n) } }
+        val groups = hits.groupBy { it.first.id }.map { (_, l) -> BriefingComposer.Group(l.first().first.title, l.map { it.second to it.third }) }
+        val rest = loud - hits.map { it.third }.toSet()
+        var calls = 0
+        val r = BriefingComposer.compose(rest, ask = { calls++; ollama(it) }, replyAllowed = { c -> c.items.any { rules.mentionsRoster(it) } }, groups = groups)
+        val out = (r.people + "\n\n" + r.groups + Briefings.keywordSection(loud, rules.keywords) + r.apps + "\n" + Routine.line(quiet)).trim()
+        val report = "# 잡음 거르기 ($model, 가짜 알림 ${today.size}건 · 광고 거름 ${today.size - kept.size}건 · AI ${calls}번)\n\n```\n$out\n```\n"
+        File("build/briefing-noise.md").writeText(report)
+        println(report)
+    }
 }

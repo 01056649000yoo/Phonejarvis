@@ -89,6 +89,20 @@ object AppFilter {
     fun hasKeyword(words: Collection<String>, vararg texts: String): Boolean =
         words.isNotEmpty() && texts.any { t -> words.any { it in t } }
 
+    /** 부르는 말(OO님·OO 고객님·OO 회원님) — 광고·안내문이 이름을 부르는 꼴 */
+    private val CALLING = Regex("^\\s?(님|고객님|회원님|고객 님|회원 님)")
+    /**
+     * 키워드가 부르는 말로만 든 알림은 빼고(2026-11-23 선생님: 키워드에 내 이름이 있어 광고가 ⭐ 키워드 알림에 들어감).
+     * 키워드가 한 번이라도 부르는 말이 아닌 자리에 나오면 맞음.
+     */
+    fun hasRealKeyword(words: Collection<String>, vararg texts: String): Boolean = words.any { w ->
+        w.isNotEmpty() && texts.any { t ->
+            var i = t.indexOf(w); var real = false
+            while (i >= 0 && !real) { if (!CALLING.containsMatchIn(t.substring(i + w.length))) real = true; i = t.indexOf(w, i + w.length) }
+            real
+        }
+    }
+
     /**
      * 이 알림을 모으고 요약에 넣을지: 뺀 앱은 무조건 제외,
      * 뺀 방이라도 중요 키워드가 들어 있으면 포함 (놓치면 안 되는 연락).
@@ -100,12 +114,15 @@ object AppFilter {
         /** 👥 직접 만든 묶음의 이름들: 끈 방·광고처럼 보여도 놓치지 않음 */
         val people: List<String> = emptyList(),
     ) {
-        /** 광고로 걸러야 하는지: 학부모 방·키워드·학생 이름이 있으면 광고처럼 보여도 거르지 않음 */
+        /**
+         * 광고로 걸러야 하는지: 학부모·👥 내 묶음 사람이 보낸 것이면 광고처럼 보여도 거르지 않음.
+         * 2026-11-23: 키워드가 있다고 광고를 살리지 않음 — 키워드에 선생님 이름이 있어 'OO님 혜택' 광고가 다 들어왔다.
+         */
         fun isBlockedAd(pkg: String, room: String, title: String, text: String): Boolean =
             adFilter && AdFilter.isAd(title, text) &&
                 !isLinkedParent(pkg, room, title, text) &&
                 !ParentAdvisor.isParent(parentRooms, pkg, room.ifEmpty { title }) &&
-                !hasKeyword(keywords, title, text, room) && !hasKeyword(people, title, room)
+                !hasKeyword(people, title, room)
 
         fun allows(pkg: String, room: String, title: String, text: String): Boolean {
             if (pkg in apps) return false
@@ -121,7 +138,7 @@ object AppFilter {
          * ⭐ 중요 키워드(학생 이름 포함)·👪 학부모 명부·학부모 방·👥 사람 묶음 이름이 보낸 사람·방·내용에 있으면
          */
         fun mentionsRoster(n: NotiItem): Boolean =
-            hasKeyword(keywords, n.title, n.text, n.room) || isLinkedParent(n.pkg, n.room, n.title, n.text) ||
+            hasRealKeyword(keywords, n.title, n.text, n.room) || isLinkedParent(n.pkg, n.room, n.title, n.text) ||
                 ParentAdvisor.isParent(parentRooms, n.pkg, n.room.ifEmpty { n.title }) || hasKeyword(people, n.title, n.room, n.text)
         /** 학부모 명부의 이름·번호가 보낸 사람·방·내용에 들어 있는 알림인지 */
         fun isLinkedParent(pkg: String, room: String, title: String, text: String = "") =

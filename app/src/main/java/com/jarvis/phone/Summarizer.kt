@@ -113,10 +113,11 @@ class Summarizer private constructor(private val ctx: Context) {
     suspend fun summarize(items: List<NotiItem>, onStatus: (String) -> Unit,
                           replyAllowed: (BriefingComposer.Conversation) -> Boolean = { true },
                           cache: Map<String, BriefingComposer.Cached> = emptyMap(), since: Long = 0L,
-                          onCached: (BriefingComposer.Cached) -> Unit = {}, extraStop: () -> String? = { null }): BriefingComposer.Result =
+                          onCached: (BriefingComposer.Cached) -> Unit = {}, extraStop: () -> String? = { null },
+                          groups: List<BriefingComposer.Group> = emptyList()): BriefingComposer.Result =
         runLock.withLock {
             stopRequested = false
-            try { summarizeLocked(items, onStatus, replyAllowed, cache, since, onCached, extraStop) } finally { stopRequested = false }
+            try { summarizeLocked(items, onStatus, replyAllowed, cache, since, onCached, extraStop, groups) } finally { stopRequested = false }
         }
 
     /**
@@ -126,7 +127,8 @@ class Summarizer private constructor(private val ctx: Context) {
     private suspend fun summarizeLocked(items: List<NotiItem>, onStatus: (String) -> Unit,
                                         replyAllowed: (BriefingComposer.Conversation) -> Boolean,
                                         cache: Map<String, BriefingComposer.Cached>, since: Long,
-                                        onCached: (BriefingComposer.Cached) -> Unit, extraStop: () -> String?): BriefingComposer.Result {
+                                        onCached: (BriefingComposer.Cached) -> Unit, extraStop: () -> String?,
+                                        groups: List<BriefingComposer.Group>): BriefingComposer.Result {
         val deadline = System.currentTimeMillis() + MAX_MILLIS
         var called = 0
         val result = BriefingComposer.compose(
@@ -141,7 +143,7 @@ class Summarizer private constructor(private val ctx: Context) {
                 }
             },
             replyAllowed = replyAllowed,
-            cache = cache, since = since, onCached = onCached,
+            cache = cache, since = since, onCached = onCached, groups = groups,
         )
         if (stopRequested && called == 0) throw StoppedException("중지했어요.")
         return result

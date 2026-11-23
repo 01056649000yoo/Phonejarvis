@@ -18,6 +18,8 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -372,7 +374,29 @@ private fun AlertsTab(vm: JarvisViewModel) {
         }
     }
     Text("오늘 받은 알림 전체 · 앱·대화방별", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 4.dp))
+    Text("요약에 필요 없는 알림(서버 알림·매일 오는 안내 등)은 길게 눌러 요약에서 뺄 수 있어요.",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     TodayAllPage(vm)
+    MutedShapesCard(vm)
+}
+
+/** 🔕 요약에서 뺀 알림 꼴: 되돌리기. 하나도 없으면 안 보임 */
+@Composable
+private fun MutedShapesCard(vm: JarvisViewModel) {
+    if (vm.mutedShapes.isEmpty()) return
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("🔕 요약에서 뺀 알림 ${vm.mutedShapes.size}가지", fontWeight = FontWeight.Bold)
+            Text("이런 알림은 모으지만 요약·하루 정리에는 넣지 않아요. 매일 같은 시각에 오는 알림은 쌤톡스가 알아서 빼고 요약 끝에 건수만 적어요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            vm.mutedShapes.sorted().forEach { k ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(vm.mutedLabel(k), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, maxLines = 2)
+                    TextButton(onClick = { vm.unmute(k) }) { Text("되돌리기") }
+                }
+            }
+        }
+    }
 }
 
 /** 🔎 검색 결과: 최근 것부터 100건까지, 찾은 낱말은 굵게 */
@@ -536,8 +560,17 @@ private fun dayTitle(day: Long, today: Long): String {
 }
 
 /** 🗂 오늘 받은 알림 전체: 앱·방별로 묶어 최근 것부터 (정리한 알림 포함) */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TodayAllPage(vm: JarvisViewModel) {
+    var muteAsk by remember { mutableStateOf<NotiItem?>(null) }
+    muteAsk?.let { n ->
+        AlertDialog(onDismissRequest = { muteAsk = null },
+            title = { Text("이런 알림 요약에서 빼기") },
+            text = { Text("${n.app} · '${Routine.shape(n.title).ifBlank { "제목 없음" }}' 꼴의 알림을 앞으로 요약·하루 정리에 넣지 않아요(숫자만 다른 것도 같이). 알림 탭·검색에는 그대로 남고, 언제든 되돌릴 수 있어요.") },
+            confirmButton = { TextButton(onClick = { vm.muteLike(n); muteAsk = null }) { Text("빼기") } },
+            dismissButton = { TextButton(onClick = { muteAsk = null }) { Text("취소") } })
+    }
     val timeFmt = remember { SimpleDateFormat("HH:mm", Locale.KOREA) }
     if (vm.todayItems.isEmpty()) {
         Text("오늘 모은 알림이 아직 없어요.", style = MaterialTheme.typography.bodyMedium)
@@ -565,8 +598,10 @@ private fun TodayAllPage(vm: JarvisViewModel) {
                     val shown = if (open) list.takeLast(50).reversed() else list.takeLast(1)
                     shown.forEach {
                         val who = if (it.room.isNotEmpty() && it.title != it.room) "${it.title}: " else ""
+                        val n = it
                         Text("${timeFmt.format(it.time)}  $who${it.text}", style = MaterialTheme.typography.bodyMedium,
-                            maxLines = if (open) 6 else 1)
+                            maxLines = if (open) 6 else 1,
+                            modifier = Modifier.combinedClickable(onClick = { open = !open }, onLongClick = { muteAsk = n }))
                     }
                 }
             }

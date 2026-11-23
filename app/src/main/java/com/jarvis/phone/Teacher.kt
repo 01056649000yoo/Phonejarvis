@@ -408,6 +408,17 @@ object AdFilter {
         return weak >= 2
     }
 
+    /**
+     * 보낸 사람이 번호인데 휴대폰 번호(01…)가 아님 — 15xx·16xx·080·02 같은 대표번호, 짧은 번호(업체·기관 문자).
+     * 저장한 연락처 이름으로 온 문자는 해당 없음(2026-11-23 선생님: 광고 문자가 답장할 연락에 들어감).
+     */
+    fun isBusinessNumber(sender: String): Boolean {
+        val s = sender.trim()
+        if (s.isEmpty() || !s.all { it.isDigit() || it in "+-() #" }) return false
+        val d = s.filter { it.isDigit() }.let { if (it.startsWith("82")) "0" + it.drop(2) else it }
+        return d.length >= 3 && !d.startsWith("01")
+    }
+
     private fun prefs(ctx: Context) = ctx.getSharedPreferences("apps", Context.MODE_PRIVATE)
     fun enabled(ctx: Context) = prefs(ctx).getBoolean("ad_filter", true)
     fun setEnabled(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("ad_filter", on).apply()

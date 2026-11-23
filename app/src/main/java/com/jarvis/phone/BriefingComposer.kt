@@ -54,11 +54,16 @@ object BriefingComposer {
     // 흔한 말이라 두 가지 이상 함께 나와야 기업 알림(학부모가 '체험학습비 결제'라고 써도 사람 메시지로)
     private val BUSINESS_WEAK = listOf("주문", "배송", "결제", "승인", "포인트", "쿠폰", "예약번호", "운송장", "도착 예정", "출고")
 
+    /** 봇·서버 알림(텔레그램 봇 등) — 요약에서 빼고 건수만(정기·자동 알림 줄) */
+    fun isBot(n: NotiItem): Boolean = BOT_NAME.containsMatchIn(n.title.trim()) || BOT_NAME.containsMatchIn(n.room)
+
     /** 봇·채널 알림톡·메시지 앱 자체 안내 — 사람이 쓴 말이 아닌 것 */
     fun isAutomated(n: NotiItem): Boolean {
         val sender = n.title.trim()
         if (sender.isEmpty() || sender == n.app) return true
-        if (BOT_NAME.containsMatchIn(sender) || BOT_NAME.containsMatchIn(n.room)) return true
+        if (isBot(n)) return true
+        // 2026-11-23 광고·업체 문자가 🙋 답장할 연락에 들어감: 1:1 로 온 광고, 대표번호(15xx·080·02…)에서 온 문자는 사람이 아님
+        if (n.room.isEmpty() && (AdFilter.isAd(n.title, n.text) || (Sms.isSms(n.pkg) && AdFilter.isBusinessNumber(sender)))) return true
         // 1:1 로 온 기업 알림톡(배송·결제·예약)은 앱 알림으로. 단톡방은 사람 말 속 낱말일 수 있어 보지 않는다
         return n.room.isEmpty() && (BUSINESS_STRONG.containsMatchIn(n.text) || BUSINESS_WEAK.count { it in n.text } >= 2)
     }
@@ -232,8 +237,8 @@ object BriefingComposer {
      * 대화방마다 30개씩 나눠 모델에 묻고 합친다(모든 방). 멈추면 거기까지 정리한 것과 나머지 방 이름만 보여 준다.
      */
     /** 사람 메시지 칸(답장할 연락·사람에게 온 메시지)과 앱 알림 칸을 따로 돌려준다 — 브리핑에서 놓는 자리가 달라서 */
-    data class Result(val people: String, val apps: String, val replies: List<RoomSummary> = emptyList()) {
-        val text: String get() = listOf(people, apps.trim()).filter { it.isNotBlank() }.joinToString("\n\n").ifEmpty { "요약할 알림이 없어요." }
+    data class Result(val people: String, val apps: String, val replies: List<RoomSummary> = emptyList(), val groups: String = "") {
+        val text: String get() = listOf(people, groups.trim(), apps.trim()).filter { it.isNotBlank() }.joinToString("\n\n").ifEmpty { "요약할 알림이 없어요." }
     }
 
     /**
@@ -249,11 +254,25 @@ object BriefingComposer {
     private fun freshOf(conv: Conversation, c: Cached?) = if (c == null) conv.items else conv.items.filter { it.time > c.upTo }
 
     /** 지금 요약하면 모델에 넣어야 할 사람 메시지 수(미리 요약해 둔 것·모델 없이 쓰는 한 마디는 뺌) — 미리 요약을 할지 정할 때 */
-    fun pendingForModel(items: List<NotiItem>, cache: Map<String, Cached>, since: Long): Int =
-        conversations(items.filter(::isPerson)).sumOf { conv ->
+    fun pendingForModel(items: List<NotiItem>, cache: Map<String, Cached>, since: Long, groups: List<Group> = emptyList()): Int =
+        (conversations(items.filter(::isPerson)) + groups.flatMap { groupConvs(it) }).sumOf { conv ->
             val c = validCache(conv, cache, since)
             if (c == null && direct(conv) != null) 0 else freshOf(conv, c).size
         }
+
+    /** 👥 내 묶음(가족·교직원 등) 하나: 묶음 이름과 (사람 이름, 알림)들 */
+    data class Group(val title: String, val hits: List<Pair<String, NotiItem>>)
+
+    /**
+     * 묶음 안에서 같은 이름의 사람이 보낸 알림은 카톡·문자·단톡을 가리지 않고 한 대화로(2026-11-23 선생님:
+     * "지인 연락에서 같은 이름의 사람 알림이면 모아서 요약" — 예전엔 원문을 8줄까지 그대로 늘어놓았다).
+     */
+    fun groupConvs(g: Group): List<Conversation> = g.hits
+        .filterNot { (_, n) -> AD.containsMatchIn(n.title) || AD.containsMatchIn(n.text) }
+        .distinctBy { (_, n) -> listOf(n.pkg, n.room, n.title, n.text) }
+        .groupBy({ it.first }, { it.second })
+        .map { (name, list) -> Conversation(g.title, name, list.sortedBy { it.time }) }
+        .sortedByDescending { it.last }
 
     suspend fun compose(
         items: List<NotiItem>,
@@ -267,9 +286,13 @@ object BriefingComposer {
         since: Long = 0L,
         /** 방 하나를 (덩어리까지) 정리할 때마다 — 미리 요약이 저장해 둠 */
         onCached: (Cached) -> Unit = {},
+        /** 👥 내 묶음별 사람 연락 — 사람마다 한 줄로 요약해 Result.groups 에 */
+        groups: List<Group> = emptyList(),
     ): Result {
         val (people, apps) = items.partition(::isPerson)
-        val convs = conversations(people)
+        val groupList = groups.map { it.title to groupConvs(it) }.filter { it.second.isNotEmpty() }
+        val groupKeys = groupList.flatMap { (_, cs) -> cs.map(::keyOf) }.toSet()
+        val convs = conversations(people) + groupList.flatMap { it.second }
         val rooms = mutableListOf<RoomSummary>()
         val leftover = mutableListOf<Conversation>()
         var cut: String? = null
@@ -299,6 +322,12 @@ object BriefingComposer {
             if (done == null) { leftover += conv; continue }
             rooms += done.copy(conv = conv)
         }
+        // 👥 묶음 사람들은 따로 떼어 묶음별로
+        val (groupRooms, plainRooms) = rooms.partition { keyOf(it.conv) in groupKeys }
+        val groupText = renderGroups(groupList.map { (title, cs) -> title to cs.mapNotNull { c -> groupRooms.firstOrNull { keyOf(it.conv) == keyOf(c) } } },
+            leftover.filter { keyOf(it) in groupKeys })
+        rooms.clear(); rooms += plainRooms
+        leftover.removeAll { keyOf(it) in groupKeys }
         // 명부·키워드가 안 나오는 방은 답장할 연락에서 뺌(요청은 💬 줄에 → 로 남김)
         rooms.replaceAll { if (it.needReply && !replyAllowed(it.conv)) it.copy(needReply = false) else it }
         // 방 순서는 최근에 온 것부터
@@ -308,8 +337,26 @@ object BriefingComposer {
             else if (cut != null) add(cut!!)
         }
         return Result(render(rooms, leftover, notes), appSection(apps.filterNot { AD.containsMatchIn(it.title) || AD.containsMatchIn(it.text) }),
-            rooms.filter { it.needReply })
+            rooms.filter { it.needReply }, groupText)
     }
+
+    /** 👥 묶음별: '🏠 가족 연락 (2명 · 5건)' 아래 사람마다 한 줄(요점 → 요청) */
+    fun renderGroups(groups: List<Pair<String, List<RoomSummary>>>, leftover: List<Conversation>): String = buildString {
+        val fmt = SimpleDateFormat("HH:mm", Locale.KOREA)
+        for ((title, list) in groups) {
+            val rest = leftover.filter { it.app == title }
+            if (list.isEmpty() && rest.isEmpty()) continue
+            append("$title 연락 (${list.size + rest.size}명 · ${list.sumOf { it.conv.items.size } + rest.sumOf { it.items.size }}건)\n")
+            list.sortedByDescending { it.conv.last }.forEach { r ->
+                val point = r.point.ifBlank { r.conv.items.last().text.replace('\n', ' ').take(60) }.removePrefix("${r.conv.room}: ")
+                append("- ${r.conv.room} (${r.conv.items.size}건) · ${fmt.format(r.conv.last)}: $point")
+                if (r.ask.isNotEmpty() && !point.contains(r.ask)) append(" → ${r.ask}")
+                append("\n")
+            }
+            if (rest.isNotEmpty()) append("- 그 밖에: " + rest.joinToString(", ") { "${it.room} ${it.items.size}건" } + "\n")
+            append("\n")
+        }
+    }.trimEnd().let { if (it.isEmpty()) it else it + "\n\n" }
 
     /** 사람 메시지 요약 → 화면 글 */
     fun render(rooms: List<RoomSummary>, leftover: List<Conversation>, notes: List<String>): String = buildString {

@@ -890,6 +890,18 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     }
     var status by mutableStateOf("")
         private set
+
+    // 🔕 요약에서 뺀 알림 꼴(2026-11-23 선생님: 서버·시간 되면 오는 알림) — 알림 탭에서 길게 눌러 빼고, 아래 목록에서 되돌림
+    var mutedShapes by mutableStateOf<Set<String>>(emptySet())
+        private set
+    fun refreshMuted() { mutedShapes = Routine.muted(getApplication()) }
+    fun muteLike(n: NotiItem) {
+        Routine.mute(getApplication(), Routine.key(n)); refreshMuted()
+        status = "🔕 ${n.app} '${Routine.shape(n.title).ifBlank { "제목 없음" }}' 알림은 이제 요약에서 빼요. 알림 탭·검색에는 남아요."
+    }
+    fun unmute(key: String) { Routine.unmute(getApplication(), key); refreshMuted() }
+    fun mutedLabel(key: String) = Routine.label(key, labelOf(key.substringBefore('|')))
+
     var summary by mutableStateOf("")
         private set
     var busy by mutableStateOf(false)
@@ -902,6 +914,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         hasModel = summarizer.hasModel()
         notiPermission = NotificationManagerCompat.from(ctx).areNotificationsEnabled()
         adCount = AdFilter.countToday(ctx)
+        refreshMuted()
         // 앱을 닫았다 다시 열었을 때 백그라운드 정리가 아직 돌고 있으면 "정리 중" 표시
         if (BriefingService.active && !bgRunning) { bgRunning = true; watchBackground() }
         exactAlarm = BriefingScheduler.canExact(ctx.getSystemService(android.app.AlarmManager::class.java))

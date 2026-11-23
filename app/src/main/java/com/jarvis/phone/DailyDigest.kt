@@ -111,6 +111,8 @@ object DailyDigest {
                 head.startsWith("🙋") -> items.forEach { lines += Line(2, "🙋 답장할 연락", body(it)) }
                 head.startsWith("👪") -> items.forEach { lines += Line(2, "👪 학부모", body(it)) }
                 head.startsWith("👥") -> items.forEach { lines += Line(2, head.substringBefore(" ("), body(it)) }
+                // 👥 내 묶음(🏠 가족 연락 (2명 · 5건) 처럼 묶음 이모지로 시작)
+                " 연락 (" in head && !head.startsWith("💬") -> items.forEach { lines += Line(2, head.substringBefore(" ("), body(it)) }
                 head.startsWith("💬") -> items.forEach { l ->
                     val n = Regex("\\((\\d+)건\\)").find(l)?.groupValues?.get(1)?.toIntOrNull() ?: 1
                     lines += if (hasStudent(l)) Line(2, "🧒 학생", body(l), n) else Line(3, "💬 대화", body(l), n)

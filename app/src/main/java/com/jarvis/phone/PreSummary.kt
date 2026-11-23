@@ -88,8 +88,8 @@ object PreSummary {
         val from = Briefings.pendingFrom(db)
         val rules = AppFilter.rules(ctx)
         val items = db.since(from).filter { rules.allows(it) }
-        val rest = Briefings.splitForAi(ctx, items).rest
-        val pending = BriefingComposer.pendingForModel(rest, load(ctx, from), from)
+        val split = Briefings.splitForAi(ctx, items)
+        val pending = BriefingComposer.pendingForModel(split.rest, load(ctx, from), from, split.groups)
         return Check(pending, PhoneLoad.state(ctx), screenOn(ctx), BriefingService.active, Summarizer.get(ctx).hasModel())
     }
 
@@ -135,16 +135,17 @@ object PreSummary {
         val from = Briefings.pendingFrom(db)
         val rules = AppFilter.rules(ctx)
         val cutoff = System.currentTimeMillis()
-        val rest = Briefings.splitForAi(ctx, db.since(from).filter { it.time <= cutoff && rules.allows(it) }).rest
+        val split = Briefings.splitForAi(ctx, db.since(from).filter { it.time <= cutoff && rules.allows(it) })
+        val rest = split.rest
         val cache = load(ctx, from)
-        val before = BriefingComposer.pendingForModel(rest, cache, from)
+        val before = BriefingComposer.pendingForModel(rest, cache, from, split.groups)
         if (before == 0) return "쌓인 것 없음"
         val start = System.currentTimeMillis()
         var rooms = 0
         Summarizer.get(ctx).summarize(rest, onStatus, cache = cache, since = from,
             onCached = { save(ctx, it); rooms++ },
-            extraStop = { keepGoingBlock(PhoneLoad.state(ctx), screenOn(ctx)) })
-        val after = BriefingComposer.pendingForModel(rest, load(ctx, from), from)
+            extraStop = { keepGoingBlock(PhoneLoad.state(ctx), screenOn(ctx)) }, groups = split.groups)
+        val after = BriefingComposer.pendingForModel(rest, load(ctx, from), from, split.groups)
         return "메시지 ${before - after}개 정리 · ${(System.currentTimeMillis() - start) / 1000}초" + if (after > 0) " · 남음 $after" else ""
     }
 }
