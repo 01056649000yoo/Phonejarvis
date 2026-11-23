@@ -98,7 +98,7 @@ class BriefingComposerTest {
     @Test fun 원문에_없는_숫자를_쓰면_그_칸은_믿지_않는다() {
         val conv = BriefingComposer.conversations(listOf(kakao("", "지호 어머니", "수요일 상담 4시로 바꿔도 될까요?")))[0]
         val r = BriefingComposer.parse(conv, "요점: 수요일 상담을 3시로 바꾸고 싶다고 함\n요청: 상담 시간 변경 확인해 달라고 함")
-        assertEquals("수요일 상담 4시로 바꿔도 될까요?", r.point)
+        assertEquals("수요일 상담 4시로 바꿔도 되는지 물음", r.point)
         assertTrue(BriefingComposer.grounded("12월 5일까지 3만 원", "12월 5일까지 1권당 3만 원"))
         assertFalse(BriefingComposer.grounded("12월 6일", "12월 5일"))
     }
@@ -108,7 +108,7 @@ class BriefingComposerTest {
             BriefingComposer.rankAsks(listOf("회신서 보내 달라고 함", "상담 날짜 바꿔 달라고 함", "내일 2교시 후 등교 허락해 달라고 함")))
         val conv = BriefingComposer.conversations(listOf(kakao("", "하준 어머니", "선생님 하준이 내일 병원 때문에 2교시 후 등교해도 될까요? 회신서 한 장 더 보내 주실 수 있나요? 상담 날짜도 바꿀 수 있을까요?")))[0]
         val r = BriefingComposer.parse(conv, "요점: 등교·회신서·상담 문의\n요청: 회신서 한 장 더 보내 달라고 함, 상담 날짜를 바꿔 달라고 함")
-        assertTrue(r.ask, r.ask.startsWith("하준이 내일 병원 때문에 2교시 후 등교해도 될까요?") && r.ask.contains("회신서"))
+        assertTrue(r.ask, r.ask.startsWith("하준이 내일 병원 때문에 2교시 후 등교해도 되는지 물음") && r.ask.contains("회신서"))
     }
 
     @Test fun 중지하면_거기까지_정리하고_나머지는_이름만() = runBlocking {
@@ -134,7 +134,7 @@ class BriefingComposerTest {
         ))[0]
         val r = BriefingComposer.parse(conv, "요점: 서윤이가 감기로 늦게 등교함\n요청: 없음\n답장: 아님")
         assertTrue(r.needReply)
-        assertTrue(r.ask.contains("쉬게 해 주시면"))
+        assertTrue(r.ask, r.ask.contains("쉬게 해 달라고 함"))
         val group = BriefingComposer.conversations(listOf(kakao("동학년방", "최선생", "명단 양식 있을까요?")))[0]
         assertFalse(BriefingComposer.parse(group, "요점: 양식 문의\n요청: 없음\n답장: 아님").needReply)
     }
@@ -162,7 +162,7 @@ class BriefingComposerTest {
         assertTrue(r.people, r.people.contains("🙋 답장할 연락 (1)") && r.people.contains("민준 어머님"))
         // 명부에 없는 사람의 묻는 말은 💬 메시지 칸에 그대로
         val talk = r.people.substringAfter("💬")
-        assertTrue(r.people, talk.contains("택배기사") && talk.contains("문 앞에 둘까요"))
+        assertTrue(r.people, talk.contains("택배기사") && talk.contains("문 앞에 둘지 물음"))
     }
 
     @Test fun 한_사람의_여러_마디는_모델이_종합하고_한_마디만_원문() = runBlocking {   // 2026-11-23 선생님: 나열 말고 종합
@@ -172,7 +172,7 @@ class BriefingComposerTest {
         assertEquals(1, calls)
         assertTrue(r.people, r.people.contains("🙋 답장할 연락 (1)") && r.people.contains("도시락 필요 여부") && !r.people.contains(" / "))
         val one = BriefingComposer.compose(listOf(kakao("", "서윤 어머니", "2교시 후에 등교해도 될까요?"), kakao("", "서윤 어머니", "ㅎㅎ")), ask = { error("부르면 안 됨") })
-        assertTrue(one.people, one.people.contains("등교해도 될까요?"))
+        assertTrue(one.people, one.people.contains("등교해도 되는지 물음"))
     }
 
     @Test fun 요청은_두_개까지() {

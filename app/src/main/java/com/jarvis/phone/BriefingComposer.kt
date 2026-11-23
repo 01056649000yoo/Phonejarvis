@@ -24,7 +24,8 @@ object BriefingComposer {
     }
 
     /** 모델이 돌려준 세 줄(또는 규칙으로 만든 값) */
-    data class RoomSummary(val conv: Conversation, val point: String, val ask: String, val needReply: Boolean, val byModel: Boolean)
+    /** fellBack: 모델 답에 원문에 없는 숫자가 있어 버렸음 — 한 번 더 물어볼 신호 */
+    data class RoomSummary(val conv: Conversation, val point: String, val ask: String, val needReply: Boolean, val byModel: Boolean, val fellBack: Boolean = false)
 
     const val CHUNK = 30              // 대화방 하나에서 모델에 한 번에 넣는 메시지 수 — 넘으면 30개씩 나눠 요약한 뒤 합침(2026-11-21 선생님)
     // 2026-11-22 빠르게(선생님: "2건인데 오래 걸림"): 넣는 글·받는 글을 줄이고, 짧은 1:1 은 모델 없이
@@ -133,7 +134,7 @@ object BriefingComposer {
             .lines().map { it.trim() }.filter { it.isNotEmpty() }
         fun field(name: String) = clean.firstOrNull { it.startsWith("$name:") }?.substringAfter(':')?.trim().orEmpty()
         val src = source.ifEmpty { conv.items.joinToString(" ") { it.text } } + " " + conv.room + " " + (prev?.let { "${it.point} ${it.ask}" } ?: "")
-        val lastSaid = (conv.items.lastOrNull { !isFiller(it.text) } ?: conv.items.last()).text.replace('\n', ' ').trim().take(80)
+        val lastSaid = condenseAll((conv.items.lastOrNull { !isFiller(it.text) } ?: conv.items.last()).text.replace('\n', ' ').trim()).take(80)
         val modelPoint = field("요점").ifEmpty { clean.firstOrNull { ':' !in it.take(4) } ?: "" }
         val point = modelPoint.takeIf { it.isNotEmpty() && grounded(it, src) } ?: prev?.point?.takeIf { modelPoint.isEmpty() } ?: lastSaid
         val modelAsk = field("요청").let { if (it.isEmpty() || it.startsWith("없음") || it == "-") "" else it }
@@ -143,12 +144,44 @@ object BriefingComposer {
             // 급한 말(내일·2교시·4시 등)이 이미 요점·요청에 다 있으면 원문 물음을 또 붙이지 않음(같은 말 두 번)
             if (oneToOne) urgentQuestions(conv).filterNot { u -> URGENT.findAll(u).all { it.value in "$modelAsk $point" } } else emptyList())
         // 1:1 대화에서 묻는 말이 있는데 모델이 요청을 놓치면 마지막 물음·부탁을 그대로 요청에(단톡방은 서로 묻는 말이 많아 하지 않는다)
-        val lastQ = if (oneToOne && modelAsk.isEmpty()) conv.items.lastOrNull { QUESTION.containsMatchIn(it.text) }?.text?.replace('\n', ' ')?.trim()?.take(100) else null
+        val lastQ = if (oneToOne && modelAsk.isEmpty()) conv.items.lastOrNull { QUESTION.containsMatchIn(it.text) }?.text?.let(::askSentence)?.take(100) else null
         val ask = (asks + listOfNotNull(lastQ?.takeIf { q -> asks.none { overlap(q, it) >= 0.5 || overlap(it, q) >= 0.5 } })).take(MAX_ASKS).joinToString(", ")
         // 요청이 있으면 답장할 연락 — 모델이 요청을 적고도 '답장: 아님'이라 하는 일이 있었다(2026-11-21). '답장: 필요'만 쓴 옛 답도 받음
         val need = ask.isNotEmpty() || field("답장").startsWith("필요") || (prev?.needReply == true && modelAsk.isEmpty())
-        return RoomSummary(conv, soften(point).take(160), soften(ask).take(160), need, byModel = true)
+        return RoomSummary(conv, soften(point).take(160), soften(ask).take(160), need, byModel = true,
+            fellBack = modelPoint.isNotEmpty() && !grounded(modelPoint, src))
     }
+
+    // ── AI 없이 물음·부탁을 짧은 말로(2026-11-23 선생님: 1건이면 원문 그대로 나옴) ──
+    private val GREETING = Regex("^((선생님|쌤)[,!.~\\s]*)?((안녕하세요|안녕하십니까)[.!~,\\s]*)?")
+    private val TAIL = Regex("[\\s?？!.~^ㅠㅜㅎㅋ]+$")
+    private val CONDENSE = listOf(
+        Regex("(\\S+?)\\s?주실 수 (있나요|있을까요|있으세요|있으신가요|있어요)$") to "$1 달라고 함",
+        Regex("(\\S+?)\\s?주시면 (감사하겠습니다|감사하겠어요|감사해요|좋겠어요|좋겠습니다)$") to "$1 달라고 함",
+        Regex("(\\S+?)\\s?(주세요|주시겠어요|주실래요|줄래|줄 수 있어|주라)$") to "$1 달라고 함",
+        Regex("부탁(드려요|드립니다|드릴게요|해요|합니다)$") to "부탁함",
+        Regex("도 (될까요|되나요|돼요|괜찮을까요|괜찮나요|괜찮아요)$") to "도 되는지 물음",
+        Regex("(인가요|일까요|인지요)$") to "인지 물음",
+        Regex("나요$") to "는지 물음",
+        Regex("까요$") to "지 물음",
+    )
+    private val ASK_IS = Regex("(이에요|예요|에요)$")
+
+    /** 한 문장: '…싸야 하나요?' → '…싸야 하는지 물음', '…보내 주세요' → '…보내 달라고 함'. 못 바꾸면 그대로 */
+    fun condense(sentence: String): String {
+        val q = sentence.trim().let { it.endsWith("?") || it.endsWith("？") }
+        val body = sentence.trim().replace(GREETING, "").replace(TAIL, "").trim()
+        if (body.isEmpty()) return sentence.trim()
+        for ((re, to) in CONDENSE) if (re.containsMatchIn(body)) return re.replace(body, to)
+        if (q && ASK_IS.containsMatchIn(body)) return ASK_IS.replace(body, "인지 물음")
+        return sentence.trim().replace(GREETING, "").trim().ifEmpty { sentence.trim() }
+    }
+    private val SENT = Regex("(?<=[?？.!])\\s+")
+    /** 여러 문장이면 문장마다 */
+    fun condenseAll(text: String): String = text.split(SENT).map { it.trim() }.filter { it.isNotEmpty() }.joinToString(" ") { condense(it) }
+    /** 요청 칸에 넣을 말: 물음·부탁이 든 마지막 문장을 짧게 */
+    fun askSentence(text: String): String = text.replace('\n', ' ').split(SENT).map { it.trim() }
+        .lastOrNull { QUESTION.containsMatchIn(it) }?.let(::condense) ?: condenseAll(text.replace('\n', ' ').trim())
 
     private val NUM = Regex("\\d+")
     /** 모델이 쓴 숫자가 모두 원문에 있는가 */
@@ -164,6 +197,7 @@ object BriefingComposer {
         .flatMap { it.text.replace('\n', ' ').split(Regex("(?<=[?？.!])\\s+")).asSequence() }
         .map { it.trim().removePrefix("선생님").trim(' ', ',') }
         .filter { it.length in 4..70 && QUESTION.containsMatchIn(it) && URGENT.containsMatchIn(it) }
+        .map(::condense)
         .toList()
 
     /**
@@ -204,9 +238,9 @@ object BriefingComposer {
         // 'ㅋㅋ' 같은 말은 세지 않고, 뜻 있는 말이 한 마디뿐일 때만(1:1·단톡 같음)
         if (said.size > SHORT_MAX_MSGS || said.any { it.second.length > SHORT_CHARS }) return null
         val who = conv.who(said.last().first).let { if (it.isNotEmpty()) "$it: " else "" }
-        val point = who + said.joinToString(" / ") { it.second }
-        // 물음·부탁이 든 말은 모두(1:1 에서 두 번 물으면 둘 다 — 앞의 물음이 빠지던 것)
-        val ask = said.filter { QUESTION.containsMatchIn(it.second) }.joinToString(" / ") { it.second }
+        // 한 마디는 AI 없이 — 물음·부탁은 짧은 말로(…하는지 물음·…달라고 함), 인사는 뗌(2026-11-23)
+        val point = who + said.joinToString(" / ") { condenseAll(it.second) }
+        val ask = said.filter { QUESTION.containsMatchIn(it.second) }.joinToString(" / ") { askSentence(it.second) }
         return RoomSummary(conv, point, ask, ask.isNotEmpty(), byModel = false)
     }
 
@@ -326,7 +360,14 @@ object BriefingComposer {
                 onStatus("요약 중… $asked/$total")
                 val part = Conversation(conv.app, conv.room, chunk)
                 val p = prev
-                prev = parse(part, ask(if (p == null) prompt(part) else updatePrompt(part, p, covered)), p)
+                val q = if (p == null) prompt(part) else updatePrompt(part, p, covered)
+                var got = parse(part, ask(q), p)
+                // 원문에 없는 숫자를 써서 버렸으면 한 번 더 — 숫자는 그대로 옮기라고 덧붙여(2026-11-23, 원문으로 떨어지는 일 줄이기)
+                if (got.fellBack && (cut ?: stopReason()) == null) {
+                    asked++
+                    got = parse(part, ask(q + "\n주의: 날짜·시간·숫자는 메시지에 쓰인 그대로 옮겨. 메시지에 없는 숫자는 쓰지 마."), p)
+                }
+                prev = got
                 covered += chunk.size
                 onCached(Cached(keyOf(conv), since, chunk.last().time, covered, prev.point, prev.ask, prev.needReply))
             }
