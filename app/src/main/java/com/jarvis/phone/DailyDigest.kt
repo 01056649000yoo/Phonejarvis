@@ -31,12 +31,18 @@ object DailyDigest {
                 val head = lines.firstOrNull() ?: continue
                 val items = lines.drop(1).filter { it.startsWith("- ") }
                 when {
-                    head.startsWith("🙋") -> items.forEach { l -> l.substringBefore(" · ").let { k -> reply.remove(k); reply[k] = l } }
-                    head.startsWith("💬") -> items.filterNot { it.startsWith("- 그 밖의 방") }.forEach { l ->
-                        val k = l.substringBefore(" (")
-                        val n = Regex("\\((\\d+)건\\)").find(l)?.groupValues?.get(1)?.toIntOrNull() ?: 1
-                        val sum = (talk.remove(k)?.second ?: 0) + n
-                        talk[k] = l.replaceFirst(Regex("\\(\\d+건\\)"), "(${sum}건)") to sum
+                    // 예전 판은 🙋 칸이 따로, 2026-11-23 부터는 💬 대화 요약 안에 '- 🙋 방 · 시각: …' 줄
+                    head.startsWith("🙋") -> items.forEach { l -> l.substringBefore(" · ").removePrefix("- ").let { k -> reply.remove(k); reply[k] = "- 🙋 " + l.removePrefix("- ") } }
+                    head.startsWith("💬") -> {
+                        items.filter { it.startsWith("- 🙋 ") }.forEach { l ->
+                            l.removePrefix("- 🙋 ").substringBefore(" · ").let { k -> reply.remove(k); reply[k] = l }
+                        }
+                        items.filterNot { it.startsWith("- 그 밖의 방") || it.startsWith("- 🙋 ") }.forEach { l ->
+                            val k = l.substringBefore(" (")
+                            val n = Regex("\\((\\d+)건\\)").find(l)?.groupValues?.get(1)?.toIntOrNull() ?: 1
+                            val sum = (talk.remove(k)?.second ?: 0) + n
+                            talk[k] = l.replaceFirst(Regex("\\(\\d+건\\)"), "(${sum}건)") to sum
+                        }
                     }
                     head.startsWith("📦") -> items.forEach { l ->
                         Regex("^- (.+?) (\\d+)건").find(l)?.let { m ->
@@ -44,30 +50,27 @@ object DailyDigest {
                             apps[app] = (apps[app] ?: 0) + n.toInt()
                         }
                     }
-                    head.startsWith("👪") || head.startsWith("💼") || head.startsWith("⭐") || head.startsWith("👥") ->
+                    head.startsWith("👪") || head.startsWith("💼") || head.startsWith("⭐") || head.startsWith("👥") || " 연락 (" in head ->
                         others.getOrPut(head.substringBefore(" (")) { LinkedHashSet() }.addAll(items)
                     // 🕘 구간·📌 마감(새로 만듦)·⏱ 시간·안내 줄은 넣지 않음
                 }
             }
         }
-        reply.keys.forEach { talk.remove(it) }
+        reply.keys.forEach { k -> talk.remove("- $k") }
         val count = briefings.sumOf { it.count }
         return buildString {
             append("요약 ${briefings.size}번 · 알림 ${count}건을 합쳤어요.\n\n")
             if (taskPart.isNotBlank()) append(taskPart.trim()).append("\n\n")
-            if (reply.isNotEmpty()) {
-                append("🙋 답장할 연락 (${reply.size})\n")
+            // 읽는 순서(2026-11-23): 👥 사람 묶음(예전 👪 포함) → ⭐ 키워드 → 💼 업무·일정 → 💬 대화 요약(🙋 먼저) → 📦 앱 알림
+            fun rank(h: String) = when { h.startsWith("⭐") -> 1; h.startsWith("💼") -> 2; else -> 0 }
+            others.entries.sortedBy { rank(it.key) }.forEach { (h, l) -> section(h, l.toList().takeLast(10)) }
+            if (reply.isNotEmpty() || talk.isNotEmpty()) {
+                append("💬 대화 요약 (${reply.size + talk.size}개 방" + (if (reply.isNotEmpty()) " · 🙋 답장 ${reply.size}" else "") + ")\n")
                 reply.values.reversed().forEach { append(it).append('\n') }
-                append('\n')
-            }
-            others.filterKeys { it.startsWith("👪") }.forEach { (h, l) -> section(h, l.toList().takeLast(10)) }
-            if (talk.isNotEmpty()) {
-                append("💬 사람에게 온 메시지 (${talk.size}개 방)\n")
                 talk.values.reversed().take(15).forEach { append(it.first).append('\n') }
                 if (talk.size > 15) append("- 그 밖의 방 ${talk.size - 15}곳\n")
                 append('\n')
             }
-            others.filterKeys { !it.startsWith("👪") }.forEach { (h, l) -> section(h, l.toList().takeLast(10)) }
             if (apps.isNotEmpty()) {
                 val top = apps.entries.sortedByDescending { it.value }
                 append("📦 앱 알림 ${apps.values.sum()}건 · ")
@@ -114,6 +117,8 @@ object DailyDigest {
                 // 👥 내 묶음(🏠 가족 연락 (2명 · 5건) 처럼 묶음 이모지로 시작)
                 " 연락 (" in head && !head.startsWith("💬") -> items.forEach { lines += Line(2, head.substringBefore(" ("), body(it)) }
                 head.startsWith("💬") -> items.forEach { l ->
+                    // 2026-11-23 부터 🙋 답장할 연락은 💬 대화 요약 안의 '- 🙋 …' 줄
+                    if (l.startsWith("- 🙋 ")) { lines += Line(2, "🙋 답장할 연락", body(l).removePrefix("🙋 ")); return@forEach }
                     val n = Regex("\\((\\d+)건\\)").find(l)?.groupValues?.get(1)?.toIntOrNull() ?: 1
                     lines += if (hasStudent(l)) Line(2, "🧒 학생", body(l), n) else Line(3, "💬 대화", body(l), n)
                 }

@@ -23,7 +23,7 @@ class BriefingComposerTest {
         val r = BriefingComposer.compose(items, ask = { p -> asked += p; "요점: 학예회 명단을 금요일까지 내고 순서는 3반·1반·2반\n요청: 학예회 명단을 금요일까지 내 주세요\n답장: 필요" })
         assertEquals(1, asked.size)
         assertTrue(asked[0].contains("김선생: 학예회 명단") && !asked[0].contains("쿠팡"))
-        assertTrue(r.people.startsWith("🙋 답장할 연락 (1)"))
+        assertTrue(r.people, r.people.startsWith("💬 대화 요약 (1개 방 · 🙋 답장 1)\n- 🙋 6학년 동학년방"))
         assertTrue(r.people.contains("6학년 동학년방") && r.people.contains("금요일까지"))
         assertTrue(r.apps.contains("쿠팡 1건 · 배송 출발"))
         assertFalse(r.text.contains("특가"))
@@ -31,7 +31,7 @@ class BriefingComposerTest {
 
     @Test fun 짧은_한_마디는_모델_없이_묻는_말이면_답장할_연락() = runBlocking {
         val r = BriefingComposer.compose(listOf(kakao("", "민준 어머님", "내일 도시락 챙겨야 하나요?")), ask = { error("부르면 안 됨") })
-        assertTrue(r.people.contains("🙋 답장할 연락 (1)"))
+        assertTrue(r.people, r.people.contains("· 🙋 답장 1)") && r.people.contains("- 🙋 민준 어머님"))
         assertTrue(r.people.contains("민준 어머님") && r.people.contains("도시락"))
     }
 
@@ -173,10 +173,9 @@ class BriefingComposerTest {
             kakao("", "택배기사", "문 앞에 둘까요?"),
         )
         val r = BriefingComposer.compose(items, ask = { error("부르면 안 됨") }, replyAllowed = { c -> c.items.any { rules.mentionsRoster(it) } })
-        assertTrue(r.people, r.people.contains("🙋 답장할 연락 (1)") && r.people.contains("민준 어머님"))
-        // 명부에 없는 사람의 묻는 말은 💬 메시지 칸에 그대로
-        val talk = r.people.substringAfter("💬")
-        assertTrue(r.people, talk.contains("택배기사") && talk.contains("문 앞에 둘지 물음"))
+        assertTrue(r.people, r.people.contains("· 🙋 답장 1)") && r.people.contains("- 🙋 민준 어머님"))
+        // 명부에 없는 사람의 묻는 말은 🙋 없이 대화 요약 줄로
+        assertTrue(r.people, r.people.contains("- 택배기사 (1건): 문 앞에 둘지 물음") && !r.people.contains("🙋 택배기사"))
     }
 
     @Test fun 한_사람의_여러_마디는_모델이_종합하고_한_마디만_원문() = runBlocking {   // 2026-11-23 선생님: 나열 말고 종합
@@ -184,7 +183,7 @@ class BriefingComposerTest {
         var calls = 0
         val r = BriefingComposer.compose(items, ask = { calls++; "요점: 내일 체험학습 도시락을 싸야 하는지 물음\n요청: 도시락 필요 여부 알려 달라고 함\n답장: 필요" })
         assertEquals(1, calls)
-        assertTrue(r.people, r.people.contains("🙋 답장할 연락 (1)") && r.people.contains("도시락 필요 여부") && !r.people.contains(" / "))
+        assertTrue(r.people, r.people.contains("- 🙋 도윤 아버님") && r.people.contains("도시락 필요 여부") && !r.people.contains(" / "))
         val one = BriefingComposer.compose(listOf(kakao("", "서윤 어머니", "2교시 후에 등교해도 될까요?"), kakao("", "서윤 어머니", "ㅎㅎ")), ask = { error("부르면 안 됨") })
         assertTrue(one.people, one.people.contains("등교해도 되는지 물음"))
     }
@@ -233,5 +232,39 @@ class BriefingComposerTest {
         val r = BriefingComposer.parse(conv, "요점: 졸업 앨범 12월 5일까지 신청\n총무: 반 아이들에게 안내해 달라고 함")
         assertEquals("총무: 반 아이들에게 안내해 달라고 함", r.ask)
         assertEquals("졸업 앨범 12월 5일까지 신청", r.point)
+    }
+
+    // ── 2026-11-23 선생님: 칸 줄이기 — 👥 사람 묶음 → ⭐ 키워드 → 💼 업무·일정(지정한 앱, AI 요약) → 💬 대화 요약 → 끝 건수 ──
+    @Test fun 업무_일정_앱은_묶음처럼_AI_가_앱마다_요약하고_따로_그린다() = runBlocking {
+        val cal = app("캘린더", "com.google.android.calendar", "학년 협의회", "오후 3시 · 2층 회의실")
+        val mail = app("Gmail", "com.google.android.gm", "교무부", "학예회 계획서 제출 안내")
+        val mail2 = app("Gmail", "com.google.android.gm", "행정실", "출장비 서류 확인 요청")
+        val work = BriefingComposer.Group(BriefingComposer.WORK_TITLE, listOf(cal, mail, mail2).map { it.app to it })
+        val friend = BriefingComposer.Group("🤝 지인", listOf("김철수" to kakao("", "김철수", "토요일 등산 갈래?"), "김철수" to kakao("", "김철수", "7시 출발")))
+        var calls = 0
+        val r = BriefingComposer.compose(emptyList(), ask = { calls++; "요점: 서류 두 가지를 보내 달라고 함\n요청: \n답장: 아님" }, groups = listOf(friend, work))
+        assertTrue(r.work, r.work.startsWith("💼 업무·일정 알림 (앱 2개 · 3건)"))
+        assertTrue(r.work, r.work.contains("- Gmail (2건)"))
+        assertFalse(r.groups, r.groups.contains("💼"))
+        assertTrue(r.groups, r.groups.startsWith("🤝 지인 연락 (1명 · 2건)"))
+        // 읽는 순서: 묶음 → 업무 → 대화 → 앱
+        val order = r.text
+        assertTrue(order, order.indexOf("🤝 지인") < order.indexOf("💼 업무·일정"))
+        assertEquals(2, calls)   // 지인 한 사람(두 마디) + Gmail(두 건) — 캘린더 한 건은 AI 없이
+    }
+
+    @Test fun 미리_요약_글자_수는_AI_가_읽는_만큼만_센다() {
+        val long = "가".repeat(500)
+        val items = listOf(kakao("", "도윤 아버님", long), kakao("", "도윤 아버님", "도시락 싸야 하나요?"))
+        val chars = BriefingComposer.pendingCharsForModel(items, emptyMap(), 0)
+        assertEquals(BriefingComposer.lineChars + "도시락 싸야 하나요?".length, chars)
+        // 한 마디뿐이라 AI 없이 쓰는 방은 세지 않음
+        assertEquals(0, BriefingComposer.pendingCharsForModel(listOf(kakao("", "서윤 어머니", "네 알겠습니다")), emptyMap(), 0))
+    }
+
+    @Test fun 카카오페이_송금_알림은_사람_연락이_아님_사람_묶음에_안_들어감() {   // 2026-11-23 선생님: 카카오페이가 지인으로
+        val pay = NotiItem(0, "com.kakaopay.app", "카카오페이", "김철수님이 10,000원을 보냈어요", "받기를 눌러 주세요", t++)
+        assertFalse(BriefingComposer.isPerson(pay))
+        assertTrue(BriefingComposer.isPerson(kakao("", "김철수", "내일 7시 출발")))
     }
 }

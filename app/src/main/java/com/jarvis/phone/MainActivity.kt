@@ -175,8 +175,8 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
             val pkgs = stats.map { it.pkg }.toSet()
             if (pkgs == aiDoneFor && appRecs.isNotEmpty()) return@launch
             silentApps = withContext(Dispatchers.IO) { AppAdvisor.silentMessagingApps(ctx, stats) }
-            importantApps = AppFilter.importantApps(ctx)
-            val rules = AppAdvisor.sortForDisplay(AppAdvisor.byRules(stats), importantApps)
+            workApps = AppFilter.workApps(ctx, stats)
+            val rules = AppAdvisor.sortForDisplay(AppAdvisor.byRules(stats), workApps)
             appRecs = rules
             excludedApps = AppFilter.excluded(ctx)
             // 키워드 추천: 최근 7일 모은 알림(뺀 앱·방 제외)에서 규칙으로 바로
@@ -188,7 +188,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
             if (!ai || !summarizer.hasModel() || stats.isEmpty() || aiBusy || BriefingService.active) return@launch
             aiBusy = true
             try {
-                appRecs = AppAdvisor.sortForDisplay(AppAdvisor.byAi(ctx, rules), importantApps)
+                appRecs = AppAdvisor.sortForDisplay(AppAdvisor.byAi(ctx, rules), workApps)
                 keywordRecs = KeywordAdvisor.byAi(ctx, recent, keywordRecs)   // AI가 더 골라 줌
                 aiDoneFor = pkgs
             } finally { aiBusy = false }
@@ -238,15 +238,15 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         silentApps = silentApps.filterNot { it.first == pkg }
     }
 
-    /** ⭐ 직접 고른 중요 앱 (업무·일정 묶음에 함께) */
-    var importantApps by mutableStateOf<Set<String>>(emptySet())
+    /** 💼 업무·일정 앱 (지정한 앱만 요약의 업무·일정 칸에) */
+    var workApps by mutableStateOf<Set<String>>(emptySet())
         private set
-    fun setImportant(pkg: String, on: Boolean) {
+    fun setWork(pkg: String, on: Boolean) {
         val ctx = getApplication<Application>()
-        AppFilter.setImportant(ctx, pkg, on)
-        importantApps = AppFilter.importantApps(ctx)
+        AppFilter.setWork(ctx, pkg, on, workApps)
+        workApps = AppFilter.workApps(ctx, appRecs.map { it.stat })
         excludedApps = AppFilter.excluded(ctx)
-        appRecs = AppAdvisor.sortForDisplay(appRecs, importantApps)
+        appRecs = AppAdvisor.sortForDisplay(appRecs, workApps)
     }
 
     fun setAppKeep(pkg: String, keep: Boolean) {
@@ -952,10 +952,11 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
             val names = Students.names(ctx)
             val parents = if (People.isVisible(ctx, "parents")) ParentAdvisor.contacts(ctx, items) else emptyList()
             val book = People.customBook(ctx)
-            val people = items.mapNotNull { n -> People.find(book, n)?.let { (g, name) -> Triple(g, name, n) } }
+            val people = items.filter(BriefingComposer::isPerson)   // 메시지 앱의 사람 연락만(카카오페이 송금 알림 등은 빼고)
+                .mapNotNull { n -> People.find(book, n)?.let { (g, name) -> Triple(g, name, n) } }
                 .groupBy { it.first.id }.map { (_, l) -> l.first().first to l.map { it.second to it.third } }
-            // 오늘 알림에서 할 일 뽑기 (이미 있는 건 건너뜀) + 학생별 기록 채우기
-            items.forEach { runCatching { TaskExtractor.save(ctx, it); Students.log(ctx, names, it) } }
+            // 학생별 기록 채우기 (📌 할 일 자동 등록은 2026-11-23 에 없앰 — 직접 넣은 할 일만)
+            items.forEach { runCatching { Students.log(ctx, names, it) } }
             val taskList = db.tasks()
             val counts = db.studentCounts()
             val done = ParentAdvisor.handled(ctx)

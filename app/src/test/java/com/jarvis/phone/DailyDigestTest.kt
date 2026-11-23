@@ -35,7 +35,7 @@ class DailyDigestTest {
         val t = DailyDigest.compose(listOf(b1, b2), "📌 오늘·내일 마감 (1건)\n- [내일] 명단 내기 (6학년 동학년방)\n")
         assertTrue(t, t.startsWith("요약 2번 · 알림 9건을 합쳤어요."))
         assertTrue(t, "📌 오늘·내일 마감" in t)
-        assertTrue(t, "🙋 답장할 연락 (2)" in t)
+        assertTrue(t, "💬 대화 요약 (3개 방 · 🙋 답장 2)" in t && "- 🙋 김지우맘 · 08:30" in t)
         assertTrue(t, "- 박선생님 (3건): 내일 회의 3시로" in t)          // 최근 줄, 건수 합
         assertFalse(t, "학예회 순서 확정" in t)                          // 답장할 방은 💬 에서 뺌
         assertTrue(t, "📦 앱 알림 6건 · 쿠팡 5, 은행 1" in t)

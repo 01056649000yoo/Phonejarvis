@@ -213,11 +213,14 @@ class NotificationDb private constructor(ctx: Context) :
         }
         writableDatabase.insertWithOnConflict("task", null, v, SQLiteDatabase.CONFLICT_IGNORE)
     }
-    /** 안 끝낸 할 일 + 최근 3일 안에 끝낸 할 일 (마감 빠른 순) */
+    /**
+     * 안 끝낸 할 일 + 최근 3일 안에 끝낸 할 일 (마감 빠른 순).
+     * 직접 넣은 할 일만(2026-11-23 선생님: 알림에서 저절로 뽑던 마감은 엉뚱한 것이 많아 없앰 — 예전에 뽑아 둔 것은 지우지 않고 안 보임)
+     */
     fun tasks(): List<Task> {
         val recent = (System.currentTimeMillis() - 3 * 24L * 3600 * 1000).toString()
         return readableDatabase.rawQuery(
-            "SELECT id,title,room,due,has_time,source_time,done,dedupe FROM task WHERE done=0 OR due>=? ORDER BY done ASC, due ASC LIMIT 100",
+            "SELECT id,title,room,due,has_time,source_time,done,dedupe FROM task WHERE (done=0 OR due>=?) AND dedupe LIKE 'manual|%' ORDER BY done ASC, due ASC LIMIT 100",
             arrayOf(recent)
         ).use { c -> buildList { while (c.moveToNext()) add(Task(c.getLong(0), c.getString(1), c.getString(2), c.getLong(3),
             c.getInt(4) == 1, c.getLong(5), c.getInt(6) == 1, c.getString(7))) } }

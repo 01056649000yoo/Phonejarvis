@@ -10,6 +10,6 @@ class TopUpPartTest {
         assertEquals("💬 사람에게 온 메시지 (1개 방)\n- 학부모: 등교 문의\n\n📦 앱 알림 (1건 · 요약 안 함)\n- 쿠팡 1건", Briefings.topUpPart(body))
     }
     @Test fun 마감만_있으면_안내() {
-        assertEquals("(마감 소식만 있어요)", Briefings.topUpPart("🕘 a\n\n📌 마감\n- x"))
+        assertEquals("(새로 정리할 것이 없어요)", Briefings.topUpPart("🕘 a\n\n📌 마감\n- x"))
     }
 }

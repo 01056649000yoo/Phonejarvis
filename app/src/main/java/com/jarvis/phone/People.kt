@@ -98,7 +98,15 @@ object People {
 
     /** 직접 만든 묶음들의 (묶음, 이름들) — 알림 알아보기용 */
     fun customBook(ctx: Context): List<Pair<PeopleGroup, List<String>>> =
-        visible(ctx).filter { it.kind == "custom" }.map { it to members(ctx, it.id) }.filter { it.second.isNotEmpty() }
+        visible(ctx).filter { it.kind == "custom" || it.kind == "parents" }
+            .map { it to if (it.kind == "parents") parentNames(ctx) else members(ctx, it.id) }.filter { it.second.isNotEmpty() }
+
+    /**
+     * 예전 판 👪 학부모 명부도 다른 묶음과 똑같이(2026-11-23 선생님: 학부모 전용 칸 없이 내가 만든 사람 묶음으로).
+     * 연결해 둔 이름(번호는 빼고) — 보낸 사람·방 이름으로 알아봄
+     */
+    private fun parentNames(ctx: Context): List<String> =
+        ParentBook.links(ctx).map { it.match.trim() }.filter { it.length >= 2 && it.count { c -> c.isDigit() } < 4 }.distinct()
 
     /** 규칙(끈 방·광고에서도 놓치지 않기)에 쓸 이름들 */
     fun allNames(ctx: Context): List<String> = customBook(ctx).flatMap { it.second }

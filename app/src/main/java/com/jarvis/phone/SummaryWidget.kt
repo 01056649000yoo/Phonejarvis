@@ -162,12 +162,13 @@ class SummaryWidget : GlanceAppWidget() {
         const val EXTRA_OPEN_TAB = "open_tab"
 
         /**
-         * 요약 글에서 위젯에 보일 줄: AI 요약 칸(🙋 답장할 연락·💬 사람 메시지·👥 내 묶음 'OO 연락')은 전부,
-         * 원문 칸(마감·학부모·업무·키워드·앱 알림·정기 알림)은 제목만 모아 한 줄
+         * 요약 글에서 위젯에 보일 줄: AI 요약 칸(👥 사람 묶음 'OO 연락'·💼 업무·일정·💬 대화 요약, 예전 판의 🙋)은 전부,
+         * 원문 칸(키워드·앱 알림·정기 알림, 예전 판의 마감·학부모)은 제목만 모아 한 줄
          */
         fun summaryOnly(text: String): List<String> {
             val blocks = text.trim().split(Regex("\\n\\s*\\n")).map { b -> b.lines().map { it.trimEnd() }.filter { it.isNotEmpty() } }.filter { it.isNotEmpty() }
-            fun summarized(h: String) = h.startsWith("🙋") || h.startsWith("💬") || (" 연락 (" in h && !h.startsWith("👪"))
+            fun summarized(h: String) = h.startsWith("🙋") || h.startsWith("💬") || h.startsWith(BriefingComposer.WORK_TITLE) ||
+                (" 연락 (" in h && !h.startsWith("👪 학부모 연락 ("))
             val keep = blocks.filter { summarized(it[0]) }.flatten()
             // 🌡️·🔋 'AI 없이 정리했어요' 안내 문단은 칸이 아니라 빼기
             val heads = blocks.filterNot { summarized(it[0]) || it[0].startsWith("(") || it[0].startsWith("🌡") || it[0].startsWith("🔋") }

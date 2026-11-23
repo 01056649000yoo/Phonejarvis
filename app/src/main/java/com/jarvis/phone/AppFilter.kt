@@ -36,10 +36,24 @@ object AppFilter {
 
     // ── ⭐ 직접 고른 중요 앱 (업무·일정 묶음에 같이 보임) ──
     fun importantApps(ctx: Context): Set<String> = prefs(ctx).getStringSet("important_apps", emptySet())!!.toSet()
-    fun setImportant(ctx: Context, pkg: String, on: Boolean) {
-        val s = importantApps(ctx)
-        prefs(ctx).edit().putStringSet("important_apps", if (on) s + pkg else s - pkg).apply()
-        if (on) setKeep(ctx, pkg, true)   // 중요 앱은 모으기로
+
+    // ── 💼 업무·일정 앱 (2026-11-23 선생님: 지정한 앱의 알림만 업무·일정 칸에서 요약) ──
+    // 한 번도 고치지 않았으면 예전처럼 이름으로 알아본 앱(메일·캘린더·할 일…) + ⭐ 중요 앱. 고치면 그때부터 고른 목록 그대로.
+    fun workSet(ctx: Context): Set<String>? = prefs(ctx).getStringSet("work_apps", null)?.toSet()
+    fun isWorkApp(ctx: Context): (String, String) -> Boolean {
+        val set = workSet(ctx); val imp = importantApps(ctx)
+        return { app, pkg -> set?.contains(pkg) ?: (AppAdvisor.isWork(app, pkg) || pkg in imp) }
+    }
+    /** 목록에 보일 업무·일정 앱(지정 전이면 [stats] 중 이름으로 알아본 것) */
+    fun workApps(ctx: Context, stats: List<AppStat>): Set<String> {
+        val f = isWorkApp(ctx)
+        return workSet(ctx) ?: stats.filter { f(it.app, it.pkg) }.map { it.pkg }.toSet()
+    }
+    /** 지정·빼기. 처음 고칠 때는 지금 보이는 목록([current])에서 시작 */
+    fun setWork(ctx: Context, pkg: String, on: Boolean, current: Set<String>) {
+        val s = workSet(ctx) ?: current
+        prefs(ctx).edit().putStringSet("work_apps", if (on) s + pkg else s - pkg).apply()
+        if (on) setKeep(ctx, pkg, true)   // 업무·일정 앱은 모으기로
     }
 
     // ── "알림이 안 들어와요" 경고를 숨긴 앱 (안 쓰는 앱) ──
@@ -223,10 +237,10 @@ object AppAdvisor {
     }
 
     fun isWork(app: String, pkg: String): Boolean = (app + " " + pkg).lowercase().let { k -> WORK.any { it in k } }
-    /** 목록 묶음: 0 💬 메시지·SNS · 1 💼 업무·일정(+ ⭐ 직접 고른 중요 앱) · 2 📱 그 밖의 앱 */
-    fun group(s: AppStat, important: Set<String> = emptySet()): Int = when {
+    /** 목록 묶음: 0 💬 메시지·SNS · 1 💼 업무·일정(지정한 앱, [work]) · 2 📱 그 밖의 앱 */
+    fun group(s: AppStat, work: Set<String> = emptySet()): Int = when {
         isMessaging(s) -> 0
-        isWork(s.app, s.pkg) || s.pkg in important -> 1
+        s.pkg in work -> 1
         else -> 2
     }
 
@@ -234,8 +248,8 @@ object AppAdvisor {
     fun isMessaging(app: String, pkg: String): Boolean = (app + " " + pkg).lowercase().let { k -> MESSAGING.any { it in k } }
 
     /** 메시지·SNS → 업무·일정·중요 앱 → 그 밖의 앱, 묶음 안에서는 알림 많은 순. */
-    fun sortForDisplay(recs: List<AppRec>, important: Set<String> = emptySet()): List<AppRec> =
-        recs.sortedWith(compareBy<AppRec> { group(it.stat, important) }.thenByDescending { it.stat.count })
+    fun sortForDisplay(recs: List<AppRec>, work: Set<String> = emptySet()): List<AppRec> =
+        recs.sortedWith(compareBy<AppRec> { group(it.stat, work) }.thenByDescending { it.stat.count })
 
     fun byRules(stats: List<AppStat>): List<AppRec> = stats.map { s ->
         val key = (s.app + " " + s.pkg).lowercase()

@@ -437,9 +437,14 @@ object BriefingComposer {
      */
     /** 사람 메시지 칸(답장할 연락·사람에게 온 메시지)과 앱 알림 칸을 따로 돌려준다 — 브리핑에서 놓는 자리가 달라서 */
     /** cutRooms: 시간·중지로 다 못 한 방 수(이름만 적음) — 요약이 이어서 마무리할지 정할 때 */
-    data class Result(val people: String, val apps: String, val replies: List<RoomSummary> = emptyList(), val groups: String = "", val cutRooms: Int = 0) {
-        val text: String get() = listOf(people, groups.trim(), apps.trim()).filter { it.isNotBlank() }.joinToString("\n\n").ifEmpty { "요약할 알림이 없어요." }
+    data class Result(val people: String, val apps: String, val replies: List<RoomSummary> = emptyList(), val groups: String = "", val cutRooms: Int = 0,
+                      /** 💼 지정한 업무·일정 앱 요약(앱마다 한 문단) */
+                      val work: String = "") {
+        val text: String get() = listOf(groups.trim(), work.trim(), people, apps.trim()).filter { it.isNotBlank() }.joinToString("\n\n").ifEmpty { "요약할 알림이 없어요." }
     }
+
+    /** 💼 업무·일정 묶음 이름 — 사람 묶음과 같은 길(AI·미리 요약)로 정리하고 따로 그림 */
+    const val WORK_TITLE = "💼 업무·일정"
 
     /**
      * 미리 요약해 둔 방 하나(2026-11-23 선생님: 배터리 30% 이상이고 쌓인 게 많거나, 충전 중이면 수시로 미리).
@@ -458,6 +463,16 @@ object BriefingComposer {
         (conversations(items.filter(::isPerson)) + groups.flatMap { groupConvs(it) }).sumOf { conv ->
             val c = validCache(conv, cache, since)
             if (c == null && direct(conv) != null) 0 else freshOf(conv, c).size
+        }
+
+    /**
+     * 지금 요약하면 AI 에 새로 넣을 글자 수(메시지마다 [lineChars] 까지만 셈 — AI 가 실제로 읽는 만큼).
+     * ⚡ 미리 요약은 이게 [PreSummary.MIN_CHARS] 를 넘으면 돈다(2026-11-23 선생님: 개수 말고 글자 수로 미리미리).
+     */
+    fun pendingCharsForModel(items: List<NotiItem>, cache: Map<String, Cached>, since: Long, groups: List<Group> = emptyList()): Int =
+        (conversations(items.filter(::isPerson)) + groups.flatMap { groupConvs(it) }).sumOf { conv ->
+            val c = validCache(conv, cache, since)
+            if (c == null && direct(conv) != null) 0 else freshOf(conv, c).sumOf { minOf(it.text.length, lineChars) }
         }
 
     /** 👥 내 묶음(가족·교직원 등) 하나: 묶음 이름과 (사람 이름, 알림)들 */
@@ -567,8 +582,10 @@ object BriefingComposer {
         }
         // 👥 묶음 사람들은 따로 떼어 묶음별로
         val (groupRooms, plainRooms) = rooms.partition { keyOf(it.conv) in groupKeys }
-        val groupText = renderGroups(groupList.map { (title, cs) -> title to cs.mapNotNull { c -> groupRooms.firstOrNull { keyOf(it.conv) == keyOf(c) } } },
-            leftover.filter { keyOf(it) in groupKeys })
+        val rendered = groupList.map { (title, cs) -> title to cs.mapNotNull { c -> groupRooms.firstOrNull { keyOf(it.conv) == keyOf(c) } } }
+        val groupLeftover = leftover.filter { keyOf(it) in groupKeys }
+        val groupText = renderGroups(rendered.filter { it.first != WORK_TITLE }, groupLeftover)
+        val workText = renderGroups(rendered.filter { it.first == WORK_TITLE }, groupLeftover)
         rooms.clear(); rooms += plainRooms
         val groupLeft = leftover.count { keyOf(it) in groupKeys }
         leftover.removeAll { keyOf(it) in groupKeys }
@@ -583,7 +600,7 @@ object BriefingComposer {
             else if (cut != null) add(cut!!)
         }
         return Result(render(rooms, leftover, notes), appSection(apps.filterNot { AD.containsMatchIn(it.title) || AD.containsMatchIn(it.text) }),
-            rooms.filter { it.needReply }, groupText, cutRooms = leftover.size + groupLeft)
+            rooms.filter { it.needReply }, groupText, cutRooms = leftover.size + groupLeft, work = workText)
     }
 
     private val ENDING = Regex("(해 ?)?(달라고|라고|자고|고) ?함\\.?$")
@@ -601,7 +618,8 @@ object BriefingComposer {
         for ((title, list) in groups) {
             val rest = leftover.filter { it.app == title }
             if (list.isEmpty() && rest.isEmpty()) continue
-            append("$title 연락 (${list.size + rest.size}명 · ${list.sumOf { it.conv.items.size } + rest.sumOf { it.items.size }}건)\n")
+            val n = list.sumOf { it.conv.items.size } + rest.sumOf { it.items.size }
+            append(if (title == WORK_TITLE) "$title 알림 (앱 ${list.size + rest.size}개 · ${n}건)\n" else "$title 연락 (${list.size + rest.size}명 · ${n}건)\n")
             // 사람 이름은 그대로, 그 사람이 한 말만 한 문단으로(요점 + 부탁을 이어서) — 2026-11-23 선생님
             list.sortedByDescending { it.conv.last }.forEach { r ->
                 val point = r.point.ifBlank { r.conv.items.last().text.replace('\n', ' ').take(60) }.removePrefix("${r.conv.room}: ")
@@ -617,20 +635,17 @@ object BriefingComposer {
 
     fun render(rooms: List<RoomSummary>, leftover: List<Conversation>, notes: List<String>): String = buildString {
         val fmt = SimpleDateFormat("HH:mm", Locale.KOREA)
+        // 2026-11-23 선생님: 칸을 줄임 — 🙋 답장할 연락을 따로 두지 않고 💬 대화 요약 맨 위에 🙋 표시로
         val replies = rooms.filter { it.needReply }
-        if (replies.isNotEmpty()) {
-            append("🙋 답장할 연락 (${replies.size})\n")
-            replies.forEach { r ->
-                val detail = if (r.ask.isNotEmpty() && r.byModel && !r.point.contains(r.ask)) "${r.ask} (${r.point})" else r.ask.ifEmpty { r.point }
-                append("- ${r.conv.room} · ${fmt.format(r.conv.last)}: $detail" + more(r) + "\n")
-            }
-            append("\n")
-        }
         val chatter = rooms.filter { !it.needReply && it.point.isBlank() }.map { it.conv }
         val talk = rooms.filterNot { it.needReply || it.point.isBlank() }
         val others = leftover + chatter
-        if (talk.isNotEmpty() || others.isNotEmpty()) {
-            append("💬 사람에게 온 메시지 (${rooms.size + leftover.size}개 방)\n")
+        if (replies.isNotEmpty() || talk.isNotEmpty() || others.isNotEmpty()) {
+            append("💬 대화 요약 (${rooms.size + leftover.size}개 방" + (if (replies.isNotEmpty()) " · 🙋 답장 ${replies.size}" else "") + ")\n")
+            replies.forEach { r ->
+                val detail = if (r.ask.isNotEmpty() && r.byModel && !r.point.contains(r.ask)) "${r.ask} (${r.point})" else r.ask.ifEmpty { r.point }
+                append("- 🙋 ${r.conv.room} · ${fmt.format(r.conv.last)}: $detail" + more(r) + "\n")
+            }
             talk.forEach { r ->
                 append("- ${r.conv.room} (${r.conv.items.size}건): ${r.point}")
                 if (r.ask.isNotEmpty() && !r.point.contains(r.ask)) append(" → ${r.ask}")   // 짧은 한 마디는 요점이 곧 물음이라 두 번 쓰지 않음

@@ -292,13 +292,8 @@ object Briefings {
         val split = splitForAi(ctx, items)
         // ⭐ 키워드 알림: AI 없이 규칙으로 찾아 맨 위에 (놓치지 않게)
         val keywordPart = keywordSection(split.loud, rules.keywords)
-        // 👪 학부모 연락: 지정한 학부모 방의 연락을 분류해 맨 위에 (규칙, 즉시)
-        val parentPart = if (People.isVisible(ctx, "parents")) parentSection(ParentAdvisor.contacts(ctx, items)) else ""
-        // 📌 오늘·내일 마감 (할 일 목록에서, 끝내지 않은 것)
-        items.forEach { runCatching { TaskExtractor.save(ctx, it) } }
-        val taskPart = taskSection(db.tasks())
-        // 💼 업무·일정 앱 알림은 AI 없이 바로, 👥 내 묶음은 사람별로 묶어 AI, 나머지(rest)도 AI
-        val workPart = workSection(split.work)
+        // 2026-11-23 선생님: 칸을 줄임 — 👪 학부모 전용 칸·📌 오늘·내일 마감 칸은 없앰(학부모는 사람 묶음 하나로, 마감은 변수가 많아 안 함)
+        // 👥 사람 묶음(사람별)·💼 지정한 업무·일정 앱(앱별)·나머지(rest, 대화방별) 모두 AI
         val rest = split.rest
         // ⚡ 미리 요약해 둔 방(PreSummary)은 다시 묻지 않음 — 이번 구간(from)의 것만
         val cache = PreSummary.load(ctx, from)
@@ -316,7 +311,7 @@ object Briefings {
                 val allowed = { c: BriefingComposer.Conversation -> c.items.any { rules.mentionsRoster(it) } }
                 val first = summarizer.summarize(rest, onStatus, allowed, mem, from, onCached = { mem[it.key] = it }, groups = split.groups, maxMillis = FIRST_PASS_MS)
                 if (first.cutRooms > 0 && summarizer.cutByTime) {
-                    val partial = ((taskPart + parentPart + first.people.let { if (it.isNotBlank()) it + "\n\n" else "" } + first.groups + workPart + keywordPart + first.apps).trim() +
+                    val partial = (order(first.groups, keywordPart, first.work, first.people, first.apps) +
                         "\n\n(⏳ 남은 대화방 ${first.cutRooms}곳은 이어서 정리하고 있어요. 다 되면 이 알림이 바뀌어요)")
                     runCatching { onPartial("$label · 알림 ${items.size}건 (정리 중)", partial, cutoff) }
                     summarizer.summarize(rest, onStatus, allowed, mem, from, onCached = { mem[it.key] = it }, groups = split.groups, maxMillis = SECOND_PASS_MS)
@@ -326,11 +321,9 @@ object Briefings {
         // ✉️ 답장할 문자: 🙋 답장할 연락 중 문자(1:1)만 올리고, 모델이 켜진 김에 초안을 5건까지 미리
         // ✉️ 답장할 문자는 목록에만 올림 — 초안은 요약 알림을 보낸 뒤에 씀(결과가 늦어지지 않게, draftPending)
         runCatching { upsertSmsTargets(db, ai?.replies.orEmpty()) }
-        // 읽는 순서: 마감 → 학부모 → 답장할 연락·사람 메시지 → 내 묶음 → 업무 → 키워드 → 앱 알림
-        val aiPeople = ai?.people?.takeIf { it.isNotBlank() }?.let { it + "\n\n" } ?: ""
         val now = System.currentTimeMillis()
         val timing = timingLine(now - start, summarizer.stats, PhoneLoad.state(ctx).thermal)
-        val text = ((taskPart + parentPart + aiPeople + (ai?.groups ?: "") + workPart + keywordPart + (ai?.apps ?: "") + Routine.line(split.quiet)).trim()
+        val text = ((order(ai?.groups ?: "", keywordPart, ai?.work ?: "", ai?.people ?: "", ai?.apps ?: "") + "\n\n" + Routine.line(split.quiet)).trim()
             .ifEmpty { "요약할 알림이 없어요." }) + (if (skipAi != null && rest.isNotEmpty()) "\n\n$skipAi" else "") + "\n\n($timing)"
         // time = 이번 요약이 덮은 마지막 시각 (다음 요약은 이 다음부터)
         db.insertBriefing(Briefing(time = cutoff, fromTime = from, label = label, count = items.size, text = text))
@@ -343,6 +336,10 @@ object Briefings {
         return Outcome("$label · 알림 ${items.size}건", range + "\n\n" + text, cutoff, timing)
     }
 
+    /** 읽는 순서(2026-11-23 선생님): 👥 사람 묶음 → ⭐ 키워드 → 💼 업무·일정 → 💬 대화 요약 → 📦 앱 알림(건수) */
+    fun order(groups: String, keywords: String, work: String, people: String, apps: String): String =
+        listOf(groups, keywords, work, people, apps).map { it.trim() }.filter { it.isNotEmpty() }.joinToString("\n\n")
+
     /**
      * 요약할 알림 나누기 — 요약·미리 요약 공용:
      * 🔁 quiet(정기·자동·직접 뺀 꼴, 건수만) / 💼 work(업무·일정, AI 없이) / 👥 groups(내 묶음, 사람별 AI) / rest(나머지, AI)
@@ -353,11 +350,16 @@ object Briefings {
         val keywords = AppFilter.rules(ctx).keywords
         val routine = Routine.keys(ctx); val muted = Routine.muted(ctx)
         val (quiet, loud) = items.partition { Routine.isQuiet(it, routine, muted, keywords) }
-        val important = AppFilter.importantApps(ctx)
-        val workItems = loud.filter { AppAdvisor.isWork(it.app, it.pkg) || it.pkg in important }
+        // 💼 지정한 업무·일정 앱(2026-11-23: 그 앱 알림만 AI 가 앱마다 요약 — 묶음 하나처럼, 미리 요약에도 같이)
+        val isWorkApp = AppFilter.isWorkApp(ctx)
+        val workItems = loud.filter { isWorkApp(it.app, it.pkg) }
         val book = People.customBook(ctx)
-        val hits = (loud - workItems.toSet()).mapNotNull { n -> People.find(book, n, bodyToo = false)?.let { (g, name) -> Triple(g, name, n) } }
-        val groups = hits.groupBy { it.first.id }.map { (_, l) -> BriefingComposer.Group(l.first().first.title, l.map { it.second to it.third }) }
+        // 한 사람은 한 묶음에만(묶음 순서대로 먼저 맞는 곳) — 그 연락은 아래 대화 요약에 다시 나오지 않음
+        // 메시지 앱의 사람 연락만(2026-11-23 선생님: 카카오페이가 지인으로 — 송금 알림 제목의 이름이 묶음 이름과 맞음)
+        val hits = (loud - workItems.toSet()).filter(BriefingComposer::isPerson)
+            .mapNotNull { n -> People.find(book, n, bodyToo = false)?.let { (g, name) -> Triple(g, name, n) } }
+        val groups = hits.groupBy { it.first.id }.map { (_, l) -> BriefingComposer.Group(l.first().first.title, l.map { it.second to it.third }) } +
+            listOfNotNull(workItems.takeIf { it.isNotEmpty() }?.let { w -> BriefingComposer.Group(BriefingComposer.WORK_TITLE, w.map { it.app to it }) })
         return Split(quiet, loud, workItems, groups, loud - workItems.toSet() - hits.map { it.third }.toSet())
     }
 
@@ -400,23 +402,7 @@ object Briefings {
 
     /** 이어 붙일 때: 맨 위 구간 줄(🕘)과 앞 요약에 이미 있는 📌 마감 칸은 뺌 */
     fun topUpPart(body: String): String = body.trim().split(Regex("\\n\\s*\\n"))
-        .filterNot { it.startsWith("🕘") || it.startsWith("📌") }.joinToString("\n\n").ifBlank { "(마감 소식만 있어요)" }
-
-    /** 💼 업무·일정 앱(캘린더·할 일·메일 등) 알림을 시간순으로. 없으면 빈 문자열. */
-    fun workSection(items: List<NotiItem>): String {
-        if (items.isEmpty()) return ""
-        val fmt = java.text.SimpleDateFormat("HH:mm", java.util.Locale.KOREA)
-        val list = items.distinctBy { it.app to (it.title + it.text) }.sortedBy { it.time }
-        return buildString {
-            append("💼 업무·일정 알림 (${list.size}건)\n")
-            list.takeLast(12).forEach { n ->
-                val body = n.text.replace('\n', ' ').take(60)
-                append("- ${fmt.format(n.time)} [${n.app}] ${n.title}" + (if (body.isNotBlank() && body != n.title) ": $body" else "") + "\n")
-            }
-            if (list.size > 12) append("  … 외 ${list.size - 12}건은 📄 세부 내역에서\n")
-            append("\n")
-        }
-    }
+        .filterNot { it.startsWith("🕘") || it.startsWith("📌") }.joinToString("\n\n").ifBlank { "(새로 정리할 것이 없어요)" }
 
     /** 오늘·내일 마감인 할 일 (지난 것 포함). 없으면 빈 문자열. */
     fun taskSection(tasks: List<Task>): String {
@@ -429,22 +415,6 @@ object Briefings {
             soon.take(8).forEach { t ->
                 val time = if (t.hasTime) " ${fmt.format(t.due)}" else ""
                 append("- [${t.dLabel(now)}$time] ${t.title} (${t.room})\n")
-            }
-            append("\n")
-        }
-    }
-
-    /** 학부모 연락 요약 (방마다 한 줄). 없으면 빈 문자열. */
-    fun parentSection(contacts: List<ParentContact>): String {
-        if (contacts.isEmpty()) return ""
-        val fmt = java.text.SimpleDateFormat("HH:mm", java.util.Locale.KOREA)
-        val need = contacts.count { it.category.needsReply }
-        return buildString {
-            append("👪 학부모 연락 (${contacts.size}건, 답장 필요 ${need})\n")
-            contacts.take(10).forEach { c ->
-                val mark = if (c.category.needsReply) " · 답장 필요" else ""
-                val who = if (c.link == null && c.students.isNotEmpty()) " (${c.students.joinToString(", ")})" else ""
-                append("- ${fmt.format(c.last.time)} ${c.displayName}$who [${c.category.label}$mark] ${c.last.text.replace('\n', ' ').take(70)}\n")
             }
             append("\n")
         }

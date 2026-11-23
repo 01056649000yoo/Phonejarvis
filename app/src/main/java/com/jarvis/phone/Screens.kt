@@ -37,10 +37,15 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** 이번 버전에서 바뀐 점 한 줄 (버전 올릴 때 같이 고치기). */
-private const val WHATS_NEW = "요약이 더 읽기 쉽게 · 단톡방은 사람마다 부탁 · 알림이 많아도 끊기지 않게 · 위젯도 쌤톡스 색"
+private const val WHATS_NEW = "요약 칸을 줄였어요 · 업무·일정은 고른 앱만 · 미리 요약은 글자 수로"
 
 /** 업데이트 내역 큰 창 (버전 올릴 때 같이 고치기) */
 private val WHATS_NEW_DETAIL = listOf(
+    "🧹 요약 칸을 줄였어요" to "요약은 이제 다섯 칸이에요: 👥 내가 만든 사람 묶음(가족·학부모·교직원 등, 묶음마다) → ⭐ 중요 키워드 → 💼 업무·일정 → 💬 대화 요약 → 앱·정기 알림 건수. 한 사람은 한 묶음에만 들어가고, 묶음에 들어간 연락은 대화 요약에 다시 나오지 않아요. 👪 학부모 전용 칸은 없애고 학부모 명부도 다른 묶음과 똑같이 보여요.",
+    "🙋 답장할 연락은 대화 요약 안에" to "답장할 연락을 따로 칸으로 두지 않고, 💬 대화 요약 맨 위 줄에 🙋 표시로 보여 줘요.",
+    "📌 마감 자동 등록은 없앴어요" to "알림에서 '금요일까지'·'3시' 같은 말을 찾아 할 일로 넣던 기능은 엉뚱한 것이 자주 들어가서 없앴어요. 직접 넣은 할 일은 그대로예요.",
+    "💼 업무·일정은 고른 앱만" to "설정 → 🌱 알림 앱 정리에서 '💼 업무·일정 앱으로 지정'한 앱의 알림만 업무·일정 칸에 모아, AI가 앱마다 요약해요. 처음에는 메일·캘린더·할 일처럼 이름으로 알아본 앱이 들어 있고, 빼거나 더할 수 있어요.",
+    "⚡ 미리 요약은 글자 수로" to "쌓인 메시지가 AI 한 번에 읽을 만큼(약 1,500자) 넘으면 화면이 꺼진 동안 미리 정리해 둬요. 충전 중이 아니면 배터리 30% 이상일 때만, 화면을 켜면 멈춰요.",
     "📎 줄에 못 들어간 부탁 수" to "단톡방 줄에는 급한 부탁 3개까지만 보이고, 나머지는 '외 부탁 N건(세부 내역)'으로 개수를 알려 줘요. 이름 없이 온 부탁은 누가 말했는지 뚜렷할 때만 이름을 붙여요.",
     "🧾 요약이 더 읽기 쉽게" to "요약을 칸 제목·사람 이름·시각·내용으로 나눠 보여 줘요. 이름은 굵게, 시각과 건수는 옅게, 내용은 다음 줄에. 앱 전체의 글자·간격도 한 가지 규칙으로 정리했어요.",
     "💬 단톡방은 사람마다 부탁" to "큰 단톡방도 '이선생: 버스 인원 확인해 달라고 함, 박선생: …'처럼 누가 무엇을 부탁했는지 3개까지 이름을 붙여 보여 줘요. 이름이 실제로 그 말을 한 사람과 맞는지 앱이 한 번 더 확인해요.",
@@ -48,9 +53,9 @@ private val WHATS_NEW_DETAIL = listOf(
     "🏠 위젯도 쌤톡스 색" to "위젯이 안드로이드 기본 보라색 대신 앱과 같은 크림·칠판 그린 색으로 나와요. 위젯 요약도 이름·시각·내용이 나뉘어 보여요.",
     "🗣️ 한 사람 말은 한 줄로" to "같은 사람이 여러 번 보낸 메시지를 하나씩 늘어놓지 않고 핵심 한 줄로 정리해요. 부탁은 오늘·내일처럼 급한 것부터 2개까지. 한 마디뿐인 메시지도 '…하는지 물음'·'…달라고 함'처럼 짧게 바꿔요. AI가 원문에 없는 숫자를 쓰면 한 번 더 물어 바로잡아요.",
     "👥 내 묶음은 사람별로" to "가족·교직원 같은 👥 묶음 사람은 카톡·문자·단톡방을 가리지 않고 같은 이름끼리 모아, 이름은 그대로 두고 그 사람이 한 말만 한 문단으로 정리해요.",
-    "⚡ 미리 요약" to "충전 중이면 새 메시지가 쌓일 때마다 10분 간격으로, 배터리가 30% 이상이면 15개 넘게 쌓였을 때 화면이 꺼진 동안 대화방마다 미리 정리해 둬요. 요약 시각에는 그 뒤 온 것만 정리해서 훨씬 빨라요. 화면을 켜면 멈춰요.",
+    "⚡ 미리 요약" to "쌓인 메시지가 약 1,500자를 넘으면 화면이 꺼진 동안 대화방마다 미리 정리해 둬요(충전 중이 아니면 배터리 30% 이상일 때만). 요약 시각에는 그 뒤 온 것만 정리해서 훨씬 빨라요. 화면을 켜면 멈춰요.",
     "🚫 광고·정기 알림 거르기" to "이름(키워드)이 들어 있어도 광고는 걸러요. 대표번호(15xx·080·02 등) 문자는 📦 앱 알림으로, 'OO님'처럼 이름을 부르기만 한 알림은 ⭐ 키워드에서 빼요. 날씨·서버 알림처럼 매일 비슷한 시각에 오는 알림과 봇 알림은 끝에 🔁 건수 한 줄로만. 알림 탭에서 길게 누르면 '요약에서 빼기'도 돼요.",
-    "🏠 위젯 바로 놓기" to "요약 탭·설정에서 '위젯 놓기'를 누르면 홈 화면에 바로 놓여요. 위젯에는 모인 알림 수 없이 요약(🙋 답장할 연락·💬 메시지·👥 내 묶음)만 보이고, 📋 요약을 누르면 그 자리에서 새로 정리해요.",
+    "🏠 위젯 바로 놓기" to "요약 탭·설정에서 '위젯 놓기'를 누르면 홈 화면에 바로 놓여요. 위젯에는 모인 알림 수 없이 요약(👥 내 묶음·💼 업무·일정·💬 대화 요약)만 보이고, 📋 요약을 누르면 그 자리에서 새로 정리해요.",
     "🔐 권한을 줄였어요" to "Play 스토어에 올릴 준비로 '모든 파일 접근' 권한을 뺐어요. 모델 파일과 백업 파일은 파일 고르기 창에서 한 번 골라요(다운로드 폴더가 바로 열려요). 하루 한 번 자동 백업은 권한 없이 그대로 다운로드/쌤톡스 폴더에 쌓여요. 정한 시각 알림은 '알람 및 리마인더'를 켜 두면 딱 맞춰 와요(설정 → 🔕 모아서 알림).",
     "🗓 하루 정리" to "매일 밤 10시(설정 → 🔕 모아서 알림에서 시각 바꾸기·끄기)에 그날 요약들을 AI가 다시 훑어 한 화면으로 정리해 드려요. ⭐ 중요 키워드·업무·일정을 1순위로, 학생·학부모·마감·답장할 연락을 그다음으로 올리고, 광고·배송 같은 앱 알림은 건수만 남겨요. ✅ 오늘 꼭 챙길 일 · 🙋 답장할 연락 · 📝 오늘 있었던 일 · 📅 내일 챙길 것, 모두 15줄 안쪽이에요. 폰이 뜨겁거나 배터리가 적으면 AI 없이 중요한 순서대로 20줄만 보내요.",
     "🔎 검색이 빨라졌어요" to "알림을 넣을 때 두 글자 조각 찾아보기(색인)를 같이 만들어, 3개월 치가 쌓여도 낱말 가운데 글자까지 금방 찾아요. 한 글자 낱말은 예전처럼 찾아요.",
@@ -1120,14 +1125,14 @@ private fun AppCleanupCard(vm: JarvisViewModel) {
 
                 // 그 밖의 앱은 접어 둠 (목록이 길어지지 않게). 눌러서 펼치기
                 var showOthers by rememberSaveable { mutableStateOf(false) }
-                val imp = vm.importantApps
+                val imp = vm.workApps
                 val others = recs.filter { AppAdvisor.group(it.stat, imp) == 2 }
                 recs.forEachIndexed { i, r ->
-                    // 묶음 제목: 💬 메시지·SNS → 💼 업무·일정·중요 앱 → 📱 그 밖의 앱(접힘)
+                    // 묶음 제목: 💬 메시지·SNS → 💼 업무·일정(지정한 앱) → 📱 그 밖의 앱(접힘)
                     val g = AppAdvisor.group(r.stat, imp)
                     val msg = g == 0
                     if (i == 0 || g != AppAdvisor.group(recs[i - 1].stat, imp)) {
-                        if (g < 2) Text(if (g == 0) "💬 메시지·SNS 앱" else "💼 업무·일정 · ⭐ 중요 앱", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
+                        if (g < 2) Text(if (g == 0) "💬 메시지·SNS 앱" else "💼 업무·일정 앱 (요약의 업무·일정 칸)", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
                         else TextButton(onClick = { showOthers = !showOthers }, contentPadding = PaddingValues(0.dp)) {
                             Text("📱 그 밖의 앱 ${others.size}개 (빼기 추천 ${others.count { !it.keep }}) " +
                                 if (showOthers) "▾ 접기" else "▸ 펼치기",
@@ -1144,12 +1149,12 @@ private fun AppCleanupCard(vm: JarvisViewModel) {
                             Text((if (r.keep) "추천: 모으기 — " else "추천: 빼기 — ") + r.reason,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = if (r.keep) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.tertiary)
-                            // ⭐ 중요 앱으로 올리기 / 내리기 (업무·일정으로 자동 분류된 앱은 원래 위에 있음)
-                            if (g == 2) TextButton(onClick = { vm.setImportant(r.stat.pkg, true) }, contentPadding = PaddingValues(0.dp)) {
-                                Text("⭐ 중요 앱으로 올리기", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
-                            } else if (r.stat.pkg in imp && !AppAdvisor.isWork(r.stat.app, r.stat.pkg)) TextButton(
-                                onClick = { vm.setImportant(r.stat.pkg, false) }, contentPadding = PaddingValues(0.dp)) {
-                                Text("⭐ 중요 앱에서 내리기", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
+                            // 💼 업무·일정 앱으로 지정 / 빼기 — 지정한 앱의 알림만 요약의 업무·일정 칸에서 AI 가 요약(2026-11-23)
+                            if (g == 2) TextButton(onClick = { vm.setWork(r.stat.pkg, true) }, contentPadding = PaddingValues(0.dp)) {
+                                Text("💼 업무·일정 앱으로 지정", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
+                            } else if (g == 1) TextButton(
+                                onClick = { vm.setWork(r.stat.pkg, false) }, contentPadding = PaddingValues(0.dp)) {
+                                Text("💼 업무·일정에서 빼기", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
                             }
                             // 메시지·SNS 앱은 방 단위로 고르기
                             if (msg && keepNow) {

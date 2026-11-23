@@ -9,23 +9,23 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * ⚡ 미리 요약 (2026-11-23 선생님: "배터리 30% 이상이고 요약할 게 몇 개 이상이면 미리미리, 충전 중이면 수시로").
+ * ⚡ 미리 요약 (2026-11-23 선생님: 처음엔 "배터리 30% 이상이고 몇 개 이상이면 미리미리, 충전 중이면 수시로" →
+ * 같은 날 "글자 수를 넘으면 미리 요약을 돌리는 방식으로").
  * 요약 시각이 되어서야 모든 방을 AI 로 묻던 것을, 쌓이는 동안 방마다 요점·요청을 정리해 저장(캐싱)해 둔다.
  * 요약 시각에는 저장해 둔 방은 그대로 쓰고, 그 뒤에 온 메시지만 '앞서 정리한 것 + 새 메시지'로 이어서 묻는다.
  *
  * 언제 하나 (알림이 올 때 살펴보고 알람을 걸어 둠 — 알람이 울릴 때 다시 확인):
- *  - 충전 중: 새로 쌓인 사람 메시지가 있으면 [CHARGING_GAP_MIN]분마다
- *  - 충전 중이 아니면: 배터리 [MIN_BATTERY]% 이상이고 모델에 넣을 메시지가 [MIN_PENDING]개 이상 쌓였을 때
- *  - 언제나: 화면이 꺼져 있을 때만(쓰는 중에 GPU 를 다투면 화면이 멈춘 듯 보임), 폰이 '따뜻' 이상이거나 절전 모드면 안 함,
+ *  - AI 에 새로 넣을 글자가 [MIN_CHARS]자(AI 한 번에 넣는 양쯤)를 넘으면 [READY_DELAY_MIN]분 뒤 — 충전 중이든 아니든 같은 규칙
+ *  - 충전 중이 아니면 배터리 [MIN_BATTERY]% 이상·절전 모드 아닐 때만
+ *  - 언제나: 화면이 꺼져 있을 때만(쓰는 중에 GPU 를 다투면 화면이 멈춘 듯 보임), 폰이 '따뜻' 이상이면 안 함,
  *    다른 요약이 도는 중이면 안 함. 하다가 화면이 켜지거나 조건이 깨지면 그 방까지만 하고 멈춤(정리한 방은 남음).
  */
 object PreSummary {
     const val MIN_BATTERY = 30
-    const val MIN_PENDING = 15
-    const val CHARGING_GAP_MIN = 10
-    const val BATTERY_DELAY_MIN = 3        // 쌓인 수를 넘긴 뒤 조금 더 모아서
+    const val MIN_CHARS = 1500             // 이만큼 쌓이면 미리 요약(AI 한 번에 넣는 글자 BriefingComposer.ROOM_CHARS 1600 쯤)
+    const val READY_DELAY_MIN = 3          // 글자 수를 넘긴 뒤 조금 더 모아서
     const val SCREEN_ON_RETRY_MIN = 15     // 화면이 켜져 있어 미뤘을 때 다시 볼 때까지
-    const val BIG_PENDING = 40             // 이만큼 쌓이면 더 자주 살핌(2026-11-23 — 100건 넘으면 요약이 끊기던 것)
+    const val BIG_CHARS = 4500             // 이만큼 쌓이면 화면이 꺼지는 틈을 더 자주 살핌(100건 넘으면 요약이 끊기던 것)
     const val BIG_RETRY_MIN = 5
     const val ACTION = "com.jarvis.phone.ACTION_PRESUMMARY"
     private const val CHECK_GAP_MS = 60_000L   // 알림마다 DB 를 세지 않게 1분에 한 번만 살핌
@@ -55,26 +55,24 @@ object PreSummary {
     fun clear(ctx: Context) { prefs(ctx).edit().remove("rooms").apply() }
 
     // ── 할지 말지 ──
-    data class Check(val pending: Int, val load: PhoneLoad.State, val screenOn: Boolean, val busy: Boolean, val hasModel: Boolean)
+    /** [chars]: AI 에 새로 넣을 글자 수 */
+    data class Check(val chars: Int, val load: PhoneLoad.State, val screenOn: Boolean, val busy: Boolean, val hasModel: Boolean)
 
     /** 지금 미리 요약을 해도 되나: 아니면 까닭, 되면 null (순수 규칙 — 시험) */
     fun blockReason(c: Check): String? = when {
         !c.hasModel -> "모델 없음"
         c.busy -> "다른 요약 중"
-        c.pending <= 0 -> "쌓인 것 없음"
+        c.chars <= 0 -> "쌓인 것 없음"
         c.load.thermal >= PowerManager.THERMAL_STATUS_MODERATE -> "폰이 따뜻함"
         !c.load.charging && c.load.powerSave -> "절전 모드"
         !c.load.charging && c.load.battery < MIN_BATTERY -> "배터리 ${c.load.battery}%"
-        !c.load.charging && c.pending < MIN_PENDING -> "쌓인 것 ${c.pending}개"
+        c.chars < MIN_CHARS -> "쌓인 글자 ${c.chars}자"
         c.screenOn -> "화면 켜짐"
         else -> null
     }
 
-    /** 다음에 언제 살펴볼까(분): 충전 중이면 자주, 아니면 쌓인 뒤 조금 있다가. 화면만 걸리면 나중에 다시 */
-    fun delayMin(c: Check): Int? = when (blockReason(c.copy(screenOn = false))) {
-        null -> if (c.pending >= BIG_PENDING) BATTERY_DELAY_MIN else if (c.load.charging) CHARGING_GAP_MIN else BATTERY_DELAY_MIN
-        else -> null
-    }
+    /** 다음에 언제 살펴볼까(분): 글자 수를 넘었으면 조금 있다가. 화면만 걸리면 그래도 예약(울릴 때 다시 봄) */
+    fun delayMin(c: Check): Int? = if (blockReason(c.copy(screenOn = false)) == null) READY_DELAY_MIN else null
 
     /** 하는 중에 멈춰야 하나: 화면이 켜짐·따뜻해짐·(충전 중이 아니면) 절전·배터리 30% 아래 */
     fun keepGoingBlock(l: PhoneLoad.State, screenOn: Boolean): String? = when {
@@ -91,8 +89,8 @@ object PreSummary {
         val rules = AppFilter.rules(ctx)
         val items = db.since(from).filter { rules.allows(it) }
         val split = Briefings.splitForAi(ctx, items)
-        val pending = BriefingComposer.pendingForModel(split.rest, load(ctx, from), from, split.groups)
-        return Check(pending, PhoneLoad.state(ctx), screenOn(ctx), BriefingService.active, Summarizer.get(ctx).hasModel())
+        val chars = BriefingComposer.pendingCharsForModel(split.rest, load(ctx, from), from, split.groups)
+        return Check(chars, PhoneLoad.state(ctx), screenOn(ctx), BriefingService.active, Summarizer.get(ctx).hasModel())
     }
 
     // ── 알람 ──
@@ -106,7 +104,7 @@ object PreSummary {
         p.edit().putLong("checked", now).apply()
         if (p.getLong("alarm", 0L) > now) return
         val c = runCatching { check(ctx) }.onFailure { android.util.Log.w("PreSummary", "check 실패", it) }.getOrNull() ?: return
-        android.util.Log.i("PreSummary", "살핌: 쌓인 ${c.pending}개 · ${blockReason(c) ?: "할 수 있음"}")
+        android.util.Log.i("PreSummary", "살핌: 쌓인 글자 ${c.chars}자 · ${blockReason(c) ?: "할 수 있음"}")
         val min = delayMin(c) ?: return
         schedule(ctx, min)
     }
@@ -124,7 +122,7 @@ object PreSummary {
         when (blockReason(c)) {
             null -> BriefingScheduler.startService(ctx, Intent(ctx, BriefingService::class.java)
                 .putExtra(BriefingService.EXTRA_LABEL, LABEL).putExtra(BriefingService.EXTRA_PRE, true), LABEL)
-            "화면 켜짐" -> schedule(ctx, if (c.pending >= BIG_PENDING) BIG_RETRY_MIN else SCREEN_ON_RETRY_MIN)   // 많이 쌓였으면 화면이 꺼지는 틈을 더 자주 봄
+            "화면 켜짐" -> schedule(ctx, if (c.chars >= BIG_CHARS) BIG_RETRY_MIN else SCREEN_ON_RETRY_MIN)   // 많이 쌓였으면 화면이 꺼지는 틈을 더 자주 봄
             else -> Unit   // 다음 알림이 올 때 다시 살핌
         }
     }

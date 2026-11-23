@@ -59,7 +59,7 @@ class NotificationCollectorService : NotificationListenerService() {
         AppScope.io.launch { runCatching { PreSummary.nudge(this@NotificationCollectorService) } }   // ⚡ 쌓였으면 미리 요약 예약   // 🏠 위젯 '요약 N'(10분에 한 번까지)
         runCatching {
             Students.log(this, Students.names(this), item)   // 🧒 학생 이름이 나오면 학생별 기록에
-            TaskExtractor.save(this, item)                   // 📌 마감·할 일이 있으면 할 일 목록에
+            // 📌 마감·할 일 자동 등록은 하지 않음(2026-11-23 선생님: 변수가 너무 많아 엉뚱한 것이 들어감)
         }
 
         // 🏫 수업 중 · 🌙 퇴근 후: 모은 알림을 상태바에서 숨김 (나중에 브리핑으로 한 번에)
