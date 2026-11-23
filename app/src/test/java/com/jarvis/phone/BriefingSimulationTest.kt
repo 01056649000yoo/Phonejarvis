@@ -19,7 +19,7 @@ class BriefingSimulationTest {
     private val model = System.getenv("OLLAMA_MODEL").orEmpty()
 
     private fun ollama(prompt: String): String {
-        val body = """{"model":${q(model)},"prompt":${q(prompt)},"stream":false,"options":{"temperature":0.2,"num_ctx":4096}}"""
+        val body = """{"model":${q(model)},"prompt":${q(prompt)},"stream":false,"keep_alive":"1m","options":{"temperature":0.2,"num_ctx":4096}}"""
         val c = URI("http://127.0.0.1:11434/api/generate").toURL().openConnection() as HttpURLConnection
         c.requestMethod = "POST"; c.doOutput = true; c.setRequestProperty("content-type", "application/json")
         c.connectTimeout = 10_000; c.readTimeout = 300_000
