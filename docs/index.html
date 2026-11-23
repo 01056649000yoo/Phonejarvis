@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>쌤톡스 · 폰 알림을 요약 한 장으로</title>
-<meta name="description" content="폰에 온 카톡·문자·업무 알림을 모아 두었다가, 정한 시각에 폰 안의 AI가 요약 한 장으로 정리해 주는 안드로이드 앱. 알림 내용은 폰 밖으로 나가지 않아요.">
-<meta property="og:title" content="쌤톡스 · 폰 알림을 요약 한 장으로">
-<meta property="og:description" content="알림은 쌤톡스가 모아 둘게요. 정한 시각에 요약 한 장만 보세요.">
+<title>쌤톡스 · 선생님 폰 알림을 요약 한 장으로</title>
+<meta name="description" content="학부모·동료·단톡방 알림이 하루 수십 건 오는 선생님을 위한 안드로이드 앱. 알림을 조용히 모아 두었다가 정한 시각에 폰 안의 AI가 '답장할 연락'부터 요약 한 장으로 정리해요. 알림 내용은 폰 밖으로 나가지 않아요.">
+<meta property="og:title" content="쌤톡스 · 선생님 폰 알림을 요약 한 장으로">
+<meta property="og:description" content="알림은 쌤톡스가 모아 둘게요. 정한 시각에 요약 한 장만 보세요. 폰 안의 AI, 인터넷 권한 없는 앱.">
 <meta name="theme-color" content="#2E4A3D">
 <script>
   // 카톡·네이버·인스타 등 앱 안 브라우저는 APK 다운로드를 막음 → 폰 기본 브라우저로 다시 열기
@@ -27,132 +27,185 @@
 <style>
   :root {
     --board: #2E4A3D; --chalk: #F6F1E4; --sprout: #9BD18B; --blush: #F28C6B; --ink: #1F2A24;
-    --bg: #F6F1E4; --fg: #1F2A24; --muted: #56655C; --card: #FFFCF4; --line: #E4DBC6; --soft: #ECE5D3;
-    --accent: #2E4A3D; --on-accent: #F6F1E4; --hl: #E3F2DC;
-    --r-lg: 28px; --r-md: 20px; --r-sm: 14px;
+    --bg: #F7F3EA; --fg: #1F2A24; --muted: #5A685F; --card: #FFFDF8; --line: #E6DECB; --soft: #EFE8D8;
+    --accent: #2E4A3D; --on-accent: #F6F1E4; --hl: #E4F1DD; --warn: #FBE9E2; --topbg: rgba(247,243,234,.9);
+    --r-lg: 24px; --r-md: 18px; --r-sm: 12px;
+    --shadow: 0 1px 2px rgba(31,42,36,.04), 0 8px 24px rgba(31,42,36,.06);
   }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #161C19; --fg: #E8EEEA; --muted: #A9B8AF; --card: #1F2622; --line: #2F3B35; --soft: #252E29;
-            --accent: #9BD18B; --on-accent: #10301F; --hl: #24382B; }
+    :root { --bg: #151B18; --fg: #E8EEEA; --muted: #A6B5AC; --card: #1D2520; --line: #2D3933; --soft: #232C27;
+            --accent: #9BD18B; --on-accent: #10301F; --hl: #22362A; --warn: #3A2620; --topbg: rgba(21,27,24,.9); --shadow: none; }
   }
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
   body { margin: 0; background: var(--bg); color: var(--fg); font-family: "Noto Sans KR", system-ui, sans-serif;
-         line-height: 1.6; word-break: keep-all; overflow-wrap: anywhere; }
-  .wrap { max-width: 560px; margin: 0 auto; padding: 0 16px; }
+         line-height: 1.65; word-break: keep-all; overflow-wrap: anywhere; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 0 16px; }
+  .narrow { max-width: 680px; }
   a { color: var(--accent); }
   .jua { font-family: "Jua", "Noto Sans KR", sans-serif; font-weight: 400; }
-  h1, h2, h3 { margin: 0; line-height: 1.3; }
+  h1, h2, h3 { margin: 0; line-height: 1.3; letter-spacing: -0.015em; }
+  p { margin: 0; }
 
-  /* ── 맨 위 ── */
-  header { display: flex; align-items: center; gap: 10px; padding: 16px 0 4px; }
+  /* ── 위 막대 ── */
+  .top { position: sticky; top: 0; z-index: 25; background: var(--topbg);
+         backdrop-filter: saturate(1.4) blur(10px); -webkit-backdrop-filter: saturate(1.4) blur(10px); border-bottom: 1px solid transparent; }
+  .top.scrolled { border-bottom-color: var(--line); }
+  .top .wrap { display: flex; align-items: center; gap: 12px; height: 60px; }
   .brand { display: flex; align-items: center; gap: 8px; font-size: 22px; color: var(--fg); text-decoration: none; }
-  .hero { padding: 20px 0 8px; }
-  .eyebrow { display: inline-block; font-size: 13px; font-weight: 700; color: var(--accent); background: var(--hl);
-             padding: 5px 12px; border-radius: 999px; margin-bottom: 14px; }
-  .hero h1 { font-size: clamp(30px, 8.4vw, 40px); font-weight: 800; letter-spacing: -0.02em; }
+  .nav { margin-left: auto; display: flex; gap: 2px; }
+  .nav a { white-space: nowrap; color: var(--muted); text-decoration: none; font-size: 14px; font-weight: 500; padding: 7px 10px; border-radius: 999px; }
+  .nav a:hover { background: var(--soft); color: var(--fg); }
+  .nav a.get { background: var(--accent); color: var(--on-accent); font-weight: 700; padding: 7px 14px; }
+
+  /* ── 첫 화면 ── */
+  .hero { display: grid; gap: 28px; padding: 32px 0 8px; align-items: center; }
+  .eyebrow { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: var(--accent);
+             background: var(--hl); padding: 6px 12px; border-radius: 999px; margin-bottom: 16px; }
+  .hero h1 { font-size: clamp(29px, 6.4vw, 46px); font-weight: 800; }
   .hero h1 em { font-style: normal; color: var(--accent); }
-  .hero .lead { font-size: 17px; color: var(--muted); margin: 14px 0 22px; }
-  .btn { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 56px; padding: 0 24px;
+  .lead { font-size: 17px; color: var(--muted); margin: 16px 0 24px; max-width: 34em; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 54px; padding: 0 26px;
          border-radius: 999px; font-weight: 700; font-size: 17px; text-decoration: none; border: 0; cursor: pointer; }
   .btn.primary { background: var(--accent); color: var(--on-accent); box-shadow: 0 8px 20px #2E4A3D33; }
   .btn.ghost { background: none; border: 1.5px solid var(--line); color: var(--fg); }
   .btn:active { transform: scale(.98); }
-  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; padding: 0; list-style: none; }
-  .chips li { font-size: 13px; color: var(--muted); background: var(--soft); padding: 5px 11px; border-radius: 999px; }
+  .cta { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .trust { display: grid; gap: 4px; margin: 20px 0 0; padding: 0; list-style: none; font-size: 14px; color: var(--muted); }
+  .trust li::before { content: "✓"; color: var(--accent); font-weight: 800; margin-right: 8px; }
 
-  /* ── 전후 비교 ── */
-  .compare { margin: 28px 0 8px; display: grid; gap: 10px; }
-  .panel { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 16px; }
-  .panel-label { display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: 700;
-                 color: var(--muted); margin-bottom: 10px; }
-  .badge { background: var(--blush); color: #fff; font-size: 12px; padding: 2px 9px; border-radius: 999px; }
-  .badge.ok { background: var(--sprout); color: var(--ink); }
-  .stack { position: relative; display: grid; gap: 6px; }
-  .noti { background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 9px 12px; font-size: 13px; }
-  .noti .app { font-size: 11px; color: var(--muted); }
-  .noti b { margin-right: 4px; }
-  .stack .noti:nth-child(n+4) { opacity: .55; }
-  .stack .more { text-align: center; font-size: 12px; color: var(--muted); }
-  .arrow { text-align: center; font-size: 13px; font-weight: 700; color: var(--accent); }
-  .arrow span { display: inline-flex; align-items: center; gap: 6px; background: var(--hl); padding: 6px 14px; border-radius: 999px; }
-  .brief { background: var(--board); color: var(--chalk); border-radius: var(--r-lg); padding: 18px; }
-  .brief .head { display: flex; justify-content: space-between; font-size: 12px; opacity: .85; margin-bottom: 12px; }
-  .brief h4 { margin: 12px 0 4px; font-size: 14px; color: var(--sprout); }
-  .brief h4:first-of-type { margin-top: 0; }
-  .brief ul { margin: 0; padding-left: 18px; font-size: 14px; line-height: 1.65; }
+  /* 폰 모양 요약 */
+  .phone { background: var(--board); color: var(--chalk); border-radius: 30px; padding: 18px 18px 20px; box-shadow: 0 18px 40px rgba(31,42,36,.18);
+           max-width: 420px; width: 100%; justify-self: center; }
+  .phone .bar { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; opacity: .8; margin-bottom: 12px; }
+  .phone h4 { margin: 14px 0 4px; font-size: 14px; color: var(--sprout); font-weight: 700; }
+  .phone ul { margin: 0; padding-left: 16px; font-size: 14px; line-height: 1.6; }
+  .phone li { margin: 2px 0; }
+  .phone .foot { margin-top: 14px; font-size: 12px; opacity: .78; border-top: 1px dashed rgba(246,241,228,.25); padding-top: 10px; }
+  .phone .from { font-size: 13px; background: rgba(246,241,228,.1); border-radius: 12px; padding: 8px 12px; }
+  .phone .from b { color: #FFB79E; }
 
   /* ── 공통 칸 ── */
-  section { padding: 44px 0 8px; }
-  section > h2 { font-size: 24px; font-weight: 800; letter-spacing: -0.01em; }
-  section > .sub { color: var(--muted); margin: 6px 0 18px; font-size: 15px; }
+  section { padding: 64px 0 0; scroll-margin-top: 64px; }
+  .kicker { font-size: 13px; font-weight: 700; color: var(--accent); letter-spacing: .02em; margin-bottom: 8px; }
+  section h2 { font-size: clamp(24px, 4.4vw, 32px); font-weight: 800; }
+  .sub { color: var(--muted); margin: 10px 0 24px; font-size: 16px; max-width: 40em; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); padding: 20px; box-shadow: var(--shadow); }
 
-  .flow { display: grid; gap: 10px; padding: 0; margin: 0; list-style: none; counter-reset: f; }
-  .flow li { counter-increment: f; display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 14px; align-items: center;
-             background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); padding: 16px; }
-  .flow .ico { width: 48px; height: 48px; border-radius: 16px; background: var(--hl); display: flex; align-items: center;
-               justify-content: center; font-size: 24px; }
-  .flow b { display: block; font-size: 16px; }
-  .flow b::before { content: counter(f) ". "; color: var(--accent); }
-  .flow span { font-size: 14px; color: var(--muted); }
+  /* 이런 분께 */
+  .who { display: grid; gap: 12px; }
+  .who .card { display: grid; grid-template-columns: 44px minmax(0,1fr); gap: 14px; align-items: start; }
+  .ico { width: 44px; height: 44px; border-radius: 14px; background: var(--hl); display: flex; align-items: center; justify-content: center; font-size: 22px; }
+  .who b { display: block; font-size: 16px; margin-bottom: 4px; }
+  .who span { color: var(--muted); font-size: 14.5px; }
+  .notfor { margin-top: 12px; background: var(--warn); border-radius: var(--r-md); padding: 16px 20px; font-size: 14.5px; }
+  .notfor b { display: block; margin-bottom: 4px; }
+  .notfor ul { margin: 0; padding-left: 18px; color: var(--muted); }
 
-  .mtable { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; font-size: 14px; }
-  .mr { display: grid; grid-template-columns: 6.5em minmax(0,1fr) minmax(0,1fr); gap: 10px; padding: 11px 14px; border-top: 1px solid var(--line); line-height: 1.55; }
-  .mr:first-child { border-top: 0; }
-  .mr > span:first-child { color: var(--muted); }
-  .mh { background: var(--hl); }
-  .mh em { font-style: normal; font-size: 11px; background: var(--accent); color: var(--on-accent); border-radius: 8px; padding: 1px 6px; margin-left: 4px; white-space: nowrap; }
-  .note { margin: 14px 0 0; padding: 14px 16px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); font-size: 14px; line-height: 1.7; }
-  .widget { background: var(--card); border: 1px solid var(--line); border-radius: 22px; padding: 14px; max-width: 420px; box-shadow: 0 6px 18px rgba(0,0,0,.06); }
+  /* 전후 */
+  .vs { display: grid; gap: 14px; align-items: center; }
+  .before { display: grid; gap: 8px; }
+  .noti { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 10px 12px; font-size: 14px; }
+  .noti .app { display: block; font-size: 11.5px; color: var(--muted); }
+  .noti.dim { opacity: .55; }
+  .more { text-align: center; font-size: 13px; color: var(--muted); }
+  .arrow { justify-self: center; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: var(--accent);
+           background: var(--hl); padding: 7px 14px; border-radius: 999px; white-space: nowrap; }
+  .after b { color: var(--accent); display: block; }
+  .after p { color: var(--muted); font-size: 14.5px; margin: 4px 0 14px; }
+  .after p:last-child { margin-bottom: 0; }
+
+  /* 기능 */
+  .features { display: grid; gap: 12px; }
+  .feat { display: grid; gap: 8px; align-content: start; }
+  .feat .t { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16.5px; }
+  .feat .t i { font-style: normal; width: 36px; height: 36px; border-radius: 12px; background: var(--hl); display: inline-flex; align-items: center; justify-content: center; font-size: 19px; flex: none; }
+  .feat p { color: var(--muted); font-size: 14.5px; }
+  .feat .ex { font-size: 13.5px; background: var(--soft); border-radius: 10px; padding: 8px 10px; color: var(--fg); }
+  .extra { margin-top: 16px; display: flex; flex-wrap: wrap; gap: 6px; padding: 0; list-style: none; }
+  .extra li { font-size: 13.5px; color: var(--muted); background: var(--soft); padding: 5px 12px; border-radius: 999px; }
+
+  /* 사용법 */
+  .steps { display: grid; gap: 16px; counter-reset: s; padding: 0; margin: 0; list-style: none; }
+  .steps li { counter-increment: s; display: grid; grid-template-columns: 36px minmax(0,1fr); gap: 14px; }
+  .steps li::before { content: counter(s); width: 36px; height: 36px; border-radius: 50%; background: var(--accent); color: var(--on-accent);
+                      display: flex; align-items: center; justify-content: center; font-weight: 800; }
+  .steps b { display: block; font-size: 16px; }
+  .steps span { color: var(--muted); font-size: 14.5px; }
+  .day { padding: 6px 20px; }
+  .day div { display: grid; grid-template-columns: 62px minmax(0,1fr); gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); font-size: 14.5px; }
+  .day div:first-child { border-top: 0; }
+  .day time { font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; }
+  .day span { color: var(--muted); }
+  .day b { color: var(--fg); }
+  .colhead { font-weight: 700; margin: 0 0 14px; font-size: 15px; }
+
+  /* 화면·위젯 */
+  .tabs { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; }
+  .tab { padding: 16px; }
+  .tab b { display: block; margin: 6px 0 2px; font-size: 15px; }
+  .tab .t { font-size: 22px; }
+  .tab span { font-size: 13.5px; color: var(--muted); line-height: 1.55; display: block; }
+  .widget { background: var(--card); border: 1px solid var(--line); border-radius: 22px; padding: 14px; box-shadow: var(--shadow); }
   .w-head { display: flex; align-items: center; gap: 6px; }
   .w-head > div { flex: 1; min-width: 0; display: flex; flex-direction: column; }
   .w-head b { color: var(--accent); font-size: 15px; }
   .w-head span { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .w-btn { background: var(--accent); color: var(--on-accent); border-radius: 14px; padding: 6px 12px; font-size: 13px; font-weight: 700; white-space: nowrap; }
-  .w-btn.alt { background: var(--line); color: inherit; padding: 6px 10px; }
+  .w-btn { background: var(--hl); color: var(--fg); border-radius: 14px; padding: 6px 12px; font-size: 13px; font-weight: 700; white-space: nowrap; }
+  .w-btn.alt { background: var(--soft); padding: 6px 10px; }
   .w-body { margin-top: 10px; font-size: 13px; line-height: 1.7; }
-  .w-body b { display: block; color: var(--accent); }
-  .wlist { margin: 14px 0 0; padding-left: 18px; font-size: 14px; line-height: 1.8; }
-  .tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-  .tab { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); padding: 16px; }
-  .tab .t { font-size: 22px; }
-  .tab b { display: block; margin: 6px 0 2px; font-size: 15px; }
-  .tab span { font-size: 13px; color: var(--muted); line-height: 1.5; display: block; }
+  .w-body b { display: block; color: var(--accent); margin-top: 4px; }
+  .w-body small { display: block; color: var(--muted); margin-top: 4px; }
+  .bul { margin: 0; padding-left: 18px; font-size: 14.5px; line-height: 1.8; color: var(--muted); }
+  .bul b { color: var(--fg); }
+  .gap { margin-top: 20px; }
 
-  .safe { background: var(--hl); border-radius: var(--r-lg); padding: 20px; display: grid; gap: 12px; }
-  .safe-row { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; font-size: 15px; }
-  .safe-row b { display: block; }
-  .safe-row span { color: var(--muted); font-size: 14px; }
+  /* 안심 */
+  .safe { display: grid; gap: 12px; }
+  .safe .card { display: grid; grid-template-columns: 32px minmax(0,1fr); gap: 12px; }
+  .safe .card > span { font-size: 22px; }
+  .safe b { display: block; }
+  .safe p { color: var(--muted); font-size: 14.5px; }
+  .note { color: var(--muted); font-size: 14.5px; margin-top: 16px; }
 
-  .download { background: var(--board); color: var(--chalk); border-radius: var(--r-lg); padding: 24px 20px; }
-  .download h2 { font-size: 24px; font-weight: 800; color: var(--chalk); }
-  .download p { color: #D9E4DC; font-size: 15px; margin: 6px 0 18px; }
+  /* 설치 */
+  .download { background: var(--board); color: var(--chalk); border-radius: var(--r-lg); padding: 28px 20px; display: grid; gap: 20px; }
+  .download h2 { color: var(--chalk); }
+  .download .sub { color: #D3DFD7; margin: 8px 0 18px; }
   .download .btn.primary { background: var(--sprout); color: var(--ink); box-shadow: none; }
-  .download ol { margin: 18px 0 0; padding-left: 20px; line-height: 1.9; font-size: 15px; }
-  .download .url { font-size: 13px; color: #C9D6CD; margin-top: 12px; }
-  .qrbox { display: none; background: #fff; color: var(--ink); border-radius: var(--r-md); padding: 14px; text-align: center;
-           font-size: 13px; margin-top: 18px; width: 212px; }
+  .download ol { margin: 20px 0 0; padding-left: 20px; line-height: 1.9; font-size: 15px; }
+  .download .url { font-size: 13px; color: #C2D1C8; margin-top: 12px; }
+  .qrbox { display: none; background: #fff; color: var(--ink); border-radius: var(--r-md); padding: 14px; text-align: center; font-size: 13px; width: 212px; align-self: center; }
   .qrbox #qr { width: 180px; height: 180px; margin: 0 auto 6px; }
 
-  .spec { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; }
-  .spec div { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 10px; padding: 13px 16px; border-bottom: 1px solid var(--line); font-size: 14px; }
+  /* 사양 */
+  .spec { overflow: hidden; padding: 0; margin: 0; }
+  .spec div { display: grid; grid-template-columns: 76px minmax(0,1fr); gap: 12px; padding: 13px 18px; border-bottom: 1px solid var(--line); font-size: 14.5px; }
   .spec div:last-child { border-bottom: 0; }
   .spec dt { color: var(--muted); }
   .spec dd { margin: 0; }
+  .mtable { overflow: hidden; padding: 0; font-size: 14px; }
+  .mr { display: grid; grid-template-columns: 5.2em minmax(0,1fr) minmax(0,1fr); gap: 10px; padding: 11px 16px; border-top: 1px solid var(--line); line-height: 1.55; }
+  .mr:first-child { border-top: 0; }
+  .mr > span:first-child { color: var(--muted); }
+  .mh { background: var(--hl); }
+  .mh em { font-style: normal; font-size: 11px; background: var(--accent); color: var(--on-accent); border-radius: 8px; padding: 1px 6px; margin-left: 4px; white-space: nowrap; }
+  .stack { display: grid; gap: 12px; }
 
-  details { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); padding: 15px 18px; margin-bottom: 8px; }
-  summary { cursor: pointer; font-weight: 700; font-size: 15px; list-style: none; display: flex; justify-content: space-between; gap: 10px; }
+  /* 자주 묻는 질문 */
+  details { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); padding: 16px 18px; margin-bottom: 8px; }
+  summary { cursor: pointer; font-weight: 700; font-size: 15.5px; list-style: none; display: flex; justify-content: space-between; gap: 10px; }
   summary::-webkit-details-marker { display: none; }
   summary::after { content: "+"; color: var(--muted); font-weight: 400; font-size: 20px; line-height: 1; }
   details[open] summary::after { content: "−"; }
-  details p { margin: 10px 0 0; color: var(--muted); font-size: 14px; }
+  details p { margin: 10px 0 0; color: var(--muted); font-size: 14.5px; }
 
-  footer { padding: 32px 0 120px; color: var(--muted); font-size: 13px; text-align: center; }
+  footer { padding: 56px 0 120px; color: var(--muted); font-size: 13px; text-align: center; line-height: 1.8; }
 
   /* 휴대폰: 아래에 늘 보이는 받기 버튼 */
   .dock { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
           background: linear-gradient(to top, var(--bg) 70%, transparent); transition: opacity .2s, transform .2s; }
-  .dock .btn { max-width: 528px; margin: 0 auto; }
+  .dock .btn { display: flex; max-width: 528px; margin: 0 auto; }
   .dock.hide { opacity: 0; transform: translateY(100%); pointer-events: none; }
 
   .inapp { position: sticky; top: 0; z-index: 30; background: var(--blush); color: var(--ink); padding: 14px 16px;
@@ -163,11 +216,25 @@
   .inapp .btn.primary { background: var(--ink); color: var(--chalk); box-shadow: none; }
   .inapp .btn.ghost { border-color: var(--ink); color: var(--ink); font: inherit; font-weight: 700; }
 
-  /* PC 로 보면: QR 보이고 아래 고정 버튼 숨김 */
+  @media (max-width: 639px) {
+    .nav a:not(.get) { display: none; }
+  }
+  @media (min-width: 760px) {
+    .wrap { padding: 0 24px; }
+    .hero { grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); padding-top: 56px; gap: 40px; }
+    .who { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    .features { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    .vs { grid-template-columns: minmax(0,1fr) auto minmax(0,1fr); gap: 20px; }
+    .tabs { grid-template-columns: repeat(4, minmax(0,1fr)); }
+    .twocol { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 28px; align-items: start; }
+    .safe { grid-template-columns: repeat(3, minmax(0,1fr)); }
+    .download { grid-template-columns: minmax(0,1fr) auto; padding: 36px; }
+    .twocol .gap { margin-top: 0; }
+  }
   @media (min-width: 760px) and (hover: hover) {
     .qrbox { display: block; }
     .dock { display: none; }
-    footer { padding-bottom: 48px; }
+    footer { padding-bottom: 56px; }
   }
   @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } .dock { transition: none; } }
 </style>
@@ -196,182 +263,280 @@
   </div>
 </div>
 
-<div class="wrap">
-  <header>
-    <a class="brand jua" href="#top"><svg width="34" height="34" aria-hidden="true"><use href="#logo"></use></svg>쌤톡스</a>
-  </header>
+<div class="top" id="topbar">
+  <div class="wrap">
+    <a class="brand jua" href="#top"><svg width="32" height="32" aria-hidden="true"><use href="#logo"></use></svg>쌤톡스</a>
+    <nav class="nav" aria-label="바로 가기">
+      <a href="#who">누구에게</a>
+      <a href="#features">기능</a>
+      <a href="#how">사용법</a>
+      <a href="#safe">안심</a>
+      <a href="#faq">질문</a>
+      <a class="get" href="#download">받기</a>
+    </nav>
+  </div>
+</div>
 
-  <main id="top">
+<main id="top">
+  <div class="wrap">
+    <!-- 첫 화면 -->
     <div class="hero">
-      <span class="eyebrow">선생님을 위한 알림 요약 앱</span>
-      <h1>쏟아지는 폰 알림,<br><em>요약 한 장</em>으로 <span style="white-space:nowrap">받아 보세요</span></h1>
-      <p class="lead">🔕 <b>모아서 알림</b>을 켜 두면 카톡·문자·업무 알림이 소리 없이 쌤톡스로 모여요. 정한 시각이 되면 폰 안의 AI가 답장할 연락과 대화방 요점을 한 장으로 정리해 알려 드려요. 그동안 폰은 내려놓으셔도 돼요.</p>
-      <a class="btn primary" id="heroBtn" href="https://github.com/01056649000yoo/Phonejarvis/releases/latest/download/SsamTox.apk">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0l-5-5m5 5l5-5M5 21h14"/></svg>
-        안드로이드 앱 받기 · 무료
-      </a>
-      <ul class="chips" aria-label="요약">
-        <li>🔒 알림이 폰 밖으로 안 나가요</li>
-        <li>🔕 스위치 하나로 모아서 알림</li>
-        <li>📞 전화·알람은 그대로 울려요</li>
-        <li>🔎 폰에 온 알림을 모두 검색</li>
-        <li>🗓 하루를 AI가 정리</li>
-        <li>🏠 홈 화면 위젯</li>
-      </ul>
+      <div>
+        <span class="eyebrow">👩‍🏫 선생님을 위한 알림 요약 앱 · 무료</span>
+        <h1>하루 수십 건의 폰 알림,<br><em>답장할 것부터</em><br>요약 한 장으로</h1>
+        <p class="lead">학부모 카톡, 동학년 단톡, 문자, 업무 메일. 쌤톡스가 조용히 모아 두었다가 정한 시각에 폰 안의 AI가 <b>누가 무엇을 부탁했는지</b>부터 정리해 드려요. 수업하는 동안은 폰을 내려놓으셔도 돼요.</p>
+        <div class="cta">
+          <a class="btn primary" id="heroBtn" href="https://github.com/01056649000yoo/Phonejarvis/releases/latest/download/SsamTox.apk">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0l-5-5m5 5l5-5M5 21h14"/></svg>
+            안드로이드 앱 받기
+          </a>
+          <a class="btn ghost" href="#who">나에게 맞을까?</a>
+        </div>
+        <ul class="trust">
+          <li>인터넷 권한 없는 앱 — 알림이 폰 밖으로 나가지 않아요</li>
+          <li>전화·알람·재난 문자는 평소 그대로</li>
+          <li>회원가입·광고 없음</li>
+        </ul>
+      </div>
+
+      <div class="phone" aria-label="쌤톡스 요약 예시">
+        <div class="bar"><span>🌙 저녁 요약 · 17:00</span><span>알림 37건 → 한 장</span></div>
+        <div class="from">🔕 오후 동안 <b>37건</b>을 조용히 모아 두었어요</div>
+        <h4>🙋 답장할 연락</h4>
+        <ul>
+          <li>민준 어머님 · 14:20: 내일 체험학습 도시락 챙겨야 하는지 물음</li>
+          <li>6학년 동학년방 · 13:05: 학예회 반별 명단 금요일까지 올려 달라고 함</li>
+        </ul>
+        <h4>👔 교직원 연락</h4>
+        <ul><li>김민수 선생님 (3건): 내일 3시 2층 회의실에서 협의회. 자료는 메신저로 보냄.</li></ul>
+        <h4>💬 대화방 요점</h4>
+        <ul><li>우리 가족 (5건): 일요일 12시 할머니 생신 점심. 꽃을 사 와 달라고 함.</li></ul>
+        <div class="foot">📦 앱 알림 21건 · 🚫 광고 9건 거름 · 🔁 정기 알림 4건 — 건수만</div>
+      </div>
     </div>
 
-    <div class="compare" aria-label="쌤톡스를 쓰기 전과 후 예시">
-      <div class="panel">
-        <div class="panel-label">오후 내내 쌓인 알림 <span class="badge">37건</span></div>
-        <div class="stack">
-          <div class="noti"><span class="app">카카오톡 · 14:20</span><br><b>민준 어머님</b>내일 체험학습 도시락 챙겨야 하나요?</div>
-          <div class="noti"><span class="app">카카오톡 · 13:05</span><br><b>6학년 동학년방</b>학예회 명단 금요일까지 부탁드려요</div>
-          <div class="noti"><span class="app">메일 · 11:40</span><br><b>교육청</b>[공문] 연수 이수 결과 제출(~11/25)</div>
-          <div class="noti"><span class="app">쇼핑 · 11:02</span><br><b>(광고)</b>오늘만 특가! 최대 70% 할인</div>
+    <!-- 누구에게 -->
+    <section id="who">
+      <p class="kicker">이런 분께 필요해요</p>
+      <h2>폰 알림에 하루가 자꾸 끊기는 선생님</h2>
+      <p class="sub">알림을 하나하나 열어 보지 않아도, 나에게 온 부탁과 꼭 답해야 할 연락은 놓치지 않게 해 드려요.</p>
+      <div class="who">
+        <div class="card"><div class="ico" aria-hidden="true">👪</div><div><b>학부모 연락이 수시로 오는 담임 선생님</b><span>결석·조퇴·준비물 문의가 카톡과 문자로 흩어져 와요. 쌤톡스는 '누가, 무엇을 묻는지'를 맨 위 🙋 답장할 연락에 모아요.</span></div></div>
+        <div class="card"><div class="ico" aria-hidden="true">🏫</div><div><b>수업 중엔 폰을 못 보는데, 놓칠까 걱정되는 분</b><span>모아 두는 동안 알림은 조용히 쌓이고, 정한 시각에 한 번에 받아요. 전화는 언제나 그대로 울려요.</span></div></div>
+        <div class="card"><div class="ico" aria-hidden="true">💬</div><div><b>단톡방이 여러 개라 내게 온 부탁만 보고 싶은 분</b><span>동학년·학년부·학부모회 단톡에서 "각 반", "선생님들"에게 한 부탁까지 찾아 방마다 핵심 한 줄로 정리해요.</span></div></div>
+        <div class="card"><div class="ico" aria-hidden="true">🔒</div><div><b>학부모 연락을 외부 서버에 보내기 싫은 분</b><span>요약은 클라우드가 아니라 선생님 폰 안의 AI가 해요. 쌤톡스에는 인터넷 권한 자체가 없어요.</span></div></div>
+      </div>
+      <div class="notfor">
+        <b>이런 경우에는 맞지 않아요</b>
+        <ul>
+          <li>아이폰 — 안드로이드 12 이상에서만 돼요</li>
+          <li>램 6GB 미만의 폰 — AI 모델을 돌리기 어려워요</li>
+          <li>모든 알림을 오는 즉시 봐야 하는 업무</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- 전후 -->
+    <section id="before">
+      <p class="kicker">쓰기 전과 후</p>
+      <h2>37건을 열어 보는 대신, 한 장만</h2>
+      <p class="sub">사람이 보낸 말은 사람마다 한 줄로 줄이고, 광고·배송·매일 오는 알림은 건수만 남겨요.</p>
+      <div class="vs">
+        <div class="before" aria-label="쌓인 알림 예시">
+          <div class="noti"><span class="app">카카오톡 · 14:20</span><b>민준 어머님</b> 선생님 안녕하세요~ 내일 체험학습 도시락 챙겨야 하나요?</div>
+          <div class="noti"><span class="app">카카오톡 · 13:05</span><b>6학년 동학년방</b> 각 반 학예회 명단 금요일까지 단톡에 올려 주세요</div>
+          <div class="noti"><span class="app">메시지 · 11:40</span><b>1588-XXXX</b> (광고) OOO님 오늘만 최대 70% 할인</div>
+          <div class="noti dim"><span class="app">날씨 · 07:00</span><b>오늘 5도 맑음</b> 미세먼지 보통</div>
           <div class="more">… 외 33건</div>
         </div>
-      </div>
-      <div class="arrow"><span>⬇ 정한 시각에 쌤톡스가 정리</span></div>
-      <div class="brief">
-        <div class="head"><span>🌙 저녁 요약 · 17:00</span><span>알림 37건 → 6줄</span></div>
-        <h4>🙋 답장할 연락 (2)</h4>
-        <ul><li>민준 어머님 · 14:20: 체험학습 도시락 챙겨야 하는지</li><li>6학년 동학년방 · 13:05: 서윤이 체험학습 동의서 오늘까지 확인</li></ul>
-        <h4>💬 사람에게 온 메시지 (4개 방)</h4>
-        <ul><li>동학년방 (12건): 학예회 순서 3반-1반-2반 확정</li><li>우리 가족 (5건): 일요일 12시 할머니 생신 점심</li></ul>
-        <h4>📦 앱 알림 (21건 · 요약 안 함)</h4>
-        <ul><li>메일 3건 · [공문] 연수 이수 결과 제출(~11/25)</li><li>쿠팡 2건 · 광고 9건은 걸렀어요</li></ul>
-      </div>
-    </div>
-
-    <section id="how">
-      <h2>이렇게 일해요</h2>
-      <p class="sub">설정 → 🔕 모아서 알림 스위치 하나만 켜 두면, 그다음부터는 저절로 돼요.</p>
-      <ol class="flow">
-        <li><div class="ico" aria-hidden="true">📥</div><div><b>알림을 조용히 모아요</b><span>카톡·문자·하이클래스·메일 알림이 오자마자 상태바에서 숨기고 모아 둬요. 소리도 끄기를 켜면 메시지 소리·진동도 꺼져요. 광고·봇 알림은 걸러요.</span></div></li>
-        <li><div class="ico" aria-hidden="true">⏰</div><div><b>정한 때에 요약해요</b><span>아침 8:00·저녁 17:00처럼 시각을 여러 개 정하거나, 1~4시간마다로 정해요. 주말·공휴일엔 쉬게 할 수도 있어요.</span></div></li>
-        <li><div class="ico" aria-hidden="true">📋</div><div><b>요약 한 장을 알려 드려요</b><span>답장할 연락(⭐ 중요 키워드·학생·학부모 명부·사람 묶음에 있는 이름이 나온 연락만)·대화방 요점·앱 알림을 나눠 정리해 알림과 위젯으로 보여 줘요. 정한 시각 5분 전에 미리 요약해 두었다가 정각에 결과만 알려요. 새 알림이 없으면 '새 알림 없음'을 알려요(N시간마다 요약은 조용히 넘어가요).</span></div></li>
-        <li><div class="ico" aria-hidden="true">✉️</div><div><b>문자 답장 초안을 써 둬요</b><span>답장할 연락 중 문자는 요약할 때 폰 안의 AI가 답장 초안을 미리 써 둬요. 고친 뒤 💬 보내기를 눌러야만 나가고, 모르는 내용은 [ ]로 비워 두어 채우기 전엔 보내지지 않아요. 카톡은 카톡 안의 답장 추천을 쓰세요.</span></div></li>
-        <li><div class="ico" aria-hidden="true">🗓</div><div><b>하루를 한 장으로 정리해요</b><span>매일 밤 10시(시각은 바꿀 수 있어요)에 그날 받은 알림을 AI가 다시 훑어, 중요한 것부터 정리해 알려 드려요. ⭐ 중요 키워드·학생·학부모·마감·답장할 연락을 먼저 올리고, 광고·배송 같은 알림은 건수만 남겨요. 알림이 많은 날에도 길어지지 않게 한 화면 안에 담아요.</span></div></li>
-        <li><div class="ico" aria-hidden="true">🔎</div><div><b>지난 알림을 찾아 줘요</b><span>알림 탭 맨 위 검색 칸에 낱말을 치면 모아 둔 알림 전체에서 내용·보낸 사람·대화방 이름으로 찾아요. '체험학습'으로 '현장체험학습'도 찾고, 몇 달 치가 쌓여도 금방 찾아요.</span></div></li>
-      </ol>
-      <p class="note">📞 <b>전화와 알람은 쌤톡스가 손대지 않아요.</b> 긴급 전화는 언제나 평소처럼 울려요. 재난 문자·인증번호 알림도 숨기지 않아요.<br>
-      스위치를 끄면 알림은 평소처럼 오고, 요약은 필요할 때 직접 눌러서 해요.</p>
-    </section>
-
-    <section id="screens">
-      <h2>앱 화면은 네 칸</h2>
-      <p class="sub">보고 싶은 것만 골라 보세요.</p>
-      <div class="tabs">
-        <div class="tab"><div class="t" aria-hidden="true">📋</div><b>요약</b><span>맨 위 '지금 정리하기' 버튼, 가장 최근 요약과 할 일.</span></div>
-        <div class="tab"><div class="t" aria-hidden="true">🔔</div><b>알림</b><span>🔎 지난 알림 검색, 아직 요약 안 한 알림, 오늘 받은 원문을 앱·대화방별로.</span></div>
-        <div class="tab"><div class="t" aria-hidden="true">📚</div><b>지난 요약</b><span>지난 요약과 🗓 하루 정리를 날짜·시각별로 다시 보기.</span></div>
-        <div class="tab"><div class="t" aria-hidden="true">⚙️</div><b>설정</b><span>모아서 알림·모을 앱·AI 모델·백업. 사람 묶음은 원할 때만.</span></div>
+        <span class="arrow">정한 시각에 ➜</span>
+        <div class="card after">
+          <b>🙋 답장할 연락 (2)</b>
+          <p>민준 어머님: 내일 체험학습 도시락 챙겨야 하는지 물음<br>6학년 동학년방: 학예회 명단 금요일까지 올려 달라고 함</p>
+          <b>📦 앱 알림 · 🚫 광고 · 🔁 정기 알림</b>
+          <p>건수만 한 줄. 광고는 내 이름이 들어 있어도 걸러요.</p>
+        </div>
       </div>
     </section>
 
-    <section id="widget">
-      <h2>홈 화면 위젯</h2>
-      <p class="sub">앱을 열지 않아도 홈 화면에서 바로 봐요.</p>
-      <div class="widget" aria-label="위젯 예시">
-        <div class="w-head"><div><b>쌤톡스</b><span>저녁 요약 · 11/21 17:00 · 알림 37건</span></div><span class="w-btn">📋 요약</span><span class="w-btn alt">⚙️</span></div>
-        <div class="w-body"><b>🙋 답장할 연락 (2)</b>- 민준 어머님 · 14:20: 도시락 챙겨야 하는지<br>- 동학년방 · 13:05: 서윤이 동의서 오늘까지</div>
+    <!-- 기능 -->
+    <section id="features">
+      <p class="kicker">핵심 기능</p>
+      <h2>알림은 모으고, 중요한 것만 남기고</h2>
+      <p class="sub">처음에 한 번 설정해 두면 나머지는 저절로 돼요.</p>
+      <div class="features">
+        <div class="card feat"><div class="t"><i aria-hidden="true">🔕</i>모아서 알림</div>
+          <p>스위치 하나로 켜요. 모으는 앱의 알림은 오자마자 상태바에서 숨겨 두고, 정한 시각(여러 개)이나 1~4시간마다 요약해 알려요. 주말·공휴일엔 쉬게 할 수 있고, '소리도 끄기'를 켜면 메시지 소리·진동도 꺼져요.</p></div>
+        <div class="card feat"><div class="t"><i aria-hidden="true">🙋</i>답장할 연락이 맨 위에</div>
+          <p>한 사람이 여러 번 보낸 말은 늘어놓지 않고 핵심 한 줄로. 부탁은 오늘·내일·몇 시처럼 급한 것부터 2개까지. 한 마디뿐인 메시지도 짧게 바꿔요.</p>
+          <div class="ex">"선생님 안녕하세요 내일 도시락 싸야 하나요?" → 내일 도시락 싸야 하는지 물음</div></div>
+        <div class="card feat"><div class="t"><i aria-hidden="true">👥</i>내 묶음은 사람별로</div>
+          <p>가족·교직원처럼 직접 만든 묶음의 사람은 카톡·문자·단톡을 가리지 않고 같은 이름끼리 모아요. 이름은 줄이지 않고 그대로, 그 사람이 한 말만 한 문단으로.</p></div>
+        <div class="card feat"><div class="t"><i aria-hidden="true">🚫</i>광고·정기 알림 거르기</div>
+          <p>광고는 내 이름이 들어 있어도 걸러요. 대표번호(15xx·080·02) 문자는 앱 알림으로, 날씨·서버 알림처럼 매일 같은 시각에 오는 알림과 봇은 🔁 건수 한 줄로. 알림 탭에서 길게 눌러 '요약에서 빼기'도 돼요.</p></div>
+        <div class="card feat"><div class="t"><i aria-hidden="true">⚡</i>미리 요약으로 빠르게</div>
+          <p>충전 중이면 10분마다, 배터리 30% 이상이면 메시지가 15개 넘게 쌓였을 때 — 화면이 꺼진 동안 대화방마다 미리 정리해 둬요. 요약 시각엔 그 뒤 온 것만 정리해서 금방 나와요.</p></div>
+        <div class="card feat"><div class="t"><i aria-hidden="true">🗓</i>하루 정리</div>
+          <p>매일 밤 10시(시각 변경·끄기 가능), 그날 요약을 다시 훑어 '오늘 꼭 챙길 일 · 답장할 연락 · 있었던 일 · 내일 챙길 것'으로 한 화면에 담아요.</p></div>
+        <div class="card feat"><div class="t"><i aria-hidden="true">🔎</i>지난 알림 검색</div>
+          <p>모아 둔 알림 전체에서 내용·보낸 사람·대화방 이름으로 찾아요. '체험학습'으로 '현장체험학습'도 찾고, 3개월 치가 쌓여도 금방이에요.</p></div>
+        <div class="card feat"><div class="t"><i aria-hidden="true">✉️</i>문자 답장 초안</div>
+          <p>답장할 문자는 AI가 초안을 미리 써 둬요. 고친 뒤 보내기를 눌러야만 나가고, 모르는 내용은 [ ]로 비워 둬요. 카톡은 카톡의 답장 추천을 쓰세요.</p></div>
       </div>
-      <ul class="wlist">
-        <li><b>📋 요약</b> — 지금까지 모인 알림을 바로 정리해요. 끝나면 위젯이 새 요약으로 바뀌어요.</li>
-        <li><b>⚙️</b> — 앱의 설정으로 바로 가요.</li>
-        <li>위젯에는 모인 알림 수 없이 요약(🙋 답장할 연락·💬 메시지·👥 내 묶음)만 보여요. 마감·업무 같은 칸은 제목 한 줄로, 눌러서 앱에서 봐요.</li>
-        <li><b>놓는 법</b> — 처음 설정 마지막 칸이나 요약 탭·설정의 <b>🏠 위젯 놓기</b>를 누르고 '홈 화면에 추가'. 그 창이 안 뜨는 폰은 홈 화면을 길게 누르고 → 위젯 → 쌤톡스를 끌어다 놓으세요.</li>
+      <ul class="extra" aria-label="그 밖의 기능">
+        <li>⭐ 중요 키워드 알림</li>
+        <li>💼 메일·캘린더 업무 알림</li>
+        <li>📌 오늘·내일 마감</li>
+        <li>👪 학부모 명부</li>
+        <li>🧒 학생별 기록</li>
+        <li>🏠 홈 화면 위젯</li>
+        <li>💾 하루 한 번 자동 백업</li>
       </ul>
     </section>
 
-    <section id="safe">
-      <h2>학부모 연락도 안심</h2>
-      <p class="sub">요약은 서버가 아니라 선생님 폰 안에서 해요.</p>
-      <div class="safe">
-        <div class="safe-row"><span aria-hidden="true">🔒</span><div><b>인터넷 권한이 없는 앱</b><span>알림 내용이 어디로도 보내지지 않아요.</span></div></div>
-        <div class="safe-row"><span aria-hidden="true">🤖</span><div><b>폰 안의 AI가 요약</b><span>구글이 공개한 Gemma 4 E4B(기본)·E2B 모델을 폰에 받아서 써요.</span></div></div>
-        <div class="safe-row"><span aria-hidden="true">🧹</span><div><b>오래된 알림은 저절로 지워요</b><span>모은 알림은 기본 7일 뒤 사라져요. 검색용으로 길게 두고 싶으면 최대 3개월까지 고를 수 있어요.</span></div></div>
+    <!-- 사용법 -->
+    <section id="how">
+      <p class="kicker">사용법</p>
+      <h2>처음 10분, 그다음은 저절로</h2>
+      <p class="sub">설치하면 앱이 차례로 안내해요. 한 번 켜 두면 하루가 이렇게 흘러가요.</p>
+      <div class="twocol">
+        <div>
+          <p class="colhead">처음 한 번</p>
+          <ol class="steps">
+            <li><div><b>앱 받기 · 설치</b><span>아래 버튼으로 APK를 받아 설치해요. "출처를 알 수 없는 앱"은 한 번 허용.</span></div></li>
+            <li><div><b>폰 진단 → AI 모델 받기</b><span>폰의 램을 보고 알맞은 모델을 골라 줘요. 브라우저로 받은 뒤 '파일 고르기'로 넣어요. 와이파이에서 5~15분.</span></div></li>
+            <li><div><b>권한 세 가지 켜기</b><span>알림 접근(알림 모으기) · 알림 표시(요약 받기) · 알람 및 리마인더(정한 시각에 딱 맞춰).</span></div></li>
+            <li><div><b>홈 화면 위젯 놓기 (선택)</b><span>'위젯 놓기'를 누르면 홈 화면에 바로 놓여요.</span></div></li>
+            <li><div><b>🔕 모아서 알림 켜고 시각 정하기</b><span>설정에서 요약 받을 시각을 정해요. 🌱 알림 앱 정리의 '추천대로 적용'도 한 번.</span></div></li>
+          </ol>
+        </div>
+        <div class="gap">
+          <p class="colhead">하루는 이렇게</p>
+          <div class="card day" aria-label="하루 예시">
+            <div><time>08:00</time><span><b>아침 요약</b> — 어젯밤부터 온 연락을 한 장으로. 답장할 것부터 처리하고 수업 시작.</span></div>
+            <div><time>수업 중</time><span><b>조용히 모아 두기</b> — 메시지 알림은 숨겨 두고 전화·알람은 그대로. 화면이 꺼져 있으면 미리 요약.</span></div>
+            <div><time>점심</time><span><b>📋 지금 정리하기</b> — 궁금하면 위젯의 '요약'을 눌러 그 자리에서.</span></div>
+            <div><time>17:00</time><span><b>저녁 요약</b> — 오후에 쌓인 것을 한 장으로.</span></div>
+            <div><time>22:00</time><span><b>🗓 하루 정리</b> — 오늘 챙길 일과 내일 챙길 것.</span></div>
+          </div>
+        </div>
       </div>
     </section>
 
+    <!-- 화면 -->
+    <section id="screens">
+      <p class="kicker">앱 화면</p>
+      <h2>네 칸, 그리고 홈 화면 위젯</h2>
+      <p class="sub">보고 싶은 것만 골라 보세요.</p>
+      <div class="tabs">
+        <div class="card tab"><div class="t" aria-hidden="true">📋</div><b>요약</b><span>'지금 정리하기', 가장 최근 요약, 답장할 문자 초안, 할 일.</span></div>
+        <div class="card tab"><div class="t" aria-hidden="true">🔔</div><b>알림</b><span>🔎 검색, 아직 요약 안 한 알림, 오늘 받은 원문. 길게 눌러 요약에서 빼기.</span></div>
+        <div class="card tab"><div class="t" aria-hidden="true">📚</div><b>지난 요약</b><span>지난 요약과 🗓 하루 정리를 날짜별로, 원래 알림과 함께.</span></div>
+        <div class="card tab"><div class="t" aria-hidden="true">⚙️</div><b>설정</b><span>모아서 알림·앱 정리·위젯·사람 묶음·AI 모델·백업.</span></div>
+      </div>
+      <div class="twocol" style="margin-top:20px">
+        <div class="widget" aria-label="위젯 예시">
+          <div class="w-head"><div><b>쌤톡스</b><span>저녁 요약 · 17:00 · 알림 37건</span><span>⏰ 17:00 자동 · 다음 22:00</span></div><span class="w-btn">📋 요약</span><span class="w-btn alt">⚙️</span></div>
+          <div class="w-body"><b>🙋 답장할 연락 (2)</b>- 민준 어머님 · 14:20: 도시락 챙겨야 하는지 물음<br>- 동학년방 · 13:05: 학예회 명단 금요일까지 올려 달라고 함<small>(📌 오늘·내일 마감 · 📦 앱 알림 — 눌러서 보기)</small></div>
+        </div>
+        <ul class="bul gap">
+          <li>위젯에는 모인 알림 수 없이 <b>요약만</b> 보여요 — 🙋 답장할 연락·💬 대화방·👥 내 묶음.</li>
+          <li><b>📋 요약</b>을 누르면 그 자리에서 새로 정리하고, 끝나면 위젯이 바뀌어요.</li>
+          <li><b>놓는 법</b> — 처음 설정·요약 탭·설정의 '🏠 위젯 놓기' → '홈 화면에 추가'. 창이 안 뜨는 폰은 홈 화면 빈 곳을 길게 누르고 → 위젯 → 쌤톡스.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- 안심 -->
+    <section id="safe">
+      <p class="kicker">안심하고 쓰세요</p>
+      <h2>요약은 선생님 폰 안에서만</h2>
+      <p class="sub">학부모·학생 이야기가 담긴 알림이라, 처음부터 폰 밖으로 나갈 길을 만들지 않았어요.</p>
+      <div class="safe">
+        <div class="card"><span aria-hidden="true">🔒</span><div><b>인터넷 권한이 없는 앱</b><p>알림 내용이 어떤 서버로도 보내지지 않아요. 계정도 필요 없어요.</p></div></div>
+        <div class="card"><span aria-hidden="true">🤖</span><div><b>폰 안의 AI</b><p>구글이 공개한 Gemma 4 모델을 폰에 받아, 폰의 GPU로 요약해요.</p></div></div>
+        <div class="card"><span aria-hidden="true">🧹</span><div><b>오래된 알림은 저절로 지움</b><p>원래 알림은 기본 7일(3일~3개월 중 선택). 인증번호 알림은 처음부터 저장하지 않아요.</p></div></div>
+      </div>
+      <p class="note">폰이 뜨겁거나 배터리가 15% 이하(충전 중 아님)면 AI를 켜지 않고 간단히 정리해요. 미리 요약은 화면이 꺼져 있을 때만 하고, 화면을 켜면 멈춰요.</p>
+    </section>
+
+    <!-- 설치 -->
     <section id="download">
       <div class="download">
-        <h2>설치하기</h2>
-        <p>이 링크는 늘 최신 버전이에요. 업데이트할 때도 같은 링크를 쓰면 돼요.</p>
-        <a class="btn primary" href="https://github.com/01056649000yoo/Phonejarvis/releases/latest/download/SsamTox.apk">최신 APK 받기</a>
-        <ol>
-          <li>다운로드가 끝나면 알림창에서 <b>SsamTox.apk</b>를 눌러요</li>
-          <li>"출처를 알 수 없는 앱"이 뜨면 <b>이 출처 허용</b>을 켜요</li>
-          <li><b>설치</b>(이미 있으면 <b>업데이트</b>)를 누르면 끝</li>
-          <li>앱을 열면 폰 진단 → AI 모델 받기 → 권한 켜기를 차례로 안내해요 (약 10분, 와이파이 권장)</li>
-        </ol>
-        <div class="url">ssamtox.샘링크.kr</div>
+        <div>
+          <h2>설치하기</h2>
+          <p class="sub">이 링크는 늘 최신 버전이에요. 업데이트할 때도 같은 링크로 받아 덮어 설치하면 설정과 알림은 그대로예요.</p>
+          <a class="btn primary" href="https://github.com/01056649000yoo/Phonejarvis/releases/latest/download/SsamTox.apk">최신 APK 받기 · 무료</a>
+          <ol>
+            <li>다운로드가 끝나면 알림창에서 <b>SsamTox.apk</b>를 눌러요</li>
+            <li>"출처를 알 수 없는 앱"이 뜨면 <b>이 출처 허용</b>을 켜요</li>
+            <li><b>설치</b>(이미 있으면 <b>업데이트</b>)를 누르면 끝</li>
+            <li>앱을 열면 폰 진단 → AI 모델 받기 → 권한 → 위젯 순서로 안내해요</li>
+          </ol>
+          <div class="url">ssamtox.샘링크.kr</div>
+        </div>
         <div class="qrbox"><div id="qr" role="img" aria-label="최신 APK 다운로드 QR 코드"></div>PC로 보고 있다면<br>폰 카메라로 찍으세요</div>
       </div>
     </section>
 
+    <!-- 사양 -->
     <section id="spec">
-      <h2>필요한 사양</h2>
-      <p class="sub">설치하면 앱이 폰을 진단해 알맞은 모델을 골라 줘요.</p>
-      <dl class="spec">
-        <div><dt>운영체제</dt><dd>안드로이드 12 이상 (아이폰은 아직 안 돼요)</dd></div>
-        <div><dt>AI 모델</dt><dd><b>Gemma 4 E4B</b> 3.7GB (기본, 더 꼼꼼) · <b>Gemma 4 E2B</b> 2.6GB (가볍고 빠름)</dd></div>
-        <div><dt>메모리</dt><dd>램 8GB 이상이면 E4B · 6GB면 E2B (앱이 폰을 진단해 골라 줘요)</dd></div>
-        <div><dt>저장공간</dt><dd>받는 동안 잠깐 두 벌이 생겨서 E4B 약 7.8GB, E2B 약 5.7GB 여유</dd></div>
-        <div><dt>인터넷</dt><dd>처음 모델을 브라우저로 받을 때만 (와이파이 권장). 앱 자체는 인터넷을 쓰지 않아요</dd></div>
-      </dl>
-    </section>
-
-    <section id="models">
-      <h2>두 모델, 무엇을 고를까요?</h2>
-      <p class="sub">설치할 때 앱이 폰을 진단해 추천해 줘요. 나중에 설정에서 바꿀 수 있어요.</p>
-      <div class="mtable" role="table" aria-label="E4B와 E2B 비교">
-        <div class="mr mh" role="row"><span></span><b>Gemma 4 E4B <em>기본</em></b><b>Gemma 4 E2B</b></div>
-        <div class="mr" role="row"><span>파일 크기</span><span>3.7GB</span><span>2.6GB</span></div>
-        <div class="mr" role="row"><span>필요한 램</span><span>8GB 이상</span><span>6GB 이상</span></div>
-        <div class="mr" role="row"><span>필요한 공간</span><span>약 7.8GB</span><span>약 5.7GB</span></div>
-        <div class="mr" role="row"><span>요약 꼼꼼함</span><span>더 꼼꼼 — 긴 단톡방에서 부탁·답장할 것을 더 잘 골라요</span><span>핵심은 잡지만 가끔 놓쳐요</span></div>
-        <div class="mr" role="row"><span>속도</span><span>조금 느려요</span><span>더 빨라요</span></div>
-        <div class="mr" role="row"><span>발열·배터리</span><span>조금 더 써요</span><span>덜 써요</span></div>
-        <div class="mr" role="row"><span>이런 분께</span><span>요즘 폰, 정확한 요약이 중요</span><span>오래된 폰, 빠른 요약이 좋음</span></div>
+      <p class="kicker">필요한 사양</p>
+      <h2>요즘 안드로이드 폰이면 돼요</h2>
+      <p class="sub">설치하면 앱이 폰을 진단해 알맞은 모델을 골라 줘요. 나중에 설정에서 바꿀 수 있어요.</p>
+      <div class="twocol">
+        <dl class="card spec">
+          <div><dt>운영체제</dt><dd>안드로이드 12 이상 (아이폰은 아직 안 돼요)</dd></div>
+          <div><dt>메모리</dt><dd>램 8GB 이상이면 E4B, 6GB면 E2B</dd></div>
+          <div><dt>저장공간</dt><dd>받는 동안 잠깐 두 벌이 생겨서 E4B 약 7.8GB, E2B 약 5.7GB 여유</dd></div>
+          <div><dt>인터넷</dt><dd>처음 모델을 브라우저로 받을 때만(와이파이 권장). 앱은 인터넷을 쓰지 않아요</dd></div>
+        </dl>
+        <div class="card mtable gap" role="table" aria-label="E4B와 E2B 비교">
+          <div class="mr mh" role="row"><span></span><b>E4B <em>기본</em></b><b>E2B</b></div>
+          <div class="mr" role="row"><span>파일 크기</span><span>3.7GB</span><span>2.6GB</span></div>
+          <div class="mr" role="row"><span>요약</span><span>더 꼼꼼 — 긴 단톡방에서 부탁을 더 잘 골라요</span><span>핵심은 잡지만 가끔 놓쳐요</span></div>
+          <div class="mr" role="row"><span>속도·발열</span><span>조금 느리고 조금 더 써요</span><span>빠르고 덜 써요</span></div>
+          <div class="mr" role="row"><span>이런 폰</span><span>요즘 폰</span><span>오래된 폰</span></div>
+        </div>
       </div>
     </section>
 
-    <section id="faq">
-      <h2>자주 묻는 질문</h2>
+    <!-- 질문 -->
+    <section id="faq" class="narrow">
+      <p class="kicker">자주 묻는 질문</p>
+      <h2>궁금한 것</h2>
       <p class="sub">눌러서 펼쳐 보세요.</p>
       <details><summary>학부모 연락 내용이 어디로 보내지나요?</summary>
         <p>어디로도 보내지지 않아요. 쌤톡스는 인터넷 권한 자체가 없는 앱이라, 알림 모으기와 AI 요약이 모두 폰 안에서만 이뤄져요.</p></details>
+      <details><summary>모아 두는 동안 전화도 안 울리나요?</summary>
+        <p>전화는 언제나 울려요. '소리도 끄기'는 메시지·알림 소리와 진동만 꺼요. 알람, 재난 문자, 인증번호 알림도 그대로 와요. 소리도 끄기를 처음 켜면 '방해 금지 접근' 권한을 한 번 허용해야 해요.</p></details>
       <details><summary>매번 앱을 열어야 하나요?</summary>
         <p>아니요. 🔕 모아서 알림을 켜고 요약 시각을 정해 두면 그 시각에 알림으로 요약이 와요. 알림을 누르면 요약과 원문을 바로 볼 수 있고, 홈 화면 위젯에서도 볼 수 있어요.</p></details>
-      <details><summary>모아 두는 동안 전화도 안 울리나요?</summary>
-        <p>전화는 언제나 울려요. '소리도 끄기'는 메시지·알림 소리와 진동만 꺼요. 알람, 재난 문자, 인증번호 알림도 그대로 와요.</p></details>
-      <details><summary>'소리도 끄기'를 켜니 권한 화면이 나와요.</summary>
-        <p>메시지 소리를 끄려면 폰의 '방해 금지 접근' 권한이 한 번 필요해요. 목록에서 쌤톡스를 허용하고 돌아오면 돼요. 폰 설정의 모드 목록에 '쌤톡스 모아 두기'가 생기고, 모으는 동안만 켜져요. 선생님이 직접 켠 방해 금지는 건드리지 않아요.</p></details>
+      <details><summary>광고나 매일 오는 알림이 요약에 섞여요.</summary>
+        <p>광고 문자는 키워드(내 이름 등)가 들어 있어도 걸러요. 대표번호로 온 문자는 사람 연락이 아니라 📦 앱 알림으로 가고, 'OO님'처럼 이름을 부르기만 한 알림은 ⭐ 키워드 알림에 올리지 않아요. 매일 비슷한 시각에 오는 알림과 봇 알림은 🔁 건수 한 줄로만 적어요. 그 밖에 빼고 싶은 알림은 알림 탭에서 길게 눌러 '요약에서 빼기'를 하세요(언제든 되돌릴 수 있어요).</p></details>
+      <details><summary>요약이 원문 그대로 나와요.</summary>
+        <p>⭐ 키워드·💼 업무·일정·👪 학부모 칸은 놓치면 안 되는 것이라 일부러 원문 그대로 보여 줘요. 대화방 요약은 한 마디뿐이어도 '…하는지 물음', '…달라고 함'처럼 짧게 바꿔요. 폰이 뜨겁거나 배터리가 15% 이하면 AI 없이 정리하고 요약 끝에 그 까닭을 적어요.</p></details>
+      <details><summary>요약이 정한 시각에 안 와요.</summary>
+        <p>설정 → 애플리케이션 → 쌤톡스 → 배터리 → 제한 없음으로 바꾸고, '알람 및 리마인더' 권한을 켜 주세요. 정한 시각에는 새 알림이 없어도 '새 알림 없음'을 알려요. 위젯 위쪽 '⏰ 자동' 줄이나 설정 → 🔕 모아서 알림 → 📝 최근 자동 요약에서 실제로 돌았는지 볼 수 있어요.</p></details>
+      <details><summary>알림이 모이지 않아요.</summary>
+        <p>알림 접근 권한이 켜져 있는지 확인하세요. 회색으로 잠겨 있으면 설정 → 애플리케이션 → 쌤톡스 → 오른쪽 위 ⋮ → 제한된 설정 허용 후 다시 켜요. 카톡·문자 앱 자체의 알림도 켜져 있어야 모을 수 있어요.</p></details>
       <details><summary>모델 다운로드에 데이터 요금이 나오나요?</summary>
-        <p>E4B는 3.7GB, E2B는 2.6GB라서 모바일 데이터로 받으면 요금이 나올 수 있어요. 와이파이에서 받아 주세요. 이미 받아 둔 파일이 다운로드 폴더에 있으면 앱이 찾아서 가져와요.</p></details>
+        <p>E4B는 3.7GB, E2B는 2.6GB라서 모바일 데이터로 받으면 요금이 나올 수 있어요. 와이파이에서 받아 주세요. 이미 다운로드 폴더에 받아 둔 파일이 있으면 받기를 건너뛰고 '파일 고르기'로 바로 넣으면 돼요.</p></details>
+      <details><summary>폰을 바꾸면 설정은요?</summary>
+        <p>하루 한 번 다운로드/쌤톡스 폴더에 자동 백업이 쌓여요. 새 폰에서 처음 화면의 '예전에 쓰던 설정 불러오기'로 그 파일을 고르면 돼요.</p></details>
       <details><summary>왜 Play 스토어가 아니라 APK로 설치하나요?</summary>
         <p>아직 개발 중인 무료 앱이라 직접 배포하고 있어요. 그래서 설치할 때 "출처를 알 수 없는 앱" 허용이 한 번 필요해요.</p></details>
-      <details><summary>알림이 모이지 않아요.</summary>
-        <p>알림 접근 권한이 켜져 있는지 확인하세요. 회색으로 잠겨 있으면 설정 → 애플리케이션 → 쌤톡스 → 오른쪽 위 ⋮ → 제한된 설정 허용 후 다시 켜요. 배터리 설정에서 쌤톡스를 "제한 없음"으로 두면 더 안정적이에요.</p></details>
-      <details><summary>요약이 정한 시각에 안 와요.</summary>
-        <p>설정 → 애플리케이션 → 쌤톡스 → 배터리 → 제한 없음으로 바꿔 주세요. 폰을 재부팅해도 예약은 저절로 다시 잡혀요. 정한 시각에는 새 알림이 없어도 '새 알림 없음'을 알려요. 위젯 위쪽 '⏰ 자동' 줄이나 설정 → 🔕 모아서 알림 → 📝 최근 자동 요약에서 실제로 돌았는지 볼 수 있어요.</p></details>
-      <details><summary>예전에 온 문자를 다시 찾을 수 있나요?</summary><p>네. 알림 탭 맨 위 🔎 검색 칸에 낱말을 치면 쌤톡스가 모아 둔 알림 전체에서 찾아 최근 것부터 보여 줘요. 띄어 쓰면 낱말이 모두 든 알림만 나와요. 얼마나 오래 남길지는 설정 → 🧹 저장 공간에서 3일~3개월 중에 골라요. 인증번호 알림은 처음부터 저장하지 않아 검색에도 나오지 않아요.</p></details>
-      <details><summary>하루 정리는 언제, 어떻게 오나요?</summary><p>매일 밤 10시에 한 번 와요. 설정 → 🔕 모아서 알림에서 시각을 바꾸거나 끌 수 있어요(모아서 알림을 꺼 두어도 따로 돼요). 그날 요약이 하나도 없으면 오지 않아요. 폰이 뜨겁거나 배터리가 적으면 AI 없이 간단히 합쳐서 보내요.</p></details>
-      <details><summary>광고나 매일 오는 알림이 요약에 섞여요.</summary><p>광고 문자는 키워드(내 이름 등)가 들어 있어도 걸러요. 대표번호(15xx·080·02 등)로 온 문자는 사람 연락이 아니라 📦 앱 알림으로 가고, 'OO님'처럼 이름을 부르기만 한 알림은 ⭐ 키워드 알림에 올리지 않아요. 날씨·서버 알림처럼 매일 비슷한 시각에 오는 알림과 봇 알림은 요약 끝에 🔁 건수 한 줄로만 적어요. 그 밖에 빼고 싶은 알림은 알림 탭에서 길게 눌러 '요약에서 빼기'를 하세요(같은 꼴의 알림이 모두 빠지고, 언제든 되돌릴 수 있어요).</p></details>
-      <details><summary>가족·지인 연락은 어떻게 정리되나요?</summary><p>설정에서 만든 👥 묶음(가족·교직원 등)에 넣은 사람은 카톡·문자·단톡방을 가리지 않고 같은 이름끼리 모아, 사람마다 핵심 한 줄과 부탁으로 정리해요.</p></details>
-      <details><summary>요약이 더 빨리 나오게 할 수 있나요?</summary><p>쌤톡스가 알아서 ⚡ 미리 요약을 해 둬요. 충전 중이면 새 메시지가 쌓일 때마다 10분 간격으로, 충전 중이 아니면 배터리가 30% 이상이고 요약할 메시지가 15개 이상 쌓였을 때 대화방마다 요점·요청을 미리 정리해 둬요. 화면이 꺼져 있을 때만 하고, 화면을 켜거나 폰이 따뜻해지면 멈춰요. 요약 시각에는 그 뒤에 온 메시지만 이어서 정리하니 훨씬 빨리 나와요. 한 사람이 여러 번 보낸 메시지는 하나씩 늘어놓지 않고 핵심 한 줄로, 부탁은 급한 것부터 2개까지 보여 줘요.</p></details>
-      <details><summary>알림이 많으면 빠지는 대화방이 있나요?</summary>
-        <p>없어요. 모든 대화방을 요약하고, 메시지가 30개가 넘는 방은 30개씩 차례로 읽으며 앞서 정리한 것에 이어서 고쳐 써요(한 방은 한 줄로).</p></details>
     </section>
-  </main>
+  </div>
+</main>
 
-  <footer>
-    <span class="jua" style="font-size:17px;color:var(--fg)">쌤톡스</span><br>
+<footer>
+  <div class="wrap">
+    <span class="jua" style="font-size:18px;color:var(--fg)">쌤톡스</span><br>
     선생님을 위한 알림 요약 · AI 모델: Google Gemma 4 E4B·E2B (Apache 2.0)<br>
     문의 <a href="mailto:yshgg@naver.com" style="color:inherit">yshgg@naver.com</a>
-  </footer>
-</div>
+  </div>
+</footer>
 
 <div class="dock" id="dock"><a class="btn primary" href="https://github.com/01056649000yoo/Phonejarvis/releases/latest/download/SsamTox.apk">안드로이드 앱 받기 · 무료</a></div>
 
@@ -394,6 +559,12 @@
         .catch(function () { prompt("이 주소를 복사해서 크롬에 붙여 넣으세요", page); });
     };
     document.querySelectorAll('a[href$="SsamTox.apk"]').forEach(function (a) { a.href = toChrome(a.href); });
+  })();
+  // 위 막대 밑줄: 조금 내리면 보임
+  (function () {
+    var bar = document.getElementById("topbar");
+    var on = function () { bar.classList.toggle("scrolled", window.scrollY > 8); };
+    window.addEventListener("scroll", on, { passive: true }); on();
   })();
   // 아래 고정 버튼: 맨 위 받기 버튼이나 설치 칸이 보이는 동안은 숨김 (같은 버튼이 두 개 보이지 않게)
   (function () {
