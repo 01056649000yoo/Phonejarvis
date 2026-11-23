@@ -25,6 +25,8 @@ object PreSummary {
     const val CHARGING_GAP_MIN = 10
     const val BATTERY_DELAY_MIN = 3        // 쌓인 수를 넘긴 뒤 조금 더 모아서
     const val SCREEN_ON_RETRY_MIN = 15     // 화면이 켜져 있어 미뤘을 때 다시 볼 때까지
+    const val BIG_PENDING = 40             // 이만큼 쌓이면 더 자주 살핌(2026-11-23 — 100건 넘으면 요약이 끊기던 것)
+    const val BIG_RETRY_MIN = 5
     const val ACTION = "com.jarvis.phone.ACTION_PRESUMMARY"
     private const val CHECK_GAP_MS = 60_000L   // 알림마다 DB 를 세지 않게 1분에 한 번만 살핌
 
@@ -70,7 +72,7 @@ object PreSummary {
 
     /** 다음에 언제 살펴볼까(분): 충전 중이면 자주, 아니면 쌓인 뒤 조금 있다가. 화면만 걸리면 나중에 다시 */
     fun delayMin(c: Check): Int? = when (blockReason(c.copy(screenOn = false))) {
-        null -> if (c.load.charging) CHARGING_GAP_MIN else BATTERY_DELAY_MIN
+        null -> if (c.pending >= BIG_PENDING) BATTERY_DELAY_MIN else if (c.load.charging) CHARGING_GAP_MIN else BATTERY_DELAY_MIN
         else -> null
     }
 
@@ -122,7 +124,7 @@ object PreSummary {
         when (blockReason(c)) {
             null -> BriefingScheduler.startService(ctx, Intent(ctx, BriefingService::class.java)
                 .putExtra(BriefingService.EXTRA_LABEL, LABEL).putExtra(BriefingService.EXTRA_PRE, true), LABEL)
-            "화면 켜짐" -> schedule(ctx, SCREEN_ON_RETRY_MIN)
+            "화면 켜짐" -> schedule(ctx, if (c.pending >= BIG_PENDING) BIG_RETRY_MIN else SCREEN_ON_RETRY_MIN)   // 많이 쌓였으면 화면이 꺼지는 틈을 더 자주 봄
             else -> Unit   // 다음 알림이 올 때 다시 살핌
         }
     }

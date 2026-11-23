@@ -53,7 +53,7 @@ class BriefingComposerTest {
         val r = BriefingComposer.compose(many + big, ask = { p ->
             prompts += p
             when {
-                "앞서 이렇게 정리했어" in p -> "요점: 큰방 회의를 종합한 한 문장\n요청: 자료 올려 주세요, 명단 내 주세요, 사진 보내 주세요"
+                "앞서 이렇게 정리했어" in p -> "요점: 큰방 회의를 종합한 한 문장\n요청: 자료 올려 주세요, 명단 내 주세요, 사진 보내 주세요, 회비 내 주세요"
                 "큰방" in p -> "요점: 큰방 첫 덩어리\n요청: 자료 올려 주세요"
                 else -> "요점: 이야기\n요청: 없음"
             }
@@ -62,7 +62,20 @@ class BriefingComposerTest {
         assertEquals(2, prompts.count { "앞서 이렇게 정리했어" in it })   // 둘째·셋째 덩어리는 앞 정리에 이어서
         assertFalse(r.people.contains("그 밖의 방: 방"))                // 빠진 방 없음
         assertTrue(r.people, r.people.contains("큰방 회의를 종합한 한 문장") && !r.people.contains("큰방 첫 덩어리"))
-        assertFalse(r.people, r.people.contains("사진 보내 주세요"))      // 요청은 2개까지
+        assertTrue(r.people, r.people.contains("사진 보내 주세요") && !r.people.contains("회비"))   // 단톡방 요청은 3개까지
+    }
+
+    @Test fun 단톡방_부탁의_이름이_틀리면_앱이_바로잡는다() {
+        val conv = BriefingComposer.conversations(listOf(
+            kakao("동학년방", "김부장", "각 반 학예회 명단 금요일까지 올려 주세요"),
+            kakao("동학년방", "이선생", "현장학습 버스는 9시 정문에서 출발해요, 인원 확인 부탁드려요"),
+        ))[0]
+        assertEquals(listOf("김부장: 학예회 명단 금요일까지 올려 달라고 함", "이선생: 버스 인원 확인해 달라고 함"),
+            BriefingComposer.fixAskNames(listOf("이선생: 학예회 명단 금요일까지 올려 달라고 함", "이선생: 버스 인원 확인해 달라고 함"), conv))
+        assertEquals(listOf("버스 인원 확인해 달라고 함"), BriefingComposer.fixAskNames(listOf("홍길동: 버스 인원 확인해 달라고 함"), conv))   // 방에 없는 이름은 뗌
+        // 줄마다 말한 사람 이름이 붙음(1:1 도)
+        val one = BriefingComposer.conversations(listOf(kakao("", "민준 어머님", "도시락 싸야 하나요?"), kakao("", "민준 어머님", "감사합니다 선생님")))[0]
+        assertTrue(BriefingComposer.transcript(one).contains("민준 어머님: 도시락"))
     }
 
     @Test fun 미리_요약해_둔_방은_다시_묻지_않고_그_뒤_온_것만_이어서() = runBlocking {
@@ -198,5 +211,26 @@ class BriefingComposerTest {
         assertEquals("자료를 보내 달라고 함", BriefingComposer.soften("자료를 보내 달라는 지시를 함"))
         assertEquals("엄마가 말함", BriefingComposer.soften("엄마가 통보함"))
         assertEquals("주말에 밥 먹자고 함", BriefingComposer.soften("주말에 밥 먹자고 함"))
+    }
+
+    @Test fun 시간이_모자라면_중요한_방부터_정리하고_남은_방_수를_알려_준다() = runBlocking {
+        val big = (1..40).map { i -> kakao("잡담방", "사람${i % 4}", "오늘 점심 뭐 먹을까요 $i " + "가".repeat(10)) }   // 가장 최근
+        val parent = listOf(kakao("", "민준 어머님", "선생님 내일 도시락 싸야 하나요?"), kakao("", "민준 어머님", "준비물도 알려 주세요"))
+        val all = parent + big
+        var calls = 0
+        val r = BriefingComposer.compose(all, ask = { calls++; "요점: 정리\n요청: 없음" },
+            stopReason = { if (calls >= 1) "시간이 오래 걸려 여기까지만 정리했어요." else null },
+            replyAllowed = { c -> c.items.any { "어머님" in it.title } })
+        assertEquals(1, calls)                         // 한 번만 묻고 멈춤
+        assertTrue(r.people, r.people.contains("민준 어머님"))   // 최근 잡담방보다 학부모 1:1 먼저
+        assertEquals(1, r.cutRooms)                    // 잡담방은 남음 → 요약이 이어서 마무리
+        assertTrue(r.people, r.people.contains("그 밖의 방: 잡담방"))
+    }
+
+    @Test fun 요청_이름표_없이_사람_이름으로_쓴_줄도_요청() {
+        val conv = BriefingComposer.conversations(listOf(kakao("2반 학부모회", "회장", "졸업 앨범 12월 5일까지"), kakao("2반 학부모회", "총무", "선생님 반 아이들한테 안내 부탁드려요")))[0]
+        val r = BriefingComposer.parse(conv, "요점: 졸업 앨범 12월 5일까지 신청\n총무: 반 아이들에게 안내해 달라고 함")
+        assertEquals("총무: 반 아이들에게 안내해 달라고 함", r.ask)
+        assertEquals("졸업 앨범 12월 5일까지 신청", r.point)
     }
 }

@@ -102,6 +102,9 @@ class Summarizer private constructor(private val ctx: Context) {
         runLock.withLock { ask(prompt, onStatus, maxTokens) }
 
     /** 화면·알림의 "중지" 버튼. 지금 하던 부분(최대 1분 정도)이 끝나면 멈추고 그때까지의 결과를 돌려줌. */
+    /** 마지막 요약이 시간 제한으로 잘렸나(중지 단추·미리 요약 멈춤과 구분 — 시간 때문일 때만 이어서 마무리) */
+    @Volatile var cutByTime = false
+        private set
     @Volatile var stopRequested = false
         private set
     fun requestStop() { stopRequested = true }
@@ -114,10 +117,10 @@ class Summarizer private constructor(private val ctx: Context) {
                           replyAllowed: (BriefingComposer.Conversation) -> Boolean = { true },
                           cache: Map<String, BriefingComposer.Cached> = emptyMap(), since: Long = 0L,
                           onCached: (BriefingComposer.Cached) -> Unit = {}, extraStop: () -> String? = { null },
-                          groups: List<BriefingComposer.Group> = emptyList()): BriefingComposer.Result =
+                          groups: List<BriefingComposer.Group> = emptyList(), maxMillis: Long = MAX_MILLIS): BriefingComposer.Result =
         runLock.withLock {
-            stopRequested = false
-            try { summarizeLocked(items, onStatus, replyAllowed, cache, since, onCached, extraStop, groups) } finally { stopRequested = false }
+            stopRequested = false; cutByTime = false
+            try { summarizeLocked(items, onStatus, replyAllowed, cache, since, onCached, extraStop, groups, maxMillis) } finally { stopRequested = false }
         }
 
     /**
@@ -128,8 +131,8 @@ class Summarizer private constructor(private val ctx: Context) {
                                         replyAllowed: (BriefingComposer.Conversation) -> Boolean,
                                         cache: Map<String, BriefingComposer.Cached>, since: Long,
                                         onCached: (BriefingComposer.Cached) -> Unit, extraStop: () -> String?,
-                                        groups: List<BriefingComposer.Group>): BriefingComposer.Result {
-        val deadline = System.currentTimeMillis() + MAX_MILLIS
+                                        groups: List<BriefingComposer.Group>, maxMillis: Long): BriefingComposer.Result {
+        val deadline = System.currentTimeMillis() + maxMillis
         var called = 0
         val result = BriefingComposer.compose(
             items,
@@ -138,7 +141,7 @@ class Summarizer private constructor(private val ctx: Context) {
             stopReason = {
                 when {
                     stopRequested -> "중지해서 여기까지만 정리했어요."
-                    System.currentTimeMillis() > deadline -> "시간이 오래 걸려 여기까지만 정리했어요."
+                    System.currentTimeMillis() > deadline -> { cutByTime = true; "시간이 오래 걸려 여기까지만 정리했어요." }
                     else -> extraStop()
                 }
             },
@@ -167,6 +170,6 @@ class Summarizer private constructor(private val ctx: Context) {
         /** AI 작업 공간(토큰). 요약 한 번 = 넣는 글 1600자 + 질문 + 답 200, 답장 초안 = 문자 8개(2400자) + 답 220 → 넉넉히 4096 */
         const val MAX_CONTEXT = 4096
         // 요약 한 번에 쓰는 최대 시간. 넘으면 그때까지 정리한 부분만 보여 줌 (멈추지 않는 문제 방지)
-        private const val MAX_MILLIS = 10 * 60_000L   // 30개씩 나눠 모든 대화방을 요약하므로 넉넉히(v1.8.0)
+        const val MAX_MILLIS = 10 * 60_000L   // 30개씩 나눠 모든 대화방을 요약하므로 넉넉히(v1.8.0)
     }
 }

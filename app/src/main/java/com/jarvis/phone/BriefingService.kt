@@ -117,9 +117,13 @@ class BriefingService : Service() {
             }
             try {
                 if (daily) { Briefings.runDaily(this@BriefingService); return@launch }   // finally 에서 정리
-                val result = Briefings.runSinceLast(this@BriefingService, label) { s ->
+                val result = Briefings.runSinceLast(this@BriefingService, label, { s ->
                     Notifications.notify(this@BriefingService, Notifications.ID_PROGRESS,
                         Notifications.progress(this@BriefingService, s, title = title, quiet = (prepare && !showWhenDone) || topUp))
+                }) { t, body, time ->
+                    // ⏳ 6분 안에 다 못 끝냄 → 지금까지 정리한 것을 먼저 알림(같은 알림을 다 끝나면 고쳐 씀). 미리 준비·이어 붙이기 중엔 안 보냄
+                    if (!(prepare && !showWhenDone) && !topUp && !rolling)
+                        Notifications.notify(this@BriefingService, Notifications.idFor(time), Notifications.result(this@BriefingService, t, body, time))
                 }
                 // 📝 자동 요약은 결과를 기록(설정의 '최근 자동 요약'·위젯 머리줄) — 조용히 넘어가도 돈 것은 보이게
                 if (auto) AutoLog.add(this@BriefingService, label, when {
@@ -243,8 +247,8 @@ object Briefings {
         val pending = db.since(pendingFrom(db)).count { rules.allows(it) }
         if (pending > 0 && Summarizer.get(ctx).hasModel()) runCatching {
             val hm = "%02d:%02d".format(java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY), java.util.Calendar.getInstance().get(java.util.Calendar.MINUTE))
-            run(ctx, "🌙 $hm 요약", pendingFrom(db)) { s -> Notifications.notify(ctx, Notifications.ID_PROGRESS,
-                Notifications.progress(ctx, s, title = "하루 정리 준비 중", quiet = true)) }
+            run(ctx, "🌙 $hm 요약", pendingFrom(db), { s -> Notifications.notify(ctx, Notifications.ID_PROGRESS,
+                Notifications.progress(ctx, s, title = "하루 정리 준비 중", quiet = true)) })
         }
         // 🤖 AI 한 번(답 400토큰까지)으로 우선순위 정리 — 모델이 없거나 폰이 뜨겁거나 배터리가 바닥이면 AI 없이
         val summarizer = Summarizer.get(ctx)
@@ -257,10 +261,17 @@ object Briefings {
         Notifications.notify(ctx, Notifications.idFor(out.time), Notifications.result(ctx, out.title, out.body, out.time))
     }
 
-    suspend fun runSinceLast(ctx: Context, label: String, onStatus: (String) -> Unit): Outcome =
-        run(ctx, label, pendingFrom(NotificationDb.get(ctx)), onStatus)
+    suspend fun runSinceLast(ctx: Context, label: String, onStatus: (String) -> Unit,
+                             onPartial: (String, String, Long) -> Unit = { _, _, _ -> }): Outcome =
+        run(ctx, label, pendingFrom(NotificationDb.get(ctx)), onStatus, onPartial)
 
-    suspend fun run(ctx: Context, label: String, from: Long, onStatus: (String) -> Unit): Outcome {
+    /** 1차 정리 시간(넘으면 먼저 알리고 남은 방은 이어서) · 이어서 정리하는 시간 */
+    const val FIRST_PASS_MS = 6 * 60_000L
+    const val SECOND_PASS_MS = 15 * 60_000L
+
+    /** onPartial: 1차 정리에서 시간이 모자라 남은 방이 있으면 먼저 보낼 (제목, 내용) — 그 뒤 이어서 마무리하고 같은 요약을 고쳐 씀 */
+    suspend fun run(ctx: Context, label: String, from: Long, onStatus: (String) -> Unit,
+                    onPartial: (String, String, Long) -> Unit = { _, _, _ -> }): Outcome {
         val db = NotificationDb.get(ctx)
         val summarizer = Summarizer.get(ctx)
         if (!summarizer.hasModel()) return Outcome("$label 건너뜀", "AI 모델이 없어요. 쌤톡스 앱에서 모델 파일을 선택하세요.")
@@ -298,7 +309,19 @@ object Briefings {
         val ai = when {
             rest.isEmpty() && split.groups.isEmpty() -> null
             skipAi != null -> BriefingComposer.compose(rest, ask = { "" }, replyAllowed = { c -> c.items.any { rules.mentionsRoster(it) } }, cache = cache, since = from, groups = split.groups)
-            else -> summarizer.summarize(rest, onStatus, { c -> c.items.any { rules.mentionsRoster(it) } }, cache, from, groups = split.groups)
+            else -> {
+                // 2026-11-23 선생님: 알림이 100건 넘으면 요약이 중간에 끊김 — 정리한 방은 기억해 두고(캐시), 6분 안에 못 끝내면
+                // 지금까지 정리한 것을 먼저 알리고 남은 방을 이어서 마무리(중요한 방부터 정리하므로 먼저 간 알림에도 꼭 볼 것은 들어 있음)
+                val mem = cache.toMutableMap()
+                val allowed = { c: BriefingComposer.Conversation -> c.items.any { rules.mentionsRoster(it) } }
+                val first = summarizer.summarize(rest, onStatus, allowed, mem, from, onCached = { mem[it.key] = it }, groups = split.groups, maxMillis = FIRST_PASS_MS)
+                if (first.cutRooms > 0 && summarizer.cutByTime) {
+                    val partial = ((taskPart + parentPart + first.people.let { if (it.isNotBlank()) it + "\n\n" else "" } + first.groups + workPart + keywordPart + first.apps).trim() +
+                        "\n\n(⏳ 남은 대화방 ${first.cutRooms}곳은 이어서 정리하고 있어요. 다 되면 이 알림이 바뀌어요)")
+                    runCatching { onPartial("$label · 알림 ${items.size}건 (정리 중)", partial, cutoff) }
+                    summarizer.summarize(rest, onStatus, allowed, mem, from, onCached = { mem[it.key] = it }, groups = split.groups, maxMillis = SECOND_PASS_MS)
+                } else first
+            }
         }
         // ✉️ 답장할 문자: 🙋 답장할 연락 중 문자(1:1)만 올리고, 모델이 켜진 김에 초안을 5건까지 미리
         // ✉️ 답장할 문자는 목록에만 올림 — 초안은 요약 알림을 보낸 뒤에 씀(결과가 늦어지지 않게, draftPending)

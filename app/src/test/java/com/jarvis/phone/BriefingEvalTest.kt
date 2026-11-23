@@ -80,7 +80,7 @@ class BriefingEvalTest {
         for (c in cases()) {
             var n = 0
             val t0 = System.currentTimeMillis()
-            val r = BriefingComposer.compose(c.items, ask = { n++; ollama(it) })
+            val r = BriefingComposer.compose(c.items, ask = { p -> n++; ollama(p).also { if (c.name == System.getenv("EVAL_RAW")) File("build/eval-raw.txt").writeText(p.takeLast(400) + "\n---\n" + it) } })
             val took = System.currentTimeMillis() - t0
             val text = r.people
             val got = c.must.filter { m -> m.split('|').any { it in text } }
@@ -163,6 +163,49 @@ class BriefingEvalTest {
         val out = (r.people + "\n\n" + r.groups + Briefings.keywordSection(loud, rules.keywords) + r.apps + "\n" + Routine.line(quiet)).trim()
         val report = "# 잡음 거르기 ($model, 가짜 알림 ${today.size}건 · 광고 거름 ${today.size - kept.size}건 · AI ${calls}번)\n\n```\n$out\n```\n"
         File("build/briefing-noise.md").writeText(report)
+        println(report)
+    }
+    /**
+     * 📦 알림 120건(2026-11-23 선생님: 100건이 넘으면 요약이 중간에 끊기거나 다른 사람으로 착각) —
+     * 단톡 3곳(사람마다 다른 부탁) + 1:1 여러 곳. 사람 섞임: 한 문장(쉼표·마침표로 끊은 토막)에 부탁 낱말과 '그 부탁을 하지 않은 사람' 이름이 같이 나오면 1.
+     */
+    @Test fun 대량_알림() = runBlocking {
+        assumeTrue("OLLAMA_MODEL 이 없어 건너뜀", model.isNotEmpty())
+        ollama("안녕")
+        data class Ask(val who: String, val key: String, val text: String)
+        val rooms = mapOf(
+            "6학년 동학년방" to listOf(Ask("김부장", "명단", "각 반 학예회 명단 금요일까지 올려 주세요"), Ask("이선생", "버스", "현장학습 버스는 9시 정문에서 출발해요, 인원 확인 부탁드려요"), Ask("박선생", "의상", "학예회 의상은 흰 티셔츠로 통일했어요, 반별로 준비해 주세요")),
+            "학년 부장 회의" to listOf(Ask("정교감", "평가", "2학기 평가 계획서 다음 주 월요일까지 내 주세요"), Ask("최부장", "예산", "학년 예산 사용 내역 정리해서 공유 부탁드려요"), Ask("한부장", "연수", "수요일 연수는 3시 시청각실이에요")),
+            "2반 학부모회" to listOf(Ask("회장", "앨범", "졸업 앨범 추가 구매 신청 12월 5일까지 받아요"), Ask("총무", "간식", "학예회 날 간식은 학부모회에서 준비할게요"), Ask("서윤맘", "사진", "선생님 학예회 사진 단체방에 올려 주실 수 있나요")),
+        )
+        val chatter = listOf("네 알겠습니다", "확인했어요", "감사합니다~", "ㅎㅎ 좋네요", "넵 수고하셨어요", "저도 그렇게 할게요", "혹시 시간 바뀌면 알려 주세요")
+        val items = mutableListOf<NotiItem>()
+        rooms.forEach { (room, asks) ->
+            val people = asks.map { it.who } + listOf("오선생", "윤선생")
+            for (j in 0 until 34) {
+                val a = asks[(j / 6) % asks.size]   // 부탁 줄(6번째마다)이 세 사람에게 돌아가며
+                items += if (j % 6 == 0) k(room, a.who, a.text + " (${j / 6 + 1}차 안내)") else k(room, people[j % people.size], chatter[j % chatter.size] + " ${j}")
+            }
+        }
+        val ones = listOf("민준 어머님" to "내일 체험학습 도시락 싸야 하나요?", "도윤 아버님" to "도윤이 내일 2교시 후에 등교해도 될까요?", "지호 어머니" to "상담 시간을 4시로 바꿔도 될까요?",
+            "서연 할머니" to "서연이 감기라 체육은 쉬게 해 주세요", "하준 어머니" to "가정통신문 회신서 한 장 더 보내 주실 수 있나요?", "택배기사" to "택배 문 앞에 둘까요?")
+        ones.forEach { (who, t) -> items += k("", who, t); items += k("", who, "늘 감사합니다") }
+        val askOwner = rooms.values.flatten().associate { it.key to it.who }
+        val allPeople = rooms.values.flatten().map { it.who }.toSet()
+        var calls = 0
+        val t0 = System.currentTimeMillis()
+        val raw = StringBuilder()
+        val r = BriefingComposer.compose(items, ask = { p -> calls++; ollama(p).also { if ("동학년방" in p) raw.append("---질문 끝부분---\n" + p.takeLast(700) + "\n---답---\n" + it + "\n") } })
+        File("build/briefing-bulk-raw.txt").writeText(raw.toString())
+        val sec = (System.currentTimeMillis() - t0) / 1000.0
+        val text = r.people + "\n" + r.groups
+        // '이름: 부탁' 짝만 봄 — 부탁(다음 쉼표·괄호까지)에 든 부탁 낱말의 주인이 그 이름이 아니면 섞임
+        val pair = Regex("(" + allPeople.joinToString("|") + ")님?\\s*:\\s*([^,(\\n]+)")
+        val wrong = pair.findAll(text).flatMap { m -> askOwner.filter { (key, owner) -> key in m.groupValues[2] && owner != m.groupValues[1] }.map { (key, _) -> "$key↔${m.groupValues[1]}" } }.toList()
+        val named = pair.findAll(text).count()
+        val missed = askOwner.keys.filter { it !in text }
+        val report = "# 알림 ${items.size}건 ($model, ${System.getenv("EVAL_TAG") ?: "지금"})\n\n**AI ${calls}번 · ${sec}초 · 이름 붙은 부탁 ${named}개 · 사람 섞임 ${wrong.size}곳 ${wrong} · 빠진 부탁 ${missed.size}개 ${missed}**\n\n```\n$text\n```\n"
+        File("build/briefing-bulk-${System.getenv("EVAL_TAG") ?: "now"}.md").writeText(report)
         println(report)
     }
 }

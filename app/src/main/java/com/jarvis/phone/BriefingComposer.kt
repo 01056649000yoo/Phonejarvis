@@ -34,6 +34,7 @@ object BriefingComposer {
     const val SHORT_CHARS = 60        // 이보다 짧은 메시지만 있는 1:1 대화(3개까지)는 모델 없이
     const val SHORT_MAX_MSGS = 1      // 2026-11-23 선생님: 한 사람 말은 종합해서 — 원문 그대로는 한 마디일 때만(3개까지 이어 붙이니 나열처럼 보임)
     const val MAX_ASKS = 2            // 요청 칸은 가장 중요한 것 2개까지(여러 개를 쉼표로 늘어놓으면 핵심이 흐려짐)
+    const val MAX_GROUP_ASKS = 3      // 단톡방은 사람마다 '이름: 부탁' 3개까지(2026-11-23 — 큰 방에서 한 사람 부탁만 남고 나머지가 빠지던 것)
     // 2026-11-23 두 줄(요점·요청)만 받음 — 답장 필요는 요청이 있으면 필요(규칙). 답 쓰기가 폰에서 가장 느림
     const val MAX_ANSWER_TOKENS = 120 // 두 줄 답의 상한 — 넘게 쓰지 않게(모델은 한 글자씩 만들어 길수록 느림)
     private val URL = Regex("https?://\\S+")
@@ -85,7 +86,8 @@ object BriefingComposer {
         // 'ㅋㅋ'·'네 알겠습니다' 같은 말은 빼고(모두 그런 말이면 그대로) — 넣는 글이 줄어 빠르고, 모델이 잡담을 요점으로 삼지 않음
         val meaningful = conv.items.filterNot { isFiller(it.text) }.ifEmpty { conv.items }
         for (n in meaningful.asReversed()) {
-            val who = conv.who(n).let { if (it.isNotEmpty()) "$it: " else "" }
+            // 모든 줄에 말한 사람(1:1 도 보낸 사람) — AI 가 누가 한 말인지 섞지 않게(2026-11-23)
+            val who = conv.who(n).ifEmpty { n.title.trim() }.let { if (it.isNotEmpty()) "$it: " else "" }
             val line = "${fmt.format(n.time)} $who${n.text.replace('\n', ' ').replace(URL, "[링크]").trim().take(LINE_CHARS)}"
             if (size + line.length > ROOM_CHARS && picked.isNotEmpty()) break
             picked.addFirst(line); size += line.length + 1
@@ -97,7 +99,8 @@ object BriefingComposer {
 
     private const val RULES = """
 요점: 가장 중요한 내용을 40자 안쪽 한 문장으로. 메시지를 하나씩 옮기지 말고 종합해. 날짜·시간·장소·숫자는 메시지 그대로.
-요청: 사용자에게 해 달라거나 묻거나 허락을 구하는 것(…해 주세요, …해도 될까요, …줄래?)을 구체적으로(무엇을, 언제까지). 여러 개면 오늘·내일처럼 급한 것부터 2개까지 쉼표로. 없으면 없음.
+요청: 사용자에게 해 달라거나 묻거나 허락을 구하는 것(…해 주세요, …해도 될까요, …줄래?)을 구체적으로(무엇을, 언제까지). 단톡방이면 '이름: 부탁' 꼴로 사람마다 따로 써. 여러 개면 오늘·내일처럼 급한 것부터 3개까지 쉼표로. 없으면 없음.
+사람: 줄 앞의 이름이 그 말을 한 사람이야. 한 사람의 말을 다른 사람이 한 것처럼 쓰지 마.
 단톡방에서 '각 반', '모두', '선생님들'에게 하는 부탁과 '너'에게 하는 부탁도 사용자에게 하는 요청이다.
 이름: 보낸 사람의 이름과 호칭(예: 김민수 선생님)은 줄이거나 바꾸지 말고 그대로 써. '선생님'처럼 호칭만 남기지 마.
 말투: 보낸 사람이 한 말을 부드럽게 옮겨(…하자고 함, …해 달라고 함, …라고 함). '지시', '명령', '통보', '언급' 같은 딱딱한 말은 쓰지 마.
@@ -137,15 +140,20 @@ object BriefingComposer {
         val lastSaid = condenseAll((conv.items.lastOrNull { !isFiller(it.text) } ?: conv.items.last()).text.replace('\n', ' ').trim()).take(80)
         val modelPoint = field("요점").ifEmpty { clean.firstOrNull { ':' !in it.take(4) } ?: "" }
         val point = modelPoint.takeIf { it.isNotEmpty() && grounded(it, src) } ?: prev?.point?.takeIf { modelPoint.isEmpty() } ?: lastSaid
-        val modelAsk = field("요청").let { if (it.isEmpty() || it.startsWith("없음") || it == "-") "" else it }
+        // AI 가 '요청:' 이름표 없이 '총무: …' 처럼 그 방 사람 이름으로 바로 쓴 줄도 요청으로(2026-11-23 채점에서 빠지던 것)
+        val senders = conv.items.map { conv.who(it).ifEmpty { it.title.trim() } }.filter { it.length >= 2 }.toSet()
+        val bareAsks = if (field("요청").isEmpty()) clean.filter { l -> !l.startsWith("요점") && senders.any { l.startsWith("$it:") || l.startsWith("${it}님:") } } else emptyList()
+        val modelAsk = (field("요청").ifEmpty { bareAsks.joinToString(", ") }).let { if (it.isEmpty() || it.startsWith("없음") || it == "-") "" else it }
             .let { a -> if (grounded(a, src)) a else "" }
         val oneToOne = conv.items.all { it.room.isEmpty() }
-        val asks = rankAsks(splitAsks(modelAsk) + (prev?.ask?.let(::splitAsks).orEmpty()).filter { modelAsk.isEmpty() },
+        val asks = rankAsks(splitAsks(modelAsk) + (prev?.ask?.let(::splitAsks).orEmpty()).filter { modelAsk.isEmpty() }, limit = if (oneToOne) MAX_ASKS else MAX_GROUP_ASKS, urgent =
             // 급한 말(내일·2교시·4시 등)이 이미 요점·요청에 다 있으면 원문 물음을 또 붙이지 않음(같은 말 두 번)
             if (oneToOne) urgentQuestions(conv).filterNot { u -> URGENT.findAll(u).all { it.value in "$modelAsk $point" } } else emptyList())
         // 1:1 대화에서 묻는 말이 있는데 모델이 요청을 놓치면 마지막 물음·부탁을 그대로 요청에(단톡방은 서로 묻는 말이 많아 하지 않는다)
         val lastQ = if (oneToOne && modelAsk.isEmpty()) conv.items.lastOrNull { QUESTION.containsMatchIn(it.text) }?.text?.let(::askSentence)?.take(100) else null
-        val ask = (asks + listOfNotNull(lastQ?.takeIf { q -> asks.none { overlap(q, it) >= 0.5 || overlap(it, q) >= 0.5 } })).take(MAX_ASKS).joinToString(", ")
+        val limit = if (oneToOne) MAX_ASKS else MAX_GROUP_ASKS
+        val ask = fixAskNames(asks + listOfNotNull(lastQ?.takeIf { q -> asks.none { overlap(q, it) >= 0.5 || overlap(it, q) >= 0.5 } }), conv)
+            .take(limit).joinToString(", ")
         // 요청이 있으면 답장할 연락 — 모델이 요청을 적고도 '답장: 아님'이라 하는 일이 있었다(2026-11-21). '답장: 필요'만 쓴 옛 답도 받음
         val need = ask.isNotEmpty() || field("답장").startsWith("필요") || (prev?.needReply == true && modelAsk.isEmpty())
         return RoomSummary(conv, soften(point).take(160), soften(ask).take(160), need, byModel = true,
@@ -204,14 +212,38 @@ object BriefingComposer {
      * 요청 고르기: 급한 말(오늘·내일·몇 시·까지)이 든 것부터 [MAX_ASKS]개. [urgent] 는 원문에서 찾은 급한 물음 —
      * 모델 요청에 같은 내용(두 글자 조각이 절반 넘게 겹침)이 없을 때만 넣는다.
      */
-    fun rankAsks(model: List<String>, urgent: List<String> = emptyList()): List<String> {
+    fun rankAsks(model: List<String>, urgent: List<String> = emptyList(), limit: Int = MAX_ASKS): List<String> {
         val extra = urgent.filter { u -> model.none { overlap(u, it) >= 0.5 } }.take(1)
         return (extra + model).distinct().withIndex()
             .sortedWith(compareByDescending<IndexedValue<String>> { if (URGENT.containsMatchIn(it.value)) 1 else 0 }.thenBy { it.index })
-            .map { it.value }.take(MAX_ASKS)
+            .map { it.value }.take(limit)
     }
     private fun grams(s: String) = s.filter { !it.isWhitespace() }.windowed(2).toSet()
     private fun overlap(a: String, b: String): Double { val ga = grams(a); val gb = grams(b); return if (ga.isEmpty()) 0.0 else ga.count { it in gb }.toDouble() / ga.size }
+
+    /**
+     * '이름: 부탁' 의 이름이 맞는지 앱이 확인(2026-11-23 선생님: 다른 사람으로 착각) — 그 방에 그 이름이 없으면 이름을 떼고,
+     * 부탁 내용이 다른 사람의 말과 훨씬 더 닮았으면(두 글자 조각) 그 사람 이름으로 바꾼다. AI 를 다시 부르지 않음.
+     */
+    fun fixAskNames(asks: List<String>, conv: Conversation): List<String> {
+        val said = conv.items.groupBy { conv.who(it).ifEmpty { it.title.trim() } }.filterKeys { it.isNotEmpty() }
+            .mapValues { (_, l) -> l.joinToString(" ") { it.text } }
+        // 1:1 은 보낸 사람이 하나뿐 — 'OO 어머니: …' 처럼 붙은 이름은 떼기(줄 머리에 이미 있음)
+        if (said.size < 2) return asks.map { a -> a.substringBefore(':', "").trim().let { n -> if (n.isNotEmpty() && (n in said.keys || conv.room.contains(n) || n.contains(conv.room))) a.substringAfter(':').trim() else a } }
+        return asks.map { a ->
+            val name = a.substringBefore(':', "").trim()
+            if (name.isEmpty() || name.length > 20) return@map a
+            val body = a.substringAfter(':').trim()
+            val core = body.replace(ENDING, "")
+            val owner = said.keys.firstOrNull { it == name || name.contains(it) || it.contains(name) }
+            val best = said.maxByOrNull { (_, t) -> overlap(core, t) }
+            when {
+                owner == null -> body                                                     // 그 방에 없는 이름 — 떼기
+                best != null && best.key != owner && overlap(core, best.value) >= 0.5 && overlap(core, best.value) > overlap(core, said[owner]!!) * 1.5 -> "${best.key}: $body"
+                else -> a
+            }
+        }
+    }
 
     /** (옛 이름) 요청을 앞의 [MAX_ASKS]개만 */
     fun topAsks(ask: String): String = rankAsks(splitAsks(ask)).joinToString(", ")
@@ -272,7 +304,8 @@ object BriefingComposer {
      * 대화방마다 30개씩 나눠 모델에 묻고 합친다(모든 방). 멈추면 거기까지 정리한 것과 나머지 방 이름만 보여 준다.
      */
     /** 사람 메시지 칸(답장할 연락·사람에게 온 메시지)과 앱 알림 칸을 따로 돌려준다 — 브리핑에서 놓는 자리가 달라서 */
-    data class Result(val people: String, val apps: String, val replies: List<RoomSummary> = emptyList(), val groups: String = "") {
+    /** cutRooms: 시간·중지로 다 못 한 방 수(이름만 적음) — 요약이 이어서 마무리할지 정할 때 */
+    data class Result(val people: String, val apps: String, val replies: List<RoomSummary> = emptyList(), val groups: String = "", val cutRooms: Int = 0) {
         val text: String get() = listOf(people, groups.trim(), apps.trim()).filter { it.isNotBlank() }.joinToString("\n\n").ifEmpty { "요약할 알림이 없어요." }
     }
 
@@ -344,7 +377,15 @@ object BriefingComposer {
         var cut: String? = null
         // 방마다 아직 안 덮은 메시지
         data class Todo(val conv: Conversation, val prev: Cached?, val fresh: List<NotiItem>)
-        val todos = convs.map { conv -> val c = validCache(conv, cache, since); Todo(conv, c, freshOf(conv, c)) }
+        // 중요한 방부터(2026-11-23): 시간이 모자라 잘려도 꼭 볼 것은 먼저 끝나게 — 👥 내 묶음·명부·키워드 방 → 1:1 → 단톡 → 큰 단톡(30건 넘음)
+        fun rank(cv: Conversation) = when {
+            keyOf(cv) in groupKeys || replyAllowed(cv) -> 0
+            cv.items.all { it.room.isEmpty() } -> 1
+            cv.items.size <= CHUNK -> 2
+            else -> 3
+        }
+        val todos = convs.sortedWith(compareBy<Conversation> { rank(it) }.thenByDescending { it.last })
+            .map { conv -> val c = validCache(conv, cache, since); Todo(conv, c, freshOf(conv, c)) }
         // 모델에 묻는 횟수(진행 표시용): 새 메시지를 30개씩 나눈 덩어리 수(30개 넘으면 앞 덩어리 정리에 이어서 고쳐 씀)
         val total = todos.filter { it.fresh.isNotEmpty() && (it.prev != null || direct(it.conv) == null) }.sumOf { (it.fresh.size + CHUNK - 1) / CHUNK }
         var asked = 0
@@ -380,6 +421,7 @@ object BriefingComposer {
         val groupText = renderGroups(groupList.map { (title, cs) -> title to cs.mapNotNull { c -> groupRooms.firstOrNull { keyOf(it.conv) == keyOf(c) } } },
             leftover.filter { keyOf(it) in groupKeys })
         rooms.clear(); rooms += plainRooms
+        val groupLeft = leftover.count { keyOf(it) in groupKeys }
         leftover.removeAll { keyOf(it) in groupKeys }
         // 명부·키워드가 안 나오는 방은 답장할 연락에서 뺌(요청은 💬 줄에 → 로 남김)
         rooms.replaceAll { if (it.needReply && !replyAllowed(it.conv)) it.copy(needReply = false) else it }
@@ -390,7 +432,7 @@ object BriefingComposer {
             else if (cut != null) add(cut!!)
         }
         return Result(render(rooms, leftover, notes), appSection(apps.filterNot { AD.containsMatchIn(it.title) || AD.containsMatchIn(it.text) }),
-            rooms.filter { it.needReply }, groupText)
+            rooms.filter { it.needReply }, groupText, cutRooms = leftover.size + groupLeft)
     }
 
     private val ENDING = Regex("(해 ?)?(달라고|라고|자고|고) ?함\\.?$")
