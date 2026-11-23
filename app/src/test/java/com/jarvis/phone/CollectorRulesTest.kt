@@ -27,6 +27,14 @@ class CollectorRulesTest {
         ).forEach { assertFalse(it, secret(it)) }
     }
 
+    @Test fun 메시지_앱_이름_맞추기() {
+        assertTrue(AppAdvisor.isMessaging("LINE", "jp.naver.line.android"))
+        assertTrue(AppAdvisor.isMessaging("밴드", "com.nhn.android.band"))
+        assertTrue(AppAdvisor.isMessaging("카카오톡", "com.kakao.talk"))
+        assertFalse(AppAdvisor.isMessaging("온라인 클래스 쇼핑", "com.example.onlineshop"))   // '온라인' 이 '라인' 에 걸리던 것
+        assertFalse(AppFilter.hasKeyword(emptyList(), "x"))
+    }
+
     @Test fun 한꺼번에_온_메시지는_모두_순서대로_늦게_받으면_받은_시각으로() {
         val post = 10_000_000L
         // 방금 보낸 두 개(그대로) — 보낸 시각이 중복 키
