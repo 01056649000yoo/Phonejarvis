@@ -49,7 +49,9 @@ object BriefingScheduler {
         if (run.kind == SummarySchedule.Kind.FIXED && prepAt > System.currentTimeMillis() + 5_000) set(am, prepAt, prep)
     }
 
-    private fun set(am: AlarmManager, at: Long, pi: PendingIntent) {
+    private fun set(am: AlarmManager, at: Long, pi: PendingIntent) = setAlarm(am, at, pi)
+    /** 정확한 알람(권한이 있으면) — 울릴 때 요약 서비스를 백그라운드에서 시작할 수 있게 */
+    fun setAlarm(am: AlarmManager, at: Long, pi: PendingIntent) {
         if (canExact(am)) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
         else am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)   // 권한이 없을 때 대략적인 시각
     }
@@ -126,10 +128,11 @@ class BriefingReceiver : BroadcastReceiver() {
             BriefingScheduler.ACTION_DAILY -> {
                 BriefingScheduler.scheduleAll(ctx)        // 내일 하루 정리
                 // 다른 요약이 도는 중이면 그 요약이 끝난 뒤 이어서
-                if (BriefingService.active) BriefingService.dailyAfter = true
+                if (BriefingService.active && !PreSummary.running) BriefingService.dailyAfter = true
                 else BriefingScheduler.startService(ctx, Intent(ctx, BriefingService::class.java)
                     .putExtra(BriefingService.EXTRA_LABEL, DailyDigest.LABEL).putExtra(BriefingService.EXTRA_DAILY, true), DailyDigest.LABEL)
             }
+            PreSummary.ACTION -> PreSummary.onAlarm(ctx)
             BriefingScheduler.ACTION_PREPARE -> {
                 if (kind != null) BriefingScheduler.startNow(ctx, BriefingScheduler.labelOf(kind, minute), prepare = true, auto = true)
             }

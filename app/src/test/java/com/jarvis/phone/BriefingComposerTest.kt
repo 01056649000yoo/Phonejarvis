@@ -46,31 +46,69 @@ class BriefingComposerTest {
         assertEquals("", none.ask); assertFalse(none.needReply)
     }
 
-    @Test fun 대화방이_많아도_모두_요약하고_30개가_넘는_방은_나눠_요약해_합친다() = runBlocking {
+    @Test fun 대화방이_많아도_모두_요약하고_30개가_넘는_방은_앞_정리에_이어서_고쳐_쓴다() = runBlocking {
         val many = (1..14).map { i -> kakao("방$i", "사람$i", "긴 이야기 ".repeat(10) + i) }
         val big = (1..65).map { i -> kakao("큰방", "사람${i % 5}", "회의 이야기 $i " + "가".repeat(20)) }
-        var calls = 0
+        val prompts = mutableListOf<String>()
         val r = BriefingComposer.compose(many + big, ask = { p ->
-            calls++
+            prompts += p
             when {
-                "나눠 요약한 것이 3개" in p -> "요점: 큰방 회의를 종합한 한 문장\n요청: 자료 올려 주세요, 명단 내 주세요, 사진 보내 주세요\n답장: 필요"
-                "큰방" in p -> "요점: 큰방 덩어리 $calls\n요청: 자료 올려 주세요\n답장: 필요"
-                else -> "요점: 이야기\n요청: 없음\n답장: 아님"
+                "앞서 이렇게 정리했어" in p -> "요점: 큰방 회의를 종합한 한 문장\n요청: 자료 올려 주세요, 명단 내 주세요, 사진 보내 주세요"
+                "큰방" in p -> "요점: 큰방 첫 덩어리\n요청: 자료 올려 주세요"
+                else -> "요점: 이야기\n요청: 없음"
             }
         })
-        assertEquals(14 + 3 + 1, calls)                               // 작은 방 14곳 + 큰방 65개 → 30·30·5 세 덩어리 + 합치기 한 번
+        assertEquals(14 + 3, prompts.size)                             // 작은 방 14곳 + 큰방 65개 → 30·30·5 세 덩어리(합치기 따로 없음)
+        assertEquals(2, prompts.count { "앞서 이렇게 정리했어" in it })   // 둘째·셋째 덩어리는 앞 정리에 이어서
         assertFalse(r.people.contains("그 밖의 방: 방"))                // 빠진 방 없음
-        assertTrue(r.people.contains("큰방") && r.people.contains("자료 올려 주세요"))
-        assertTrue(r.people, r.people.contains("큰방 회의를 종합한 한 문장") && !r.people.contains("큰방 덩어리"))   // 덩어리별 나열이 아님
-        assertFalse(r.people, r.people.contains("사진 보내 주세요"))                                                // 요청은 2개까지
+        assertTrue(r.people, r.people.contains("큰방 회의를 종합한 한 문장") && !r.people.contains("큰방 첫 덩어리"))
+        assertFalse(r.people, r.people.contains("사진 보내 주세요"))      // 요청은 2개까지
     }
 
-    @Test fun 합치기가_실패하면_덩어리_요약을_이어_붙인다() = runBlocking {
-        val big = (1..35).map { i -> kakao("큰방", "사람", "회의 이야기 $i " + "가".repeat(20)) }
+    @Test fun 미리_요약해_둔_방은_다시_묻지_않고_그_뒤_온_것만_이어서() = runBlocking {
+        val old = listOf(kakao("동학년방", "김부장", "금요일까지 명단 올려 주세요"), kakao("동학년방", "이선생", "양식은 어디 있나요?"))
+        val since = 100L
+        val saved = mutableMapOf<String, BriefingComposer.Cached>()
         var calls = 0
-        val r = BriefingComposer.compose(big, ask = { p -> calls++; if ("나눠 요약한 것이" in p) error("모델 오류") else "요점: 덩어리 $calls\n요청: 없음\n답장: 아님" })
-        assertEquals(3, calls)
-        assertTrue(r.people, r.people.contains("덩어리 1 / 덩어리 2"))
+        BriefingComposer.compose(old, ask = { calls++; "요점: 금요일까지 명단 제출\n요청: 명단 올려 달라고 함" }, since = since, onCached = { saved[it.key] = it })
+        assertEquals(1, calls); assertEquals(2, saved.values.single().count)
+        // 같은 구간, 새 메시지 없음 → 모델 안 부르고 저장한 그대로
+        val same = BriefingComposer.compose(old, ask = { error("부르면 안 됨") }, cache = saved, since = since)
+        assertTrue(same.people, same.people.contains("금요일까지 명단 제출"))
+        // 새 메시지 하나 → 앞 정리 + 새 메시지만 넣어 한 번
+        val more = old + kakao("동학년방", "김부장", "마감이 목요일로 당겨졌어요")
+        var prompt = ""
+        val r = BriefingComposer.compose(more, ask = { prompt = it; "요점: 명단 마감이 목요일로 당겨짐\n요청: 목요일까지 명단 올려 달라고 함" }, cache = saved, since = since)
+        assertTrue(prompt, "금요일까지 명단 제출" in prompt && "목요일로 당겨졌어요" in prompt && "양식은 어디" !in prompt)
+        assertTrue(r.people, r.people.contains("목요일로 당겨짐"))
+        // 구간이 바뀌었거나(다음 요약 뒤) 메시지 수가 다르면(뺀 방·지운 알림) 버리고 처음부터
+        assertEquals(0, BriefingComposer.pendingForModel(old, saved, since))
+        assertEquals(2, BriefingComposer.pendingForModel(old, saved, since + 1))
+        assertEquals(1, BriefingComposer.pendingForModel(listOf(old[0]), saved, since).let { if (it == 0) -1 else it }.coerceAtLeast(1))
+    }
+
+    @Test fun 잡담은_모델에_넣지_않고_답이_한_줄로_붙어도_나눈다() {
+        val conv = BriefingComposer.conversations(listOf(kakao("방", "가", "네 알겠습니다"), kakao("방", "나", "ㅋㅋㅋ"), kakao("방", "다", "내일 8시 30분 교무회의"), kakao("방", "라", "넵!")))[0]
+        val tr = BriefingComposer.transcript(conv)
+        assertTrue(tr, "교무회의" in tr && "알겠습니다" !in tr && "넵" !in tr)
+        val r = BriefingComposer.parse(conv, "요점: 내일 8시 30분 교무회의가 있다고 함 요청: 없음 답장: 아님")
+        assertEquals("내일 8시 30분 교무회의가 있다고 함", r.point); assertEquals("", r.ask)
+    }
+
+    @Test fun 원문에_없는_숫자를_쓰면_그_칸은_믿지_않는다() {
+        val conv = BriefingComposer.conversations(listOf(kakao("", "지호 어머니", "수요일 상담 4시로 바꿔도 될까요?")))[0]
+        val r = BriefingComposer.parse(conv, "요점: 수요일 상담을 3시로 바꾸고 싶다고 함\n요청: 상담 시간 변경 확인해 달라고 함")
+        assertEquals("수요일 상담 4시로 바꿔도 될까요?", r.point)
+        assertTrue(BriefingComposer.grounded("12월 5일까지 3만 원", "12월 5일까지 1권당 3만 원"))
+        assertFalse(BriefingComposer.grounded("12월 6일", "12월 5일"))
+    }
+
+    @Test fun 급한_요청이_먼저_모델이_놓친_급한_물음도_요청에() {
+        assertEquals(listOf("내일 2교시 후 등교 허락해 달라고 함", "회신서 보내 달라고 함"),
+            BriefingComposer.rankAsks(listOf("회신서 보내 달라고 함", "상담 날짜 바꿔 달라고 함", "내일 2교시 후 등교 허락해 달라고 함")))
+        val conv = BriefingComposer.conversations(listOf(kakao("", "하준 어머니", "선생님 하준이 내일 병원 때문에 2교시 후 등교해도 될까요? 회신서 한 장 더 보내 주실 수 있나요? 상담 날짜도 바꿀 수 있을까요?")))[0]
+        val r = BriefingComposer.parse(conv, "요점: 등교·회신서·상담 문의\n요청: 회신서 한 장 더 보내 달라고 함, 상담 날짜를 바꿔 달라고 함")
+        assertTrue(r.ask, r.ask.startsWith("하준이 내일 병원 때문에 2교시 후 등교해도 될까요?") && r.ask.contains("회신서"))
     }
 
     @Test fun 중지하면_거기까지_정리하고_나머지는_이름만() = runBlocking {

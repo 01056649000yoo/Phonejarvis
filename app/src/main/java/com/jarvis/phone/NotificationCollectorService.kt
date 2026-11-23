@@ -56,7 +56,8 @@ class NotificationCollectorService : NotificationListenerService() {
         val item = NotiItem(0, sbn.packageName, app, title.take(200), text.take(1000), sbn.postTime, room)
         // ✉️ 문자면 '답장' 단추·번호를 메모리에 들고 있음(답장 초안을 바로 보내려고)
         if (Sms.isSms(sbn.packageName) && room.isEmpty()) runCatching { ReplyHandles.capture(sbn, title.take(200)) }
-        AppScope.main.launch { SummaryWidget.refreshForNewNoti(this@NotificationCollectorService) }   // 🏠 위젯 '요약 N'(10분에 한 번까지)
+        AppScope.main.launch { SummaryWidget.refreshForNewNoti(this@NotificationCollectorService) }
+        AppScope.io.launch { runCatching { PreSummary.nudge(this@NotificationCollectorService) } }   // ⚡ 쌓였으면 미리 요약 예약   // 🏠 위젯 '요약 N'(10분에 한 번까지)
         runCatching {
             Students.log(this, Students.names(this), item)   // 🧒 학생 이름이 나오면 학생별 기록에
             TaskExtractor.save(this, item)                   // 📌 마감·할 일이 있으면 할 일 목록에

@@ -109,11 +109,14 @@ class Summarizer private constructor(private val ctx: Context) {
     /** 중지했거나 시간 제한에 걸렸는데 정리된 부분이 하나도 없을 때. */
     class StoppedException(msg: String) : Exception(msg)
 
+    /** cache·since·onCached: 미리 요약(PreSummary) — 덮은 방은 다시 묻지 않고, 정리할 때마다 저장. extraStop: 미리 요약은 화면이 켜지면 멈춤 */
     suspend fun summarize(items: List<NotiItem>, onStatus: (String) -> Unit,
-                          replyAllowed: (BriefingComposer.Conversation) -> Boolean = { true }): BriefingComposer.Result =
+                          replyAllowed: (BriefingComposer.Conversation) -> Boolean = { true },
+                          cache: Map<String, BriefingComposer.Cached> = emptyMap(), since: Long = 0L,
+                          onCached: (BriefingComposer.Cached) -> Unit = {}, extraStop: () -> String? = { null }): BriefingComposer.Result =
         runLock.withLock {
             stopRequested = false
-            try { summarizeLocked(items, onStatus, replyAllowed) } finally { stopRequested = false }
+            try { summarizeLocked(items, onStatus, replyAllowed, cache, since, onCached, extraStop) } finally { stopRequested = false }
         }
 
     /**
@@ -121,7 +124,9 @@ class Summarizer private constructor(private val ctx: Context) {
      * 중지·시간 제한은 대화방 하나가 끝날 때마다 본다.
      */
     private suspend fun summarizeLocked(items: List<NotiItem>, onStatus: (String) -> Unit,
-                                        replyAllowed: (BriefingComposer.Conversation) -> Boolean): BriefingComposer.Result {
+                                        replyAllowed: (BriefingComposer.Conversation) -> Boolean,
+                                        cache: Map<String, BriefingComposer.Cached>, since: Long,
+                                        onCached: (BriefingComposer.Cached) -> Unit, extraStop: () -> String?): BriefingComposer.Result {
         val deadline = System.currentTimeMillis() + MAX_MILLIS
         var called = 0
         val result = BriefingComposer.compose(
@@ -132,10 +137,11 @@ class Summarizer private constructor(private val ctx: Context) {
                 when {
                     stopRequested -> "중지해서 여기까지만 정리했어요."
                     System.currentTimeMillis() > deadline -> "시간이 오래 걸려 여기까지만 정리했어요."
-                    else -> null
+                    else -> extraStop()
                 }
             },
             replyAllowed = replyAllowed,
+            cache = cache, since = since, onCached = onCached,
         )
         if (stopRequested && called == 0) throw StoppedException("중지했어요.")
         return result

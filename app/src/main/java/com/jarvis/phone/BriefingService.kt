@@ -52,11 +52,18 @@ class BriefingService : Service() {
         // ✉️ 초안만 쓰는 실행(정각에 미리 준비한 요약을 보낸 뒤)
         val draftOnly = intent?.getBooleanExtra(EXTRA_DRAFT_ONLY, false) == true
         val daily = intent?.getBooleanExtra(EXTRA_DAILY, false) == true
-        val title = if (prepare) "요약 미리 준비 중" else "쌤톡스가 알림을 정리하는 중"
+        val pre = intent?.getBooleanExtra(EXTRA_PRE, false) == true
+        val title = if (pre) "⚡ 미리 요약 중" else if (prepare) "요약 미리 준비 중" else "쌤톡스가 알림을 정리하는 중"
         ServiceCompat.startForeground(
-            this, Notifications.ID_PROGRESS, Notifications.progress(this, "브리핑 준비 중…", title = title, quiet = prepare || topUp || draftOnly),
+            this, Notifications.ID_PROGRESS, Notifications.progress(this, "브리핑 준비 중…", title = title, quiet = prepare || topUp || draftOnly || pre),
             if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0,
         )
+        if (running && PreSummary.running && !pre && intent != null) {
+            // ⚡ 미리 요약 중에 진짜 요약이 옴 → 미리 요약을 멈추고(정리한 방은 저장됨) 끝나는 대로 이어서
+            queued = intent
+            Summarizer.get(this).requestStop()
+            return START_NOT_STICKY
+        }
         if (running) {
             // 이미 도는 중이면 겹쳐 실행하지 않음. 정각 5분 전 '미리 준비' 중에 위젯·앱에서 직접 요약을 누른 것이면
             // 준비하던 요약을 끝나는 대로 바로 알림(누른 결과가 안 오는 것처럼 보이지 않게)
@@ -64,7 +71,7 @@ class BriefingService : Service() {
             return START_NOT_STICKY
         }
         running = true
-        active = true
+        active = !pre   // 미리 요약은 화면의 '정리 중'·위젯에 안 보임
         AppScope.main.launch { SummaryWidget.refresh(this@BriefingService) }   // 🏠 위젯에 '요약 중…'
         preparing = prepare
         showWhenDone = false
@@ -76,6 +83,27 @@ class BriefingService : Service() {
             .apply { acquire(30 * 60 * 1000L) }
 
         scope.launch {
+            if (pre) {
+                // ⚡ 미리 요약: 결과 알림 없이 방마다 정리해 저장만. 화면이 켜지거나 진짜 요약이 오면 멈춤
+                PreSummary.running = true
+                try {
+                    val r = PreSummary.run(this@BriefingService) { }
+                    AutoLog.add(this@BriefingService, PreSummary.LABEL, r)
+                } catch (_: Summarizer.StoppedException) {
+                } catch (t: Throwable) {
+                    AutoLog.add(this@BriefingService, PreSummary.LABEL, "실패 · ${t.javaClass.simpleName}")
+                } finally {
+                    PreSummary.running = false
+                    runCatching { Summarizer.get(this@BriefingService).release() }
+                    if (wake.isHeld) wake.release()
+                    running = false; active = false; preparing = false
+                    val next = queued; queued = null
+                    ServiceCompat.stopForeground(this@BriefingService, ServiceCompat.STOP_FOREGROUND_REMOVE)
+                    if (next != null) onStartCommand(next, 0, startId)      // 기다리던 진짜 요약
+                    else { runCatching { PreSummary.nudge(this@BriefingService, force = true) }; stopSelf() }   // 충전 중이면 다음 미리 요약 예약
+                }
+                return@launch
+            }
             if (draftOnly) {
                 try { runCatching { Briefings.draftPending(this@BriefingService) { } } }
                 finally {
@@ -169,6 +197,9 @@ class BriefingService : Service() {
         const val EXTRA_TOPUP_BODY = "topup_body"
         const val EXTRA_DRAFT_ONLY = "draft_only"
         const val EXTRA_DAILY = "daily"
+        const val EXTRA_PRE = "pre"
+        /** 미리 요약 중에 온 진짜 요약(미리 요약이 멈추면 이어서) */
+        @Volatile private var queued: Intent? = null
         /** 🗓 하루 정리 시각에 다른 요약이 돌고 있었으면 그 요약 끝에 이어서 */
         @Volatile var dailyAfter = false
         const val ACTION_STOP = "com.jarvis.phone.STOP_BRIEFING"
@@ -253,21 +284,21 @@ object Briefings {
         // 📌 오늘·내일 마감 (할 일 목록에서, 끝내지 않은 것)
         items.forEach { runCatching { TaskExtractor.save(ctx, it) } }
         val taskPart = taskSection(db.tasks())
-        // 💼 캘린더·할 일·메일 같은 업무·일정 앱 알림: AI 요약에 섞지 않고 시간순으로 바로
-        val important = AppFilter.importantApps(ctx)
-        val workItems = items.filter { AppAdvisor.isWork(it.app, it.pkg) || it.pkg in important }
-        val workPart = workSection(workItems)
-        // 👥 직접 만든 묶음(교직원·가족 등)의 사람 연락: 묶음별로 바로
-        val (peoplePart, peopleItems) = People.section(People.customBook(ctx), items - workItems.toSet())
-        val rest = items - workItems.toSet() - peopleItems
+        // 💼 업무·일정 앱 알림, 👥 직접 만든 묶음의 사람 연락은 AI 없이 바로 — 나머지(rest)만 AI 로
+        val split = splitForAi(ctx, items)
+        val workPart = workSection(split.work)
+        val peoplePart = split.peoplePart
+        val rest = split.rest
+        // ⚡ 미리 요약해 둔 방(PreSummary)은 다시 묻지 않음 — 이번 구간(from)의 것만
+        val cache = PreSummary.load(ctx, from)
         // 🙋 답장할 연락·💬 사람 메시지(대화방마다 AI 세 줄)·📦 앱 알림(AI 없이 건수) — BriefingComposer
         // 🌡️ 폰이 뜨겁거나 배터리가 바닥이면 모델을 올리지 않고 AI 없이(대화방마다 최근 말 그대로)
         val load = PhoneLoad.state(ctx)
         val skipAi = PhoneLoad.skipAiReason(load)
         val ai = when {
             rest.isEmpty() -> null
-            skipAi != null -> BriefingComposer.compose(rest, ask = { "" }) { c -> c.items.any { rules.mentionsRoster(it) } }
-            else -> summarizer.summarize(rest, onStatus) { c -> c.items.any { rules.mentionsRoster(it) } }
+            skipAi != null -> BriefingComposer.compose(rest, ask = { "" }, replyAllowed = { c -> c.items.any { rules.mentionsRoster(it) } }, cache = cache, since = from)
+            else -> summarizer.summarize(rest, onStatus, { c -> c.items.any { rules.mentionsRoster(it) } }, cache, from)
         }
         // ✉️ 답장할 문자: 🙋 답장할 연락 중 문자(1:1)만 올리고, 모델이 켜진 김에 초안을 5건까지 미리
         // ✉️ 답장할 문자는 목록에만 올림 — 초안은 요약 알림을 보낸 뒤에 씀(결과가 늦어지지 않게, draftPending)
@@ -280,12 +311,22 @@ object Briefings {
             .ifEmpty { "요약할 알림이 없어요." }) + (if (skipAi != null && rest.isNotEmpty()) "\n\n$skipAi" else "") + "\n\n($timing)"
         // time = 이번 요약이 덮은 마지막 시각 (다음 요약은 이 다음부터)
         db.insertBriefing(Briefing(time = cutoff, fromTime = from, label = label, count = items.size, text = text))
+        PreSummary.clear(ctx)   // 이번 구간은 끝 — 다음 구간은 새로 미리 요약
         onStatus("완료 (${(now - start) / 1000}초)")
         // 알림 맨 위에 이번 요약이 맡은 구간 — 앞선 요약(위젯·지금 정리하기·이전 시각)에 이미 들어간 메시지는 다시 나오지 않으므로
         val hm = java.text.SimpleDateFormat("M/d HH:mm", java.util.Locale.KOREA)
         val range = "🕘 " + (prevBriefing?.let { "${hm.format(it.time)} ${it.label} 뒤" } ?: hm.format(items.minOf { it.time })) +
             " ~ ${hm.format(cutoff)}에 온 알림"
         return Outcome("$label · 알림 ${items.size}건", range + "\n\n" + text, cutoff, timing)
+    }
+
+    /** 요약할 알림을 AI 없이 바로 쓰는 것(💼 업무·일정, 👥 내 묶음)과 AI 로 정리할 것(rest)으로 나눔 — 요약·미리 요약 공용 */
+    data class Split(val work: List<NotiItem>, val peoplePart: String, val rest: List<NotiItem>)
+    fun splitForAi(ctx: Context, items: List<NotiItem>): Split {
+        val important = AppFilter.importantApps(ctx)
+        val workItems = items.filter { AppAdvisor.isWork(it.app, it.pkg) || it.pkg in important }
+        val (peoplePart, peopleItems) = People.section(People.customBook(ctx), items - workItems.toSet())
+        return Split(workItems, peoplePart, items - workItems.toSet() - peopleItems)
     }
 
     /** ⏱ 48초 · 모델 불러오기 21초(GPU) · AI 2번 27초 — 어디서 시간이 드는지 실제 폰에서 보려고 */
