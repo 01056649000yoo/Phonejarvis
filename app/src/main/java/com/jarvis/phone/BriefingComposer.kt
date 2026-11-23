@@ -98,6 +98,7 @@ object BriefingComposer {
 요점: 가장 중요한 내용을 40자 안쪽 한 문장으로. 메시지를 하나씩 옮기지 말고 종합해. 날짜·시간·장소·숫자는 메시지 그대로.
 요청: 사용자에게 해 달라거나 묻거나 허락을 구하는 것(…해 주세요, …해도 될까요, …줄래?)을 구체적으로(무엇을, 언제까지). 여러 개면 오늘·내일처럼 급한 것부터 2개까지 쉼표로. 없으면 없음.
 단톡방에서 '각 반', '모두', '선생님들'에게 하는 부탁과 '너'에게 하는 부탁도 사용자에게 하는 요청이다.
+이름: 보낸 사람의 이름과 호칭(예: 김민수 선생님)은 줄이거나 바꾸지 말고 그대로 써. '선생님'처럼 호칭만 남기지 마.
 말투: 보낸 사람이 한 말을 부드럽게 옮겨(…하자고 함, …해 달라고 함, …라고 함). '지시', '명령', '통보', '언급' 같은 딱딱한 말은 쓰지 마.
 
 예시(내용은 다름):
@@ -271,8 +272,19 @@ object BriefingComposer {
         .filterNot { (_, n) -> AD.containsMatchIn(n.title) || AD.containsMatchIn(n.text) }
         .distinctBy { (_, n) -> listOf(n.pkg, n.room, n.title, n.text) }
         .groupBy({ it.first }, { it.second })
-        .map { (name, list) -> Conversation(g.title, name, list.sortedBy { it.time }) }
+        .map { (name, list) -> Conversation(g.title, displayName(name, list), list.sortedBy { it.time }) }
         .sortedByDescending { it.last }
+
+    /**
+     * 묶음 사람의 보이는 이름: 알림에 찍힌 보낸 사람 이름 그대로(예: '김민수 선생님') — 묶음에 적은 짧은 이름으로 줄이지 않음
+     * (2026-11-23 선생님: "OOO선생님에서 선생님만 남기면 누가 한 말인지 모르겠어"). 여러 개면 가장 많이 쓴 것, 같으면 긴 것.
+     */
+    fun displayName(name: String, items: List<NotiItem>): String {
+        val key = name.filterNot { it.isWhitespace() }
+        return items.map { it.title.trim() }.filter { t -> t.isNotEmpty() && key.isNotEmpty() && key in t.filterNot { it.isWhitespace() } }
+            .groupingBy { it }.eachCount().entries
+            .maxWithOrNull(compareBy<Map.Entry<String, Int>> { it.value }.thenBy { it.key.length })?.key ?: name
+    }
 
     suspend fun compose(
         items: List<NotiItem>,
@@ -340,18 +352,26 @@ object BriefingComposer {
             rooms.filter { it.needReply }, groupText)
     }
 
-    /** 👥 묶음별: '🏠 가족 연락 (2명 · 5건)' 아래 사람마다 한 줄(요점 → 요청) */
+    private val ENDING = Regex("(해 ?)?(달라고|라고|자고|고) ?함\\.?$")
+    /** 요점과 부탁을 한 문단으로: '…하기로 함. 꽃을 사 와 달라고 함.' (부탁이 요점에 이미 있으면 요점만) */
+    fun paragraph(point: String, ask: String): String {
+        fun end(x: String) = x.trim().trimEnd('.', '。').let { if (it.isEmpty()) it else "$it." }
+        // 부탁 내용이 요점에 이미 들어 있으면(끝말 '…달라고 함'을 떼고 두 글자 조각이 절반 넘게 겹침) 한 번만
+        fun core(x: String) = x.trim().replace(ENDING, "")
+        return if (ask.isEmpty() || point.contains(ask) || overlap(core(ask), core(point)) >= 0.5) end(point) else end(point) + " " + end(ask)
+    }
+
+    /** 👥 묶음별: '🏠 가족 연락 (2명 · 5건)' 아래 사람마다 이름 그대로 + 한 말 한 문단 */
     fun renderGroups(groups: List<Pair<String, List<RoomSummary>>>, leftover: List<Conversation>): String = buildString {
         val fmt = SimpleDateFormat("HH:mm", Locale.KOREA)
         for ((title, list) in groups) {
             val rest = leftover.filter { it.app == title }
             if (list.isEmpty() && rest.isEmpty()) continue
             append("$title 연락 (${list.size + rest.size}명 · ${list.sumOf { it.conv.items.size } + rest.sumOf { it.items.size }}건)\n")
+            // 사람 이름은 그대로, 그 사람이 한 말만 한 문단으로(요점 + 부탁을 이어서) — 2026-11-23 선생님
             list.sortedByDescending { it.conv.last }.forEach { r ->
                 val point = r.point.ifBlank { r.conv.items.last().text.replace('\n', ' ').take(60) }.removePrefix("${r.conv.room}: ")
-                append("- ${r.conv.room} (${r.conv.items.size}건) · ${fmt.format(r.conv.last)}: $point")
-                if (r.ask.isNotEmpty() && !point.contains(r.ask)) append(" → ${r.ask}")
-                append("\n")
+                append("- ${r.conv.room} (${r.conv.items.size}건) · ${fmt.format(r.conv.last)}: ${paragraph(point, r.ask)}\n")
             }
             if (rest.isNotEmpty()) append("- 그 밖에: " + rest.joinToString(", ") { "${it.room} ${it.items.size}건" } + "\n")
             append("\n")

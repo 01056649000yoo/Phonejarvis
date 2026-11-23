@@ -144,14 +144,17 @@ class BriefingEvalTest {
             sms("엄마", "너는 꽃 좀 사 와 줄래?"),
             k("우리 가족", "엄마", "늦지 말고 와"),
             k("우리 가족", "동생", "나 케이크 사 갈게"),
+            k("", "김민수 선생님", "선생님 내일 3시 학년 협의회 2층 회의실이에요. 학예회 순서 정할 거예요"),
+            k("6학년 동학년방", "김민수 선생님", "그리고 학예회 반별 명단은 금요일까지 단톡에 올려 주세요"),
+            sms("김민수", "협의회 자료는 메신저로 보냈어요. 미리 한 번 봐 주세요"),
             k("6학년 동학년방", "교감", "홍길동 선생님 내일 8시 30분 교무회의 자료 부탁드려요"),
             NotiItem(0, "com.weather", "날씨", "오늘 5도 맑음", "미세먼지 보통", now),
         ).map { at(it, now + (t++ % 1000) * 1000) }
-        val rules = AppFilter.Rules(emptySet(), emptySet(), listOf("홍길동", "체험학습"), adFilter = true, people = listOf("엄마", "동생"))
+        val rules = AppFilter.Rules(emptySet(), emptySet(), listOf("홍길동", "체험학습"), adFilter = true, people = listOf("엄마", "동생", "김민수"))
         val kept = today.filter { rules.allows(it) }
         val routine = Routine.detect(weatherWeek + kept)
         val (quiet, loud) = kept.partition { Routine.isQuiet(it, routine, emptySet(), rules.keywords) }
-        val book = listOf(PeopleGroup("g", "🏠", "가족", "custom") to listOf("엄마", "동생"))
+        val book = listOf(PeopleGroup("g", "🏠", "가족", "custom") to listOf("엄마", "동생"), PeopleGroup("t", "👔", "교직원", "custom") to listOf("김민수"))
         val hits = loud.mapNotNull { n -> People.find(book, n, bodyToo = false)?.let { (g, name) -> Triple(g, name, n) } }
         val groups = hits.groupBy { it.first.id }.map { (_, l) -> BriefingComposer.Group(l.first().first.title, l.map { it.second to it.third }) }
         val rest = loud - hits.map { it.third }.toSet()
