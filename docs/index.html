@@ -560,6 +560,24 @@
     };
     document.querySelectorAll('a[href$="SsamTox.apk"]').forEach(function (a) { a.href = toChrome(a.href); });
   })();
+  // 페이지를 열면 늘 맨 위부터(2026-11-23 선생님: "열면 하단으로 자동 이동").
+  // ① 브라우저가 지난번 보던 자리(아래쪽 받기 칸 등)로 되돌리지 않게, ② 바로 가기(받기·질문…)를 눌러도 주소 끝에 #download 같은
+  //    표시를 남기지 않게 — 그 주소로 다시 열거나 새로 고치면 그 칸(맨 아래 쪽)으로 바로 내려가던 것.
+  (function () {
+    if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+    if (location.hash) history.replaceState(null, "", location.pathname + location.search);
+    window.scrollTo(0, 0);
+    var smooth = !matchMedia("(prefers-reduced-motion: reduce)").matches;
+    document.querySelectorAll('a[href^="#"]').forEach(function (a) {
+      a.addEventListener("click", function (e) {
+        var id = a.getAttribute("href").slice(1);
+        var el = id === "top" ? null : document.getElementById(id);
+        e.preventDefault();
+        if (el) el.scrollIntoView({ behavior: smooth ? "smooth" : "auto" });
+        else window.scrollTo({ top: 0, behavior: smooth ? "smooth" : "auto" });
+      });
+    });
+  })();
   // 위 막대 밑줄: 조금 내리면 보임
   (function () {
     var bar = document.getElementById("topbar");
