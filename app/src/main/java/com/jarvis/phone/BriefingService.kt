@@ -349,9 +349,11 @@ object Briefings {
     fun splitForAi(ctx: Context, items: List<NotiItem>): Split {
         val keywords = AppFilter.rules(ctx).keywords
         val routine = Routine.keys(ctx); val muted = Routine.muted(ctx)
-        val (quiet, loud) = items.partition { Routine.isQuiet(it, routine, muted, keywords) }
         // 💼 지정한 업무·일정 앱(2026-11-23: 그 앱 알림만 AI 가 앱마다 요약 — 묶음 하나처럼, 미리 요약에도 같이)
         val isWorkApp = AppFilter.isWorkApp(ctx)
+        // 💼 업무 앱은 '정기 알림' 짐작으로 빼지 않음(2026-11-24 점검: 메일은 제목이 보낸 사람이라 매일 비슷한 시각에 메일을 주는 동료가
+        // 🔁 건수로만 남았다). 선생님이 직접 뺀 꼴은 업무 앱도 뺌
+        val (quiet, loud) = items.partition { Routine.isQuiet(it, if (isWorkApp(it.app, it.pkg)) emptySet() else routine, muted, keywords) }
         val workItems = loud.filter { isWorkApp(it.app, it.pkg) }
         val book = People.customBook(ctx)
         // 한 사람은 한 묶음에만(묶음 순서대로 먼저 맞는 곳) — 그 연락은 아래 대화 요약에 다시 나오지 않음
