@@ -101,7 +101,7 @@ object AppFilter {
         prefs(ctx).edit().putStringSet("keywords", words.map { it.trim() }.filter { it.isNotEmpty() }.toSet()).apply()
     }
     fun hasKeyword(words: Collection<String>, vararg texts: String): Boolean =
-        words.isNotEmpty() && texts.any { t -> words.any { it in t } }
+        words.isNotEmpty() && texts.any { t -> words.any { Students.occurs(it, t) } }   // 학생 성 뺀 이름은 낱말 안에 든 것은 빼고
 
     /** 부르는 말(OO님·OO 고객님·OO 회원님) — 광고·안내문이 이름을 부르는 꼴 */
     private val CALLING = Regex("^\\s?(님|고객님|회원님|고객 님|회원 님)")
@@ -110,6 +110,7 @@ object AppFilter {
      * 키워드가 한 번이라도 부르는 말이 아닌 자리에 나오면 맞음.
      */
     fun hasRealKeyword(words: Collection<String>, vararg texts: String): Boolean = words.any { w ->
+        if (w.firstOrNull() == Students.GIVEN) return@any texts.any { Students.occurs(w, it) }   // 학생 성 뺀 이름
         w.isNotEmpty() && texts.any { t ->
             var i = t.indexOf(w); var real = false
             while (i >= 0 && !real) { if (!CALLING.containsMatchIn(t.substring(i + w.length))) real = true; i = t.indexOf(w, i + w.length) }
