@@ -80,8 +80,10 @@ class SummaryWidget : GlanceAppWidget() {
     private fun Content(ctx: Context, s: State) {
         val c = GlanceTheme.colors
         val fmt = SimpleDateFormat("M/d HH:mm", Locale.KOREA)
+        // 본문을 누르면 늘 📋 요약 탭의 최신 요약으로(2026-11-23 선생님: 앱에서 마지막에 보던 화면이 열림)
         val openApp = actionStartActivity(Intent(ctx, MainActivity::class.java)
-            .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP))
+            .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            .putExtra(EXTRA_OPEN_TAB, "summary"))
         val openSettings = actionStartActivity(Intent(ctx, MainActivity::class.java)
             .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             .putExtra(EXTRA_OPEN_TAB, "settings"))

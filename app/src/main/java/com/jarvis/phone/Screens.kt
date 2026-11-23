@@ -37,10 +37,11 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** 이번 버전에서 바뀐 점 한 줄 (버전 올릴 때 같이 고치기). */
-private const val WHATS_NEW = "요약 칸을 줄였어요 · 업무·일정은 고른 앱만 · 미리 요약은 글자 수로"
+private const val WHATS_NEW = "요약 칸을 줄였어요 · 업무·일정은 고른 앱만 · 미리 요약은 글자 수로 · 위젯을 누르면 바로 요약"
 
 /** 업데이트 내역 큰 창 (버전 올릴 때 같이 고치기) */
 private val WHATS_NEW_DETAIL = listOf(
+    "🏠 위젯을 누르면 바로 요약" to "위젯의 요약 글을 누르면 앱에서 마지막에 보던 화면 대신 📋 요약 탭 맨 위의 최신 요약이 펼쳐진 채로 열려요.",
     "🧹 요약 칸을 줄였어요" to "요약은 이제 다섯 칸이에요: 👥 내가 만든 사람 묶음(가족·학부모·교직원 등, 묶음마다) → ⭐ 중요 키워드 → 💼 업무·일정 → 💬 대화 요약 → 앱·정기 알림 건수. 한 사람은 한 묶음에만 들어가고, 묶음에 들어간 연락은 대화 요약에 다시 나오지 않아요. 👪 학부모 전용 칸은 없애고 학부모 명부도 다른 묶음과 똑같이 보여요.",
     "🙋 답장할 연락은 대화 요약 안에" to "답장할 연락을 따로 칸으로 두지 않고, 💬 대화 요약 맨 위 줄에 🙋 표시로 보여 줘요.",
     "📌 마감 자동 등록은 없앴어요" to "알림에서 '금요일까지'·'3시' 같은 말을 찾아 할 일로 넣던 기능은 엉뚱한 것이 자주 들어가서 없앴어요. 직접 넣은 할 일은 그대로예요.",
@@ -173,8 +174,11 @@ fun JarvisScreen(vm: JarvisViewModel) {
             modifier = Modifier.padding(inner),
             label = "route",
         ) { (tab, page) ->
+            val scroll = rememberScrollState()
+            // 🏠 위젯으로 열면 맨 위(최신 요약)부터 — 이미 요약 탭을 내려 보던 중이어도
+            LaunchedEffect(vm.scrollTopSignal) { if (vm.scrollTopSignal > 0) scroll.scrollTo(0) }
             Column(
-                Modifier.fillMaxSize().padding(horizontal = 16.dp).verticalScroll(rememberScrollState()),
+                Modifier.fillMaxSize().padding(horizontal = 16.dp).verticalScroll(scroll),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Spacer(Modifier.height(4.dp))
@@ -1362,7 +1366,7 @@ private fun ParentCard(vm: JarvisViewModel) {
 
 // ───────────────────────── 📌 할 일·마감 (브리핑 탭) ─────────────────────────
 
-/** 알림에서 뽑은 할 일·마감: 오늘 / D-1 / 지남 표시, 체크로 끝내기, 직접 추가. */
+/** 직접 넣은 할 일(2026-11-23 부터 알림에서 저절로 뽑지 않음): 오늘 / D-1 / 지남 표시, 체크로 끝내기, 직접 추가. */
 @Composable
 private fun TasksCard(vm: JarvisViewModel) {
     val fmt = remember { SimpleDateFormat("M/d(E) HH:mm", Locale.KOREA) }
@@ -1379,7 +1383,7 @@ private fun TasksCard(vm: JarvisViewModel) {
                     style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading().weight(1f))
                 TextButton(onClick = { adding = !adding }) { Text(if (adding) "닫기" else "＋ 추가") }
             }
-            if (open.isEmpty() && !adding) Text("\"내일까지 제출\", \"금요일 회의 14:30\" 같은 연락이 오면 여기에 자동으로 모여요.",
+            if (open.isEmpty() && !adding) Text("챙길 일을 ＋ 추가로 직접 넣어 두세요. (알림에서 저절로 뽑지는 않아요)",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (adding) {
                 OutlinedTextField(value = input, onValueChange = { input = it }, singleLine = true,

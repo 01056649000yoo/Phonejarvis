@@ -534,6 +534,26 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun closeBriefingDetail() { briefingDetail = null }
 
+    /** 맨 위로 올리라는 신호(바뀔 때마다 지금 화면을 맨 위로) */
+    var scrollTopSignal by mutableStateOf(0)
+        private set
+    /**
+     * 🏠 위젯 본문을 눌렀을 때(2026-11-23 선생님: 마지막에 보던 화면이 열림 → 바로 요약 내용이 보이게):
+     * 📋 요약 탭 첫 화면으로, 떠 있던 창은 닫고, 최신 요약은 숨김·접힘을 풀어 맨 위에 펼쳐 보임
+     */
+    fun showLatestSummary() {
+        tab = Tab.BRIEFING; page = null
+        briefingDetail = null; roomApp = null; addableApps = null; studentView = null
+        scrollTopSignal++
+        viewModelScope.launch {
+            val b = withContext(Dispatchers.IO) { db.lastBriefing() } ?: return@launch
+            val k = b.time.toString()
+            if (k in hiddenBriefings) { hiddenBriefings = hiddenBriefings - k; saveSet("hidden_briefings", hiddenBriefings) }
+            if (k in collapsedBriefings) { collapsedBriefings = collapsedBriefings - k; saveSet("collapsed_briefings", collapsedBriefings) }
+            refresh()
+        }
+    }
+
     // ── ✉️ 문자 답장 초안 ──
     var replyDrafts by mutableStateOf<List<ReplyDraft>>(emptyList())
         private set
@@ -1173,11 +1193,14 @@ class MainActivity : ComponentActivity() {
         AppScope.main.launch { SummaryWidget.refresh(this@MainActivity) }   // 🏠 앱에서 바꾼 것이 위젯에도
     }
 
-    /** 🏠 위젯 [⚙️] 로 열었으면 설정 탭 */
+    /** 🏠 위젯 [⚙️] 로 열었으면 설정 탭, 본문을 눌렀으면 📋 요약 탭의 최신 요약 */
     private fun openFromWidget(intent: Intent?) {
-        if (intent?.getStringExtra(SummaryWidget.EXTRA_OPEN_TAB) == "settings") {
-            vm.selectTab(JarvisViewModel.Tab.SETTINGS); intent.removeExtra(SummaryWidget.EXTRA_OPEN_TAB)
+        when (intent?.getStringExtra(SummaryWidget.EXTRA_OPEN_TAB)) {
+            "settings" -> vm.selectTab(JarvisViewModel.Tab.SETTINGS)
+            "summary" -> vm.showLatestSummary()
+            else -> return
         }
+        intent.removeExtra(SummaryWidget.EXTRA_OPEN_TAB)
     }
 
     /** 🔔 정리 완료 알림을 눌러 열었으면 그 브리핑의 세부 내역 보여 주기 */
