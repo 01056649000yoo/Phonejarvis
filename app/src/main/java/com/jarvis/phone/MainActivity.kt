@@ -71,6 +71,10 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     fun setRestSkip(on: Boolean) = editSchedule { putBoolean("rest_skip", on) }
     fun setDaily(on: Boolean) = editSchedule { putBoolean("daily_on", on) }
     fun setDailyTime(m: Int) = editSchedule { putInt("daily_min", m) }
+    /** 🎯 중요한 대화만 요약 (기본 켬) */
+    var focusTalk by mutableStateOf(Briefings.focusOn(getApplication<Application>()))
+        private set
+    fun setFocusTalk(on: Boolean) { Briefings.setFocus(getApplication<Application>(), on); focusTalk = on }
     fun setDndAuto(on: Boolean) { Dnd.setAuto(getApplication<Application>(), on); quietRev++ }
     fun setHideWhen(h: QuietMode.Hide) {
         quiet { putString("hide_when", h.name) }

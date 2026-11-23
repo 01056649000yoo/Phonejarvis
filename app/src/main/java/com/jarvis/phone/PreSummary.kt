@@ -144,7 +144,8 @@ object PreSummary {
         var rooms = 0
         Summarizer.get(ctx).summarize(rest, onStatus, cache = cache, since = from,
             onCached = { save(ctx, it); rooms++ },
-            extraStop = { keepGoingBlock(PhoneLoad.state(ctx), screenOn(ctx)) }, groups = split.groups)
+            extraStop = { keepGoingBlock(PhoneLoad.state(ctx), screenOn(ctx)) }, groups = split.groups,
+            replyAllowed = Briefings.roster(ctx), focus = Briefings.focusOn(ctx))
         val after = BriefingComposer.pendingForModel(rest, load(ctx, from), from, split.groups)
         return "메시지 ${before - after}개 정리 · ${(System.currentTimeMillis() - start) / 1000}초" + if (after > 0) " · 남음 $after" else ""
     }

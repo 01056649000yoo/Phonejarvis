@@ -37,10 +37,11 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** 이번 버전에서 바뀐 점 한 줄 (버전 올릴 때 같이 고치기). */
-private const val WHATS_NEW = "캘린더는 일정 그대로 · 요약 문장 다듬기 · 빠지던 메시지를 모아요"
+private const val WHATS_NEW = "중요한 대화만 요약해요 · 캘린더는 일정 그대로 · 요약 문장 다듬기"
 
 /** 업데이트 내역 큰 창 (버전 올릴 때 같이 고치기) */
 private val WHATS_NEW_DETAIL = listOf(
+    "🎯 중요한 대화만 요약해요" to "쌤톡스는 '폰을 안 봐도 놓치는 연락이 없게' 하는 선생님의 연락 비서예요. 그래서 명부·키워드·사람 묶음·업무 앱, '선생님'을 부르거나 나에게 묻고 부탁한 대화만 AI가 요약하고, 사적인 잡담 방은 '그 밖의 방'에 이름과 건수만 적어요. 설정 → 모아서 알림의 '🎯 중요한 대화만 요약'을 끄면 예전처럼 모든 방을 요약해요.",
     "📅 캘린더는 일정 그대로" to "캘린더 알림은 AI가 대화처럼 요약하지 않고 '모두모임 (내일 오전 9:00), …'처럼 일정 이름과 시각을 그대로 보여 줘요.",
     "✏️ 요약 문장 다듬기" to "줄 앞에 이름이 있으니 내용에서 그 이름을 다시 말하지 않아요. '언급함' 대신 '말함'으로, '??'처럼 글자 없는 물음은 요청으로 붙이지 않아요. '감사합니다 선배님'처럼 인사만 있는 방은 맨 아래 '그 밖의 방'에 이름만 적어요.",
     "📥 빠지던 메시지를 모아요" to "카톡·문자가 한꺼번에 여러 개 오면 마지막 것만 남던 것을 고쳐 모두 모아요. 같은 사람이 같은 말을 다시 보내도 모아요. '확인 부탁드려요 15000원'처럼 금액·전화번호가 든 메시지를 인증번호로 잘못 보고 버리던 것도 고쳤어요.",
@@ -1785,6 +1786,17 @@ private fun SchedulePage(vm: JarvisViewModel) {
             Text("'알람 및 리마인더'를 허용해 주세요. 허용하지 않으면 요약·하루 정리가 몇 분 늦게 올 수 있어요.",
                 style = MaterialTheme.typography.bodySmall)
             Button(onClick = { ctx.startActivity(exactAlarmSettings(ctx)) }) { Text("허용하러 가기") }
+        }
+    }
+    // 🎯 중요한 대화만 요약 (IDENTITY.md 원칙 2 — 업무는 요약, 사적 잡담은 이름만)
+    Card(Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("🎯 중요한 대화만 요약", style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading())
+                Text(if (vm.focusTalk) "명부·키워드·사람 묶음·업무 앱, '선생님'을 부르거나 나에게 묻는 대화만 AI가 요약해요. 그 밖의 방은 이름과 건수만 적어요."
+                    else "모든 대화방을 AI가 요약해요.", style = MaterialTheme.typography.bodySmall)
+            }
+            Switch(checked = vm.focusTalk, onCheckedChange = { vm.setFocusTalk(it) })
         }
     }
     // 🗓 하루 정리 (모아서 알림을 꺼도 따로)

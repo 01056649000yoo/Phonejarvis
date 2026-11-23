@@ -305,20 +305,21 @@ object Briefings {
         // 🌡️ 폰이 뜨겁거나 배터리가 바닥이면 모델을 올리지 않고 AI 없이(대화방마다 최근 말 그대로)
         val load = PhoneLoad.state(ctx)
         val skipAi = PhoneLoad.skipAiReason(load)
+        val focus = focusOn(ctx)   // 🎯 중요한 대화만 요약(IDENTITY.md 원칙 2)
         val ai = when {
             rest.isEmpty() && split.groups.isEmpty() -> null
-            skipAi != null -> BriefingComposer.compose(rest, ask = { "" }, replyAllowed = { c -> c.items.any { rules.mentionsRoster(it) } }, cache = cache, since = from, groups = split.groups)
+            skipAi != null -> BriefingComposer.compose(rest, ask = { "" }, replyAllowed = { c -> c.items.any { rules.mentionsRoster(it) } }, cache = cache, since = from, groups = split.groups, focus = focus)
             else -> {
                 // 2026-11-23 선생님: 알림이 100건 넘으면 요약이 중간에 끊김 — 정리한 방은 기억해 두고(캐시), 6분 안에 못 끝내면
                 // 지금까지 정리한 것을 먼저 알리고 남은 방을 이어서 마무리(중요한 방부터 정리하므로 먼저 간 알림에도 꼭 볼 것은 들어 있음)
                 val mem = cache.toMutableMap()
                 val allowed = { c: BriefingComposer.Conversation -> c.items.any { rules.mentionsRoster(it) } }
-                val first = summarizer.summarize(rest, onStatus, allowed, mem, from, onCached = { mem[it.key] = it }, groups = split.groups, maxMillis = FIRST_PASS_MS)
+                val first = summarizer.summarize(rest, onStatus, allowed, mem, from, onCached = { mem[it.key] = it }, groups = split.groups, maxMillis = FIRST_PASS_MS, focus = focus)
                 if (first.cutRooms > 0 && summarizer.cutByTime) {
                     val partial = (order(first.groups, keywordPart, first.work, first.people, first.apps) +
                         "\n\n(⏳ 남은 대화방 ${first.cutRooms}곳은 이어서 정리하고 있어요. 다 되면 이 알림이 바뀌어요)")
                     runCatching { onPartial("$label · 알림 ${items.size}건 (정리 중)", partial, cutoff) }
-                    summarizer.summarize(rest, onStatus, allowed, mem, from, onCached = { mem[it.key] = it }, groups = split.groups, maxMillis = SECOND_PASS_MS)
+                    summarizer.summarize(rest, onStatus, allowed, mem, from, onCached = { mem[it.key] = it }, groups = split.groups, maxMillis = SECOND_PASS_MS, focus = focus)
                 } else first
             }
         }
@@ -369,6 +370,16 @@ object Briefings {
         val groups = hits.groupBy { it.first.id }.map { (_, l) -> BriefingComposer.Group(l.first().first.title, l.map { it.second to it.third }) } +
             listOfNotNull(workItems.takeIf { it.isNotEmpty() }?.let { w -> BriefingComposer.Group(BriefingComposer.WORK_TITLE, w.map { it.app to it }) })
         return Split(quiet, loud, workItems, groups, loud - workItems.toSet() - hits.map { it.third }.toSet())
+    }
+
+    // ── 🎯 중요한 대화만 요약(2026-11-24, IDENTITY.md 원칙 2 — 기본 켬). 끄면 예전처럼 모든 방을 AI 로 ──
+    private fun prefs(ctx: Context) = ctx.getSharedPreferences("briefing", Context.MODE_PRIVATE)
+    fun focusOn(ctx: Context) = prefs(ctx).getBoolean("focus_talk", true)
+    fun setFocus(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("focus_talk", on).apply()
+    /** 명부·학부모 방·키워드·학생 이름이 나오는 대화인가 */
+    fun roster(ctx: Context): (BriefingComposer.Conversation) -> Boolean {
+        val rules = AppFilter.rules(ctx)
+        return { c -> c.items.any { rules.mentionsRoster(it) } }
     }
 
     /** 메일 앱 알림인가(제목이 보낸 사람) — 캘린더 같은 다른 업무 앱은 제목이 일정 이름이라 업체 이름 거르기를 하지 않음 */

@@ -547,6 +547,8 @@ object BriefingComposer {
         onCached: (Cached) -> Unit = {},
         /** 👥 내 묶음별 사람 연락 — 사람마다 한 줄로 요약해 Result.groups 에 */
         groups: List<Group> = emptyList(),
+        /** 🎯 중요한 대화만 요약(설정 '중요한 대화만', 기본 켬) — 중요한지는 [important]([replyAllowed] 를 명부로) */
+        focus: Boolean = false,
     ): Result {
         val (people, apps) = items.partition(::isPerson)
         val groupList = groups.map { it.title to groupConvs(it) }.filter { it.second.isNotEmpty() }
@@ -575,6 +577,8 @@ object BriefingComposer {
             if (conv.app == WORK_TITLE && isCalendar(conv)) { rooms += calendar(conv); continue }
             // 🙏 인사·맞장구뿐인 방은 요약 줄 없이 '그 밖의 방'에 이름만(2026-11-24: '감사합니다 선배님 !!')
             if (conv.items.all { isFiller(it.text) }) { rooms += RoomSummary(conv, "", "", false, byModel = false); continue }
+            // 🎯 중요한 대화만 요약 — 사적 잡담 방은 '그 밖의 방'에 이름·건수만(AI 도 안 부름)
+            if (focus && keyOf(conv) !in groupKeys && !important(conv, replyAllowed)) { rooms += RoomSummary(conv, "", "", false, byModel = false); continue }
             if (fresh.isEmpty() && prev != null) { rooms += prev; continue }        // 미리 요약해 둔 그대로
             if (prev == null) direct(conv)?.let { rooms += it; continue }
             var covered = c?.count ?: 0
@@ -638,6 +642,22 @@ object BriefingComposer {
         }
         return Result(render(rooms, leftover, notes), appSection(apps.filterNot { AD.containsMatchIn(it.title) || AD.containsMatchIn(it.text) }),
             rooms.filter { it.needReply }, groupText, cutRooms = leftover.size + groupLeft, work = workText)
+    }
+
+    /** 선생님을 부르는 말 */
+    private val CALLS_TEACHER = Regex("(선생님|쌤|선생 님)")
+
+    /**
+     * 🎯 중요한 대화인가(IDENTITY.md 원칙 2 — 2026-11-24 선생님: 업무는 요약, 사적 잡담은 이름만).
+     * 명부·학부모 방·키워드·학생 이름이 나오는 대화([roster]) · '선생님/쌤'을 부르는 대화 · 나에게 묻거나 부탁한 대화
+     * (1:1 은 물음·부탁이 있으면, 단톡방은 오늘·내일·몇 시·까지 같은 기한이 든 물음·부탁이 있으면). 👥 묶음·💼 업무는 따로 늘 요약.
+     */
+    fun important(conv: Conversation, roster: (Conversation) -> Boolean): Boolean {
+        if (roster(conv)) return true
+        if (conv.items.any { CALLS_TEACHER.containsMatchIn(it.text) }) return true
+        val oneToOne = conv.items.all { it.room.isEmpty() }
+        return conv.items.any { val t = it.text
+            hasWords(t) && !isFiller(t) && QUESTION.containsMatchIn(t) && (oneToOne || URGENT.containsMatchIn(t)) }
     }
 
     private val CALENDAR = Regex("(?i)(calendar|캘린더|일정)")
