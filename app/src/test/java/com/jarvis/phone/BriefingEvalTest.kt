@@ -18,6 +18,8 @@ import java.net.URI
  */
 class BriefingEvalTest {
     private val model = System.getenv("OLLAMA_MODEL").orEmpty()
+    /** 실제로 읽은(앞부분 재사용으로 건너뛰지 않은) 질문 토큰 수·시간 합 */
+    private var evalTokens = 0; private var evalNanos = 0L
 
     private fun ollama(prompt: String): String {
         val body = """{"model":${q(model)},"prompt":${q(prompt)},"stream":false,"keep_alive":"1m","think":false,"options":{"temperature":0.2,"num_ctx":4096,"num_predict":${BriefingComposer.MAX_ANSWER_TOKENS}}}"""
@@ -26,6 +28,8 @@ class BriefingEvalTest {
         c.connectTimeout = 10_000; c.readTimeout = 300_000
         c.outputStream.use { it.write(body.toByteArray()) }
         val text = c.inputStream.bufferedReader().readText()
+        Regex("\"prompt_eval_count\":(\\d+)").find(text)?.groupValues?.get(1)?.toInt()?.let { evalTokens += it }
+        Regex("\"prompt_eval_duration\":(\\d+)").find(text)?.groupValues?.get(1)?.toLong()?.let { evalNanos += it }
         return Regex("\"response\":\"((?:\\\\.|[^\"\\\\])*)\"").find(text)?.groupValues?.get(1)
             ?.replace("\\n", "\n")?.replace("\\\"", "\"")?.replace("\\\\", "\\")
             ?.replace(Regex("\\\\u([0-9a-fA-F]{4})")) { it.groupValues[1].toInt(16).toChar().toString() }.orEmpty()
@@ -72,8 +76,17 @@ class BriefingEvalTest {
 
     private val NUM = Regex("\\d+")
 
+    /** EVAL_MODE=fact 면 '사실 먼저'+절충안 설정으로(2026-11-23 비교) */
+    private fun applyMode() {
+        val fact = System.getenv("EVAL_MODE") == "fact"
+        BriefingComposer.factFirst = fact; BriefingComposer.chunkByChars = fact; BriefingComposer.keepTail = fact
+        BriefingComposer.roomChars = if (fact) 2400 else BriefingComposer.ROOM_CHARS; BriefingComposer.lineChars = if (fact) 600 else BriefingComposer.LINE_CHARS
+        BriefingComposer.rulesFirst = System.getenv("EVAL_RULES_FIRST") == "1"
+    }
+
     @Test fun 채점() = runBlocking {
         assumeTrue("OLLAMA_MODEL 이 없어 채점을 건너뜀", model.isNotEmpty())
+        applyMode()
         ollama("안녕")   // 모델 불러오기는 시간에서 뺌
         val out = StringBuilder()
         var hit = 0; var total = 0; var made = 0; var over = 0; var calls = 0; var ms = 0L
@@ -92,7 +105,7 @@ class BriefingEvalTest {
             hit += got.size; total += c.must.size; made += invented.size; if (asks > 2) over++; calls += n; ms += took
             out.append("\n### ${c.name} — ${got.size}/${c.must.size}${if (invented.isNotEmpty()) " · 지어낸 숫자 $invented" else ""} · AI ${n}번 ${took / 1000.0}초\n```\n$text\n```\n")
         }
-        val head = "# 요약 채점 (${System.getenv("EVAL_TAG") ?: "지금"}, $model)\n\n" +
+        val head = "# 요약 채점 (${System.getenv("EVAL_TAG") ?: "지금"}, $model)\n\n" + "읽은 질문 토큰 ${evalTokens}개 · 질문 읽기 ${evalNanos / 1_000_000}ms\n\n" +
             "**꼭 들어갈 말 $hit/$total · 지어낸 숫자 ${made}개 · 요청 2개 넘음 ${over}곳 · AI ${calls}번 · ${ms / 1000.0}초**\n"
         val name = System.getenv("EVAL_TAG")?.let { "build/briefing-eval-$it.md" } ?: "build/briefing-eval.md"
         File(name).writeText(head + out)
@@ -171,6 +184,7 @@ class BriefingEvalTest {
      */
     @Test fun 대량_알림() = runBlocking {
         assumeTrue("OLLAMA_MODEL 이 없어 건너뜀", model.isNotEmpty())
+        applyMode()
         ollama("안녕")
         data class Ask(val who: String, val key: String, val text: String)
         val rooms = mapOf(
@@ -256,24 +270,29 @@ class BriefingEvalTest {
         val avgLong = items.filter { it.text.length > 200 }.map { it.text.length }.average().toInt()
         val out = StringBuilder("# 10분 100개 단톡 — 글자 수 비교 ($model)\n\n긴 공지 ${keys.size}개(평균 ${avgLong}자, 부탁은 공지 끝) + 짧은 잡담 ${100 - keys.size}개\n\n| 나누기 | 한 번 넣는 글자 | 메시지 한 개 | AI 본 부탁 | 요약에 남은 부탁 | AI 횟수 | 시간 | 가장 큰 프롬프트 |\n|---|---|---|---|---|---|---|---|\n")
         val detail = StringBuilder()
-        data class Cfg(val name: String, val byChars: Boolean, val room: Int, val line: Int, val tail: Boolean)
-        val configs = listOf(Cfg("지금(30개씩)", false, 1600, 200, false), Cfg("처음 추천", true, 3200, 600, false), Cfg("절충안", true, 2400, 600, true))
+        data class Cfg(val name: String, val byChars: Boolean, val room: Int, val line: Int, val tail: Boolean, val fact: Boolean = false)
+        val configs = listOf(Cfg("지금(30개씩)", false, 1600, 200, false), Cfg("절충안", true, 2400, 600, true), Cfg("사실 먼저", true, 2400, 600, true, fact = true))
+        val owner = asks.toMap().entries.associate { (w, kk) -> kk to w } + mapOf("사진" to "학년부장", "자료" to "정보부장")
+        val people = owner.values.toSet() + setOf("오선생", "윤선생")
+        val pair = Regex("(" + people.joinToString("|") + ")님?\\s*:\\s*([^,(\\n]+)")
         out.setLength(0)
         out.append("# 10분 100개 단톡 — 지금·처음 추천·절충안 ($model)\n\n긴 공지 8개(평균 ${avgLong}자) + 1,100자 공지 1개 + 영어·숫자 공지 1개(${english.length}자), 부탁은 모두 글 끝 · 나머지는 짧은 잡담\n\n")
-        out.append("| 설정 | 한 번 넣는 글자 / 메시지 한 개 | AI 본 부탁 | 요약에 보인 부탁 | '외 부탁' 표시 | AI 횟수 | 시간 | 가장 큰 질문 |\n|---|---|---|---|---|---|---|---|\n")
+        out.append("| 설정 | AI 본 부탁 | 요약에 보인 부탁 | 이름 맞음 / 이름 붙은 부탁 | '외 부탁' | AI 횟수 | 시간 | 가장 큰 질문 |\n|---|---|---|---|---|---|---|---|\n")
         for (c in configs) {
-            BriefingComposer.chunkByChars = c.byChars; BriefingComposer.roomChars = c.room; BriefingComposer.lineChars = c.line; BriefingComposer.keepTail = c.tail
+            BriefingComposer.chunkByChars = c.byChars; BriefingComposer.roomChars = c.room; BriefingComposer.lineChars = c.line; BriefingComposer.keepTail = c.tail; BriefingComposer.factFirst = c.fact
             val seen = mutableSetOf<String>(); var calls = 0; var maxTok = 0
             val t0 = System.currentTimeMillis()
-            val r = BriefingComposer.compose(items, ask = { p -> calls++; val tr = p.substringAfter("---\n").substringBefore("\n---"); keys.filter { longTailAll[it]!!.take(12) in tr }.forEach { seen += it }; val (a, t) = ollamaT(p); maxTok = maxOf(maxTok, t); a })
+            val r = BriefingComposer.compose(items, ask = { p -> calls++; keys.filter { longTailAll[it]!!.take(12) in p }.forEach { seen += it }; val (a, t) = ollamaT(p); maxTok = maxOf(maxTok, t); a })
             val sec = (System.currentTimeMillis() - t0) / 1000.0
             val text = r.people
             val kept = keys.count { it in text }
             val extra = Regex("외 부탁 (\\d+)건").find(text)?.groupValues?.get(1) ?: "-"
-            out.append("| ${c.name} | ${c.room} / ${c.line}${if (c.tail) " (끝 살림)" else ""} | ${seen.size}/${keys.size} | $kept/${keys.size} | $extra | $calls | ${sec}초 | $maxTok 토큰 |\n")
+            val named = pair.findAll(text).toList()
+            val right = named.count { m -> owner.filter { (kk, _) -> kk in m.groupValues[2] }.values.let { o -> o.isNotEmpty() && m.groupValues[1] in o } }
+            out.append("| ${c.name} | ${seen.size}/${keys.size} | $kept/${keys.size} | $right / ${named.size} | $extra | $calls | ${sec}초 | $maxTok 토큰 |\n")
             detail.append("\n### ${c.name}\n```\n$text\n```\n")
         }
-        BriefingComposer.chunkByChars = false; BriefingComposer.roomChars = BriefingComposer.ROOM_CHARS; BriefingComposer.lineChars = BriefingComposer.LINE_CHARS; BriefingComposer.keepTail = false
+        BriefingComposer.chunkByChars = false; BriefingComposer.roomChars = BriefingComposer.ROOM_CHARS; BriefingComposer.lineChars = BriefingComposer.LINE_CHARS; BriefingComposer.keepTail = false; BriefingComposer.factFirst = false
         File("build/briefing-flood.md").writeText(out.toString() + detail)
         println(out.toString() + detail)
     }

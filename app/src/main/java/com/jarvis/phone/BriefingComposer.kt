@@ -104,6 +104,60 @@ object BriefingComposer {
         return "${fmt.format(n.time)} $who$cut"
     }
 
+    // ── 🧩 사실 먼저 뽑기(2026-11-23 — 여러 사람 대화에서 AI 는 '누가 말했나'를 자주 틀림: 이름은 앱이, AI 는 고르고 줄이기만) ──
+    @Volatile var factFirst = false
+    const val MAX_CANDS = 20
+    data class Cand(val who: String, val text: String)
+
+    /** 부탁 후보: 잡담이 아닌 메시지에서 부탁·물음 문장(메시지마다 마지막 2개까지), 같은 말은 한 번, 최근 것 MAX_CANDS 개 */
+    fun candidates(conv: Conversation): List<Cand> = conv.items.filterNot { isFiller(it.text) }.flatMap { n ->
+        val who = conv.who(n).ifEmpty { n.title.trim() }
+        n.text.replace('\n', ' ').replace(URL, "[링크]").split(Regex("(?<=[?？.!])\\s+")).map { it.trim() }
+            .filter { it.length >= 10 && (REQUEST.containsMatchIn(it) || (it.endsWith("?") && it.length >= 14)) }
+            .takeLast(2).map { Cand(who, if (it.length > 140) "… " + it.takeLast(140) else it) }   // 긴 문장은 끝(부탁)을 살림
+    }.distinctBy { it.text.replace(Regex("[\\d()\\[\\]\\s]"), "").take(30) }.takeLast(MAX_CANDS)
+
+    fun factPrompt(conv: Conversation, cands: List<Cand>, prev: RoomSummary?): String {
+        val saved = roomChars
+        roomChars = minOf(roomChars, 1200)   // 요점용 대화 일부는 짧게 — 부탁은 후보 목록에 다 있음
+        val tr = try { transcript(conv) } finally { roomChars = saved }
+        return "너는 교사인 사용자의 비서야. 단톡방 '${conv.room}'(${conv.app})에 메시지 ${conv.items.size}개가 왔어. 사용자도 이 방에 있어.\n" +
+            (prev?.let { "앞서 이렇게 정리했어 — 요점: ${it.point} / 부탁: ${it.ask.ifEmpty { "없음" }}\n" } ?: "") +
+            "[대화 일부]\n---\n$tr\n---\n" +
+            "[부탁 후보] 앱이 메시지에서 뽑은 것. 번호. 보낸 사람: 문장\n" +
+            cands.mapIndexed { i, c -> "${i + 1}. ${c.who}: ${c.text}" }.joinToString("\n") + "\n" +
+            "정확히 아래 두 줄로 답해. 다른 말, 꾸밈, 별표는 쓰지 마.\n" +
+            "요점: 대화 전체의 핵심을 40자 안쪽 한 문장으로. 날짜·시간·숫자는 메시지 그대로.\n" +
+            "부탁: 후보 중 사용자(선생님)가 실제로 해야 할 일만 오늘·내일처럼 급한 것부터 3개까지 '번호=줄인 말' 꼴로 쉼표로. 줄인 말은 '…해 달라고 함'처럼 25자 안쪽, 날짜·시간은 그대로. 없으면 없음.\n" +
+            "예시: 부탁: 2=명단 금요일까지 올려 달라고 함, 5=버스 인원 수요일까지 알려 달라고 함"
+    }
+
+    private val DEADLINE = Regex("(까지|오늘|내일|모레|[월화수목금토일]요일|\\d+일)")
+    private val PICK = Regex("""(\d{1,2})\s*[=:.)]\s*([^,，\n]+)""")
+    /** 답 → 요점과 '보낸 사람: 줄인 말'(이름은 후보에서). 번호를 못 읽으면 후보를 급한 순서로 3개(AI 없이 줄임) */
+    fun parseFacts(conv: Conversation, reply: String, cands: List<Cand>, prev: RoomSummary?): RoomSummary {
+        val base = parse(conv, reply.replace(Regex("(?m)^\\s*부탁\\s*:"), "요청:"), prev)   // 요점·숫자 검사·말투는 그대로
+        val line = reply.lines().firstOrNull { it.trim().startsWith("부탁") }?.substringAfter(':').orEmpty()
+        val src = conv.items.joinToString(" ") { it.text }
+        val picked = PICK.findAll(line).mapNotNull { m ->
+            val c = cands.getOrNull(m.groupValues[1].toInt() - 1) ?: return@mapNotNull null
+            val short = condense(m.groupValues[2].trim().trimEnd('.').ifEmpty { c.text }).replace(Regex("\\s*\\(\\d+차 안내\\)"), "")   // 원문을 그대로 옮겼으면 짧은 말로
+            "${c.who}: ${if (grounded(short, src)) short else condense(c.text)}"
+        }.distinct().toList()
+        // AI 가 3개보다 적게 골랐으면 남은 자리는 앱이 채움: 기한(까지·오늘·내일·요일)이 있고 긴 메시지(공지)에서 나온 부탁부터
+        // 채우기는 기한이 있는 부탁만(잡담 속 '알려 주세요'는 안 채움), AI 가 고른 것과 겹치면(양쪽 방향 비교) 빼기, 같은 말은 한 번
+        fun same(a: String, b: String) = maxOf(overlap(a.replace(ENDING, ""), b), overlap(b.replace(ENDING, ""), a)) >= 0.4
+        val fill = cands
+            .filter { REQUEST.containsMatchIn(it.text) && DEADLINE.containsMatchIn(it.text) && it.text.length >= 20 }
+            .map { "${it.who}: ${condense(it.text.removePrefix("… "))}" }
+            .filter { f -> picked.none { p -> p.substringBefore(':') == f.substringBefore(':') && same(f.substringAfter(':'), p.substringAfter(':')) } }
+            .fold(listOf<String>()) { acc, f -> if (acc.any { same(it.substringAfter(':'), f.substringAfter(':')) }) acc else acc + f }
+        val asks = (picked + fill).take(MAX_GROUP_ASKS)
+            .let { rankAsks(it + (prev?.ask?.let(::splitAsks).orEmpty()), limit = MAX_GROUP_ASKS) }
+        val ask = soften(asks.joinToString(", "))
+        return base.copy(ask = ask, needReply = ask.isNotEmpty())
+    }
+
     // 부탁처럼 보이는 문장(넘치는 부탁 세기용 — 물음표 잡담은 빼고 '해 주세요·부탁·제출' 같은 말만)
     private val REQUEST = Regex("(주세요|주시면|주실|부탁|알려 ?주|확인해|내 ?주|올려 ?주|보내 ?주|제출|참석해|도와주)")
 
@@ -164,7 +218,16 @@ object BriefingComposer {
 요점: 수요일 학부모 상담 시간이 2시에서 4시로 바뀜
 요청: 바뀐 상담 시간을 확인해 달라고 함"""
 
-    fun prompt(conv: Conversation): String =
+    /**
+     * 질문 앞부분을 모든 방이 같게(rulesFirst — 2026-11-23): 고정 규칙을 맨 앞에 두면 AI 가 그 부분을 한 번만 읽고 다음 방부터는
+     * 다시 읽지 않음(폰: LiteRT-LM Conversation.clone(), 맥미니 Ollama 는 저절로). 방마다 다른 내용은 그 뒤에.
+     */
+    @Volatile var rulesFirst = false
+    private const val HEAD = "너는 교사인 사용자의 비서야. 메시지 대화를 읽고 정확히 두 줄로 답해. 다른 말, 꾸밈, 별표는 쓰지 마. 사용자도 그 대화에 들어 있는 사람이야."
+
+    fun prompt(conv: Conversation): String = if (rulesFirst)
+        HEAD + "\n" + RULES.trim() + "\n\n" + "이제 '${conv.room}'(${conv.app})에 온 메시지 ${conv.items.size}개야.\n---\n${transcript(conv)}\n---\n위 메시지만 보고 두 줄로 답해."
+    else
         "너는 교사인 사용자의 비서야. 아래는 '${conv.room}'(${conv.app})에 온 메시지 ${conv.items.size}개야. 사용자도 이 대화에 들어 있는 사람이야.\n" +
         "---\n${transcript(conv)}\n---\n" +
         "위 메시지만 보고 정확히 두 줄로 답해. 다른 말, 꾸밈, 별표는 쓰지 마.\n" + RULES.trim()
@@ -173,7 +236,10 @@ object BriefingComposer {
      * 이어서 요약(2026-11-23 미리 요약·30개 넘는 방): 앞서 정리한 요점·요청 + 그 뒤에 온 메시지만 넣어 고쳐 쓴다.
      * 예전엔 30개씩 따로 요약해 이어 붙여 나열처럼 보였다.
      */
-    fun updatePrompt(conv: Conversation, prev: RoomSummary, before: Int): String =
+    fun updatePrompt(conv: Conversation, prev: RoomSummary, before: Int): String = if (rulesFirst)
+        HEAD + "\n" + RULES.trim() + "\n\n" + "이제 '${conv.room}'(${conv.app})에 온 메시지 ${before}개를 앞서 이렇게 정리했어.\n요점: ${prev.point}\n요청: ${prev.ask.ifEmpty { "없음" }}\n" +
+            "그 뒤에 새 메시지 ${conv.items.size}개가 왔어.\n---\n${transcript(conv)}\n---\n앞의 정리와 새 메시지를 합쳐 대화 전체를 두 줄로 다시 정리해. 나중에 바뀐 내용이 우선이야."
+    else
         "너는 교사인 사용자의 비서야. '${conv.room}'(${conv.app})에 온 메시지 ${before}개를 앞서 이렇게 정리했어.\n" +
         "요점: ${prev.point}\n요청: ${prev.ask.ifEmpty { "없음" }}\n" +
         "그 뒤에 새 메시지 ${conv.items.size}개가 왔어. 사용자도 이 대화에 들어 있는 사람이야.\n" +
@@ -216,7 +282,7 @@ object BriefingComposer {
     }
 
     // ── AI 없이 물음·부탁을 짧은 말로(2026-11-23 선생님: 1건이면 원문 그대로 나옴) ──
-    private val GREETING = Regex("^((선생님|쌤)[,!.~\\s]*)?((안녕하세요|안녕하십니까)[.!~,\\s]*)?")
+    private val GREETING = Regex("^((선생님|쌤)(?=[,!.~\\s]|$)[,!.~\\s]*)?((안녕하세요|안녕하십니까)[.!~,\\s]*)?")   // '선생님께서도'의 '선생님'은 안 뗌
     private val TAIL = Regex("[\\s?？!.~^ㅠㅜㅎㅋ]+$")
     private val CONDENSE = listOf(
         Regex("(\\S+?)\\s?주실 수 (있나요|있을까요|있으세요|있으신가요|있어요)$") to "$1 달라고 함",
@@ -459,6 +525,23 @@ object BriefingComposer {
             if (fresh.isEmpty() && prev != null) { rooms += prev; continue }        // 미리 요약해 둔 그대로
             if (prev == null) direct(conv)?.let { rooms += it; continue }
             var covered = c?.count ?: 0
+            // 🧩 사실 먼저(factFirst): 단톡방은 앱이 부탁 후보를 (보낸 사람, 문장)으로 뽑고 AI 는 번호만 골라 줄임 — 이름은 앱이 붙임
+            if (factFirst && conv.items.any { it.room.isNotEmpty() } && fresh.any { !isFiller(it.text) }) {
+                if (cut == null) cut = stopReason()
+                if (cut == null) {
+                    asked++
+                    onStatus("요약 중… $asked/$total")
+                    val part = Conversation(conv.app, conv.room, fresh)
+                    val cands = candidates(part)
+                    val got = parseFacts(part, ask(factPrompt(part, cands, prev)), cands, prev)
+                    prev = got
+                    onCached(Cached(keyOf(conv), since, fresh.last().time, (c?.count ?: 0) + fresh.size, got.point, got.ask, got.needReply))
+                }
+                val done = prev
+                if (done == null) { leftover += conv; continue }
+                rooms += done.copy(conv = conv)
+                continue
+            }
             for (chunk in chunksOf(conv, fresh)) {
                 if (cut == null) cut = stopReason()
                 if (cut != null) break
