@@ -412,6 +412,20 @@ object AdFilter {
      * 보낸 사람이 번호인데 휴대폰 번호(01…)가 아님 — 15xx·16xx·080·02 같은 대표번호, 짧은 번호(업체·기관 문자).
      * 저장한 연락처 이름으로 온 문자는 해당 없음(2026-11-23 선생님: 광고 문자가 답장할 연락에 들어감).
      */
+    /**
+     * 보낸 사람 이름이 은행·카드·핀테크·큰 회사(2026-11-23 하루 정리: 토스·IBK기업은행·뱅크샐러드·Google Gemini 가
+     * 이름으로 와서 대표번호 거르기를 지나 '오늘 있었던 일'을 차지함). 사람 이름과 겹치지 않게 끝말·정확한 상호만 본다.
+     */
+    private val BUSINESS_SUFFIX = Regex("(은행|뱅크|카드|증권|보험|캐피탈|생명|화재|페이|저축|금고|신협|농협|우체국|택배|공사)$")
+    private val BUSINESS_NAME = Regex("^(토스|toss|뱅크샐러드|카카오뱅크|케이뱅크|쿠팡|배달의민족|요기요|당근마켓|네이버|카카오페이|삼성카드|현대카드|" +
+        "Google|Gemini|YouTube|Apple|Samsung|Microsoft|Netflix|LG U\\+|KT|SKT|SK텔레콤)(\\b|\\s|$)", RegexOption.IGNORE_CASE)
+
+    fun isBusinessName(sender: String): Boolean {
+        val s = sender.trim().removePrefix("(광고)").removePrefix("[광고]").trim()
+        if (s.isEmpty()) return false
+        return BUSINESS_NAME.containsMatchIn(s) || BUSINESS_SUFFIX.containsMatchIn(s)
+    }
+
     fun isBusinessNumber(sender: String): Boolean {
         val s = sender.trim()
         if (s.isEmpty() || !s.all { it.isDigit() || it in "+-() #" }) return false

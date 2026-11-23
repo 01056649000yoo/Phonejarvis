@@ -694,6 +694,7 @@ private fun BriefingDetailDialog(vm: JarvisViewModel, b: Briefing, items: List<N
  * 브리핑 카드: 제목 줄(언제·몇 건)만 보이게 접을 수 있고, 숨기면 맨 위에서 빠짐.
  * 한 번 접으면 다시 열어도 접힌 채로 (보고 나면 접어 두기).
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun BriefingCard(vm: JarvisViewModel, b: Briefing, primary: Boolean, onHide: () -> Unit) {
     val fmt = remember { SimpleDateFormat("M/d(E) HH:mm", Locale.KOREA) }
@@ -705,7 +706,8 @@ private fun BriefingCard(vm: JarvisViewModel, b: Briefing, primary: Boolean, onH
             Row(Modifier.fillMaxWidth().clickable { vm.toggleBriefing(b) }.semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(b.label, style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
-                    Text("${fmt.format(b.time)} · 알림 ${b.count}건", style = MaterialTheme.typography.labelMedium,
+                    // 🗓 하루 정리는 건수를 저장하지 않음(지난 요약 합계에 두 번 세지 않게) — '알림 0건'이 뜨던 것(2026-11-23)
+                    Text(fmt.format(b.time) + if (DailyDigest.isDaily(b)) "" else " · 알림 ${b.count}건", style = MaterialTheme.typography.labelMedium,
                         color = LocalContentColor.current.copy(alpha = 0.7f))
                 }
                 Text(if (collapsed) "펼치기 ▾" else "접기 ▴", style = MaterialTheme.typography.labelLarge,
@@ -719,14 +721,17 @@ private fun BriefingCard(vm: JarvisViewModel, b: Briefing, primary: Boolean, onH
                     // 🧾 줄의 꼴을 보고 칸 제목·사람·시각·내용을 나눠 그림(SummaryText)
                     SummaryText(b.text, accent = if (primary) Ssam.Sprout else MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.height(Space.s))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    // 좁은 화면·큰 글자에서 '숨기기'가 한 글자씩 세로로 깨지던 것(2026-11-23): 모자라면 다음 줄로, 단추 글은 한 줄로
+                    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         TextButton(onClick = { vm.openBriefingDetail(b) }) {
-                            Text("📄 세부 내역", color = MaterialTheme.colorScheme.onPrimaryContainer)
+                            Text("📄 세부 내역", color = MaterialTheme.colorScheme.onPrimaryContainer, maxLines = 1, softWrap = false)
                         }
                         TextButton(onClick = { vm.toggleBriefing(b) }) {
-                            Text("다 봤어요 · 접기", color = MaterialTheme.colorScheme.onPrimaryContainer)
+                            Text("다 봤어요 · 접기", color = MaterialTheme.colorScheme.onPrimaryContainer, maxLines = 1, softWrap = false)
                         }
-                        TextButton(onClick = onHide) { Text("숨기기", color = MaterialTheme.colorScheme.onPrimaryContainer) }
+                        TextButton(onClick = onHide) {
+                            Text("숨기기", color = MaterialTheme.colorScheme.onPrimaryContainer, maxLines = 1, softWrap = false)
+                        }
                     }
                 }
             }

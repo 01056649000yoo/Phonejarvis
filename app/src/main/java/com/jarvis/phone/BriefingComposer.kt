@@ -67,6 +67,8 @@ object BriefingComposer {
         if (isBot(n)) return true
         // 2026-11-23 광고·업체 문자가 🙋 답장할 연락에 들어감: 1:1 로 온 광고, 대표번호(15xx·080·02…)에서 온 문자는 사람이 아님
         if (n.room.isEmpty() && (AdFilter.isAd(n.title, n.text) || (Sms.isSms(n.pkg) && AdFilter.isBusinessNumber(sender)))) return true
+        // 이름으로 오는 업체(토스·OO은행·뱅크샐러드·Google …) 1:1 메시지도 사람이 아님 — 앱 알림 건수로
+        if (n.room.isEmpty() && AdFilter.isBusinessName(sender)) return true
         // 1:1 로 온 기업 알림톡(배송·결제·예약)은 앱 알림으로. 단톡방은 사람 말 속 낱말일 수 있어 보지 않는다
         return n.room.isEmpty() && (BUSINESS_STRONG.containsMatchIn(n.text) || BUSINESS_WEAK.count { it in n.text } >= 2)
     }
