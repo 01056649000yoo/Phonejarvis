@@ -26,4 +26,16 @@ class CollectorRulesTest {
             "내일 1교시 확인 부탁드려요",
         ).forEach { assertFalse(it, secret(it)) }
     }
+
+    @Test fun 한꺼번에_온_메시지는_모두_순서대로_늦게_받으면_받은_시각으로() {
+        val post = 10_000_000L
+        // 방금 보낸 두 개(그대로) — 보낸 시각이 중복 키
+        val now = NotificationCollectorService.arrivals(listOf(Triple("김민수", "내일 회의", post - 30_000), Triple("김민수", "3시예요", post - 1_000)), post)
+        org.junit.Assert.assertEquals(listOf(post - 30_000, post - 1_000), now.map { it.time })
+        org.junit.Assert.assertEquals(listOf(post - 30_000, post - 1_000), now.map { it.key })
+        // 폰이 잠들어 한 시간 늦게 받은 세 개 — 받은 시각으로, 순서 그대로
+        val late = NotificationCollectorService.arrivals(List(3) { Triple("학부모", "말$it", post - 3_600_000 + it) }, post)
+        org.junit.Assert.assertEquals(listOf(post - 2, post - 1, post), late.map { it.time })
+        assertTrue(late.zipWithNext().all { (a, b) -> a.time < b.time })
+    }
 }

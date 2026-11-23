@@ -264,15 +264,19 @@ class NotificationDb private constructor(ctx: Context) :
             else null
         }
 
-    /** 같은 알림이 업데이트되며 여러 번 들어오는 경우(카톡 등)를 막기 위해 dedupe 키 사용. */
-    fun insert(pkg: String, app: String, title: String, text: String, time: Long, room: String = "") {
+    /**
+     * 같은 알림이 업데이트되며 여러 번 들어오는 경우(카톡 등)를 막기 위해 dedupe 키 사용. 새로 넣었으면 true.
+     * [dedupe] 를 주면 그 키로(메시지 목록 알림은 메시지마다 보낸 시각을 넣어 — 같은 말을 나중에 또 보내도 모음, 2026-11-24).
+     */
+    fun insert(pkg: String, app: String, title: String, text: String, time: Long, room: String = "", dedupe: String? = null): Boolean {
         val v = ContentValues().apply {
             put("pkg", pkg); put("app", app); put("title", title)
             put("text", text); put("time", time); put("room", room)
-            put("dedupe", "$pkg|$room|$title|$text")
+            put("dedupe", dedupe ?: "$pkg|$room|$title|$text")
         }
         val id = writableDatabase.insertWithOnConflict("noti", null, v, SQLiteDatabase.CONFLICT_IGNORE)
         if (id > 0) runCatching { indexRow(writableDatabase, id, app, title, room, text) }   // 🔎 검색 색인
+        return id > 0
     }
 
     fun since(fromMillis: Long): List<NotiItem> {

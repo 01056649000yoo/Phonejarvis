@@ -39,28 +39,31 @@ class NotificationCollectorService : NotificationListenerService() {
 
         // 설정에서 뺀 방은 모으지 않음 (단, 중요 키워드가 있으면 모음)
         val rules = AppFilter.rules(this)
-        // 🚫 광고성 문자·카톡은 모으지 않음 (오늘 거른 수만 셈)
-        if (rules.isBlockedAd(sbn.packageName, room, title, text)) { AdFilter.addOne(this); return }
-        if (!rules.allows(sbn.packageName, room, title, text)) return
-        // 🔐 인증번호·승인번호 알림은 모으지 않음(저장·요약·위젯에 남지 않게) — 상태바에는 그대로 둠
-        if (isSecretCode("$title $text")) return
-
-        NotificationDb.get(this).insert(
-            pkg = sbn.packageName,
-            app = app,
-            title = title.take(200),
-            text = text.take(1000),
-            time = sbn.postTime,
-            room = room,
-        )
-        val item = NotiItem(0, sbn.packageName, app, title.take(200), text.take(1000), sbn.postTime, room)
+        // 💬 메시지 목록이 든 알림(카톡·문자 등): 한 번에 여러 메시지가 오면 마지막 것만 남던 것(2026-11-24 점검) → 목록의 메시지를 하나씩
+        val burst = runCatching { messagesOf(n, sbn.postTime) }.getOrNull().orEmpty()
+        val incoming = if (burst.isNotEmpty()) burst.map { Incoming(it.who.ifEmpty { title }, it.text, it.time, it.key) }
+            else listOf(Incoming(title, text, sbn.postTime, null))
+        var kept = 0
+        for (m in incoming) {
+            // 🚫 광고성 문자·카톡은 모으지 않음 (오늘 거른 수만 셈)
+            if (rules.isBlockedAd(sbn.packageName, room, m.title, m.text)) { AdFilter.addOne(this); continue }
+            if (!rules.allows(sbn.packageName, room, m.title, m.text)) continue
+            // 🔐 인증번호·승인번호 알림은 모으지 않음(저장·요약·위젯에 남지 않게) — 상태바에는 그대로 둠
+            if (isSecretCode("${m.title} ${m.text}")) continue
+            val t = m.title.take(200); val body = m.text.take(1000)
+            val added = NotificationDb.get(this).insert(pkg = sbn.packageName, app = app, title = t, text = body, time = m.time, room = room,
+                dedupe = m.key?.let { "${sbn.packageName}|$room|$t|$body|$it" })
+            if (!added) continue                                           // 이미 모은 메시지(알림이 고쳐져 다시 온 것)
+            kept++
+            runCatching {
+                Students.log(this, Students.names(this), NotiItem(0, sbn.packageName, app, t, body, m.time, room))   // 🧒 학생 이름이 나오면 학생별 기록에
+                // 📌 마감·할 일 자동 등록은 하지 않음(2026-11-23 선생님: 변수가 너무 많아 엉뚱한 것이 들어감)
+            }
+        }
+        if (kept == 0 && incoming.none { rules.allows(sbn.packageName, room, it.title, it.text) }) return   // 모으지 않는 알림은 숨기지도 않음
         // ✉️ 문자면 '답장' 단추·번호를 메모리에 들고 있음(답장 초안을 바로 보내려고)
         if (Sms.isSms(sbn.packageName) && room.isEmpty()) runCatching { ReplyHandles.capture(sbn, title.take(200)) }
-        AppScope.io.launch { runCatching { PreSummary.nudge(this@NotificationCollectorService) } }   // ⚡ 쌓였으면 미리 요약 예약   // 🏠 위젯 '요약 N'(10분에 한 번까지)
-        runCatching {
-            Students.log(this, Students.names(this), item)   // 🧒 학생 이름이 나오면 학생별 기록에
-            // 📌 마감·할 일 자동 등록은 하지 않음(2026-11-23 선생님: 변수가 너무 많아 엉뚱한 것이 들어감)
-        }
+        if (kept > 0) AppScope.io.launch { runCatching { PreSummary.nudge(this@NotificationCollectorService) } }   // ⚡ 쌓였으면 미리 요약 예약
 
         // 🏫 수업 중 · 🌙 퇴근 후: 모은 알림을 상태바에서 숨김 (나중에 브리핑으로 한 번에)
         //    단, 전화·알람·재난문자·인증번호는 절대 숨기지 않음
@@ -137,7 +140,35 @@ class NotificationCollectorService : NotificationListenerService() {
         pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
     } catch (_: Exception) { pkg }
 
+    /** 모을 메시지 하나: 보낸 사람(제목), 내용, 저장 시각, 메시지 목록에서 왔으면 그 메시지의 보낸 시각(중복 막는 키) */
+    private data class Incoming(val title: String, val text: String, val time: Long, val key: Long?)
+
+    /** 알림의 메시지 목록(MessagingStyle). 내가 보낸 말은 뺌. 없으면 빈 목록 */
+    private fun messagesOf(n: Notification, postTime: Long): List<Msg> {
+        val style = androidx.core.app.NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(n) ?: return emptyList()
+        val me = style.user.name?.toString().orEmpty()
+        val raw = style.messages.mapNotNull { m ->
+            val text = m.text?.toString()?.trim().orEmpty()
+            val who = m.person?.name?.toString()?.trim().orEmpty()
+            // 보낸 사람이 없거나 나(사용자)인 메시지는 내가 쓴 답장
+            if (text.isEmpty() || m.person == null || (me.isNotEmpty() && who == me)) null else Triple(who, text, m.timestamp)
+        }
+        return arrivals(raw, postTime)
+    }
+
     companion object {
+        /** 메시지 목록에서 꺼낸 메시지 하나 */
+        data class Msg(val who: String, val text: String, val time: Long, val key: Long)
+
+        /**
+         * 저장 시각 정하기(순수 규칙 — 시험): 보낸 시각이 알림 시각과 2분 안이면 그대로, 훨씬 전이면(폰이 잠들었다 깨서 늦게 받음)
+         * 받은 시각으로 — 지난 요약이 덮은 시각보다 앞이라 어느 요약에도 안 들어가는 일을 막음. 순서는 1ms 씩 앞당겨 지킴.
+         */
+        fun arrivals(raw: List<Triple<String, String, Long>>, postTime: Long): List<Msg> = raw.mapIndexed { i, (who, text, ts) ->
+            val late = postTime - ts > 2 * 60_000L
+            Msg(who, text, if (late || ts <= 0) postTime - (raw.size - 1 - i) else ts, ts)
+        }
+
         /** 지금 연결된 알림 수집 서비스(모아 두는 시간이 시작될 때 상태바 정리에 씀) */
         @Volatile var instance: NotificationCollectorService? = null
             private set
