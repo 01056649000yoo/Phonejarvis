@@ -122,7 +122,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         // 예전 판의 학생·학부모 묶음이 비어 있으면 없앤다(2026-11-21 고정 묶음 없앰)
-        People.dropEmptyBuiltIns(app)
+        People.dropEmptyBuiltIns(app)   // 예전 👪 학부모 명부는 보통 묶음(🤝 지인)으로
         // 이미 모델이 설치된 폰(예전 버전에서 업데이트)은 설치 안내를 건너뛰고 바로 메인 화면으로.
         // 앱을 켤 때 한 번만 확인 — 메인의 "바꾸기"로 안내를 다시 연 경우에는 건너뛰지 않음.
         // 단, 마지막 권한 단계(3) 중이었다면 그 단계에서 이어서 보여줌.
@@ -977,7 +977,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
             val parents = if (People.isVisible(ctx, "parents")) ParentAdvisor.contacts(ctx, items) else emptyList()
             val book = People.customBook(ctx)
             val people = items.filter(BriefingComposer::isPerson)   // 메시지 앱의 사람 연락만(카카오페이 송금 알림 등은 빼고)
-                .mapNotNull { n -> People.find(book, n)?.let { (g, name) -> Triple(g, name, n) } }
+                .mapNotNull { n -> People.find(book, n, bodyToo = false)?.let { (g, name) -> Triple(g, name, n) } }   // 그 사람이 보낸 것만(내용에 이름만 나온 건 빼고)
                 .groupBy { it.first.id }.map { (_, l) -> l.first().first to l.map { it.second to it.third } }
             // 학생별 기록 채우기 (📌 할 일 자동 등록은 2026-11-23 에 없앰 — 직접 넣은 할 일만)
             items.forEach { runCatching { Students.log(ctx, names, it) } }
