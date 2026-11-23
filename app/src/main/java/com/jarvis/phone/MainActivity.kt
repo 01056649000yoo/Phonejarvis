@@ -1095,7 +1095,9 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     private var watching = false
 
     private fun startBackgroundSummary() {
-        BriefingScheduler.startNow(getApplication<Application>(), "정리 완료")
+        // 이름은 '📋 00:25 지금 정리' — 예전 '정리 완료'는 지난 요약·알림 제목에서 무슨 요약인지 알 수 없었다(2026-11-24)
+        val hm = java.text.SimpleDateFormat("HH:mm", java.util.Locale.KOREA).format(System.currentTimeMillis())
+        BriefingScheduler.startNow(getApplication<Application>(), "📋 $hm 지금 정리")
         bgRunning = true; stopping = false
         status = "🔔 새 알림 ${pendingCount}건을 백그라운드에서 정리하고 있어요. 다 되면 알림으로 알려 드릴게요."
         watchBackground()
@@ -1109,7 +1111,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
             while (!BriefingService.active && waited < 8000) { delay(250); waited += 250 }   // 서비스가 뜰 때까지
             while (BriefingService.active) delay(2000)
             watching = false
-            if (bgRunning) status = "✅ 정리가 끝났어요. 알림창과 아래 📚 브리핑 모음에서 볼 수 있어요."
+            if (bgRunning) status = "✅ 정리가 끝났어요. 알림창과 📚 지난 요약에서 볼 수 있어요."
             bgRunning = false; stopping = false
             lastBriefing = withContext(Dispatchers.IO) { db.lastBriefing() }
             refresh()

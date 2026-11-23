@@ -18,6 +18,19 @@ class SummaryPolishTest {
         assertEquals("햅삐네 가게 이야기", BriefingComposer.dropName("햅삐네 가게 이야기", "햅삐"))      // 조사가 아니면 그대로
     }
 
+    @Test fun 서비스_자동_메일은_업체() {
+        listOf("GitHub", "Notion", "Zoom", "Slack").forEach { assertTrue(it, AdFilter.isBusinessName(it)) }
+        assertFalse(AdFilter.isBusinessName("김민수 선생님"))
+    }
+
+    @Test fun 줄일_때_낱말_가운데서_자르지_않음() {
+        val s = "[repo/Phonejarvis] Run failed: Build APK - feat/identity (d39140c) [링크] 자세한 내용은 여기"
+        val c = BriefingComposer.clip(s, 70)
+        assertTrue(c, c.endsWith("…") && !c.contains("[…") && !c.endsWith("[…"))
+        assertTrue(c, c.length <= 71)
+        assertEquals("짧은 말", BriefingComposer.clip("짧은 말", 80))
+    }
+
     @Test fun 언급함은_부드럽게() {
         assertEquals("과거 상승률을 말함", BriefingComposer.soften("과거 상승률을 언급함"))
         assertEquals("손실에 대해 이야기함", BriefingComposer.soften("손실에 대해 언급함"))

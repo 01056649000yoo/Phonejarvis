@@ -1220,7 +1220,7 @@ private fun StoragePage(vm: JarvisViewModel) {
             Text("⏳ 보관 기간", style = MaterialTheme.typography.titleMedium)
             RetentionRow("📨 받은 알림 원문", "브리핑 세부 내역의 '원래 알림'도 이 기간만큼 볼 수 있어요", Storage.NOTI_CHOICES, vm.notiDays) {
                 vm.setRetention("noti_days", it) }
-            RetentionRow("📚 브리핑 모음", "요약 결과라 작아요", Storage.BRIEF_CHOICES, vm.briefDays) { vm.setRetention("brief_days", it) }
+            RetentionRow("📚 지난 요약", "요약 결과라 작아요", Storage.BRIEF_CHOICES, vm.briefDays) { vm.setRetention("brief_days", it) }
             RetentionRow("🧒 학생별 기록", "상담·생활기록에 쓰려면 길게 두세요", Storage.LOG_CHOICES, vm.logDays) { vm.setRetention("log_days", it) }
             Text("📌 끝낸 할 일은 30일, 마감이 60일 지난 할 일은 저절로 지워요. 앱·방 이름 목록은 180일 동안 안 오면 지워요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1237,7 +1237,7 @@ private fun StoragePage(vm: JarvisViewModel) {
     if (confirmClear) AlertDialog(
         onDismissRequest = { confirmClear = false },
         title = { Text("받은 알림 원문을 모두 지울까요?") },
-        text = { Text("모은 알림 ${vm.storageUsage?.noti ?: 0}건이 지워지고 되돌릴 수 없어요. 브리핑 모음·학생 기록·할 일·설정은 그대로 남아요. 아직 정리 안 한 알림도 지워져요.") },
+        text = { Text("모은 알림 ${vm.storageUsage?.noti ?: 0}건이 지워지고 되돌릴 수 없어요. 지난 요약·학생 기록·할 일·설정은 그대로 남아요. 아직 정리 안 한 알림도 지워져요.") },
         confirmButton = { Button(onClick = { confirmClear = false; vm.clearNotis() }) { Text("모두 지우기") } },
         dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("취소") } },
     )

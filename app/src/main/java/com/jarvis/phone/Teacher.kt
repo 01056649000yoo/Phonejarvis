@@ -445,7 +445,9 @@ object AdFilter {
      */
     private val BUSINESS_SUFFIX = Regex("(은행|뱅크|카드|증권|보험|캐피탈|생명|화재|페이|저축|금고|신협|농협|우체국|택배|공사)$")
     private val BUSINESS_NAME = Regex("^(토스|toss|뱅크샐러드|카카오뱅크|케이뱅크|쿠팡|배달의민족|요기요|당근마켓|네이버|카카오페이|삼성카드|현대카드|" +
-        "Google|Gemini|YouTube|Apple|Samsung|Microsoft|Netflix|LG U\\+|KT|SKT|SK텔레콤)(\\b|\\s|$)", RegexOption.IGNORE_CASE)
+        "Google|Gemini|YouTube|Apple|Samsung|Microsoft|Netflix|LG U\\+|KT|SKT|SK텔레콤|" +
+        // 2026-11-24: 서비스가 보내는 자동 메일(GitHub 빌드 실패 메일이 💼 업무 요약에)
+        "GitHub|GitLab|Notion|Slack|Zoom|Figma|Canva|Vercel|Netlify|Discord|Facebook|Instagram|LinkedIn|Amazon|Naver|Kakao|카카오계정|Dropbox|Adobe|OpenAI|Anthropic)(\\b|\\s|$)", RegexOption.IGNORE_CASE)
 
     fun isBusinessName(sender: String): Boolean {
         val s = sender.trim().removePrefix("(광고)").removePrefix("[광고]").trim()

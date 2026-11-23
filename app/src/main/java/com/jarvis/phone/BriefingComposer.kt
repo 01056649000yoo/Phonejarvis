@@ -266,7 +266,7 @@ object BriefingComposer {
             .lines().map { it.trim() }.filter { it.isNotEmpty() }
         fun field(name: String) = clean.firstOrNull { it.startsWith("$name:") }?.substringAfter(':')?.trim().orEmpty()
         val src = source.ifEmpty { conv.items.joinToString(" ") { it.text } } + " " + conv.room + " " + (prev?.let { "${it.point} ${it.ask}" } ?: "")
-        val lastSaid = condenseAll((conv.items.lastOrNull { !isFiller(it.text) } ?: conv.items.last()).text.replace('\n', ' ').trim()).take(80)
+        val lastSaid = clip(condenseAll((conv.items.lastOrNull { !isFiller(it.text) } ?: conv.items.last()).text.replace('\n', ' ').trim()), 80)
         val modelPoint = field("요점").ifEmpty { clean.firstOrNull { ':' !in it.take(4) } ?: "" }
         val point = modelPoint.takeIf { it.isNotEmpty() && grounded(it, src) } ?: prev?.point?.takeIf { modelPoint.isEmpty() } ?: lastSaid
         // AI 가 '요청:' 이름표 없이 '총무: …' 처럼 그 방 사람 이름으로 바로 쓴 줄도 요청으로(2026-11-23 채점에서 빠지던 것)
@@ -436,6 +436,16 @@ object BriefingComposer {
         val point = who + said.joinToString(" / ") { condenseAll(it.second) }
         val ask = said.filter { QUESTION.containsMatchIn(it.second) && hasWords(it.second) }.joinToString(" / ") { askSentence(it.second) }
         return RoomSummary(conv, point, ask, ask.isNotEmpty(), byModel = false)
+    }
+
+    /**
+     * [max] 자로 줄이기 — 낱말 가운데서 자르지 않고 '…'(2026-11-24: '…(d39140c) [.' 처럼 '[링크]' 가운데서 잘려 괄호만 남던 것).
+     * 띄어 쓴 자리에서 자르고, 끝에 남은 여는 괄호·기호는 뗌
+     */
+    fun clip(s: String, max: Int): String {
+        if (s.length <= max) return s
+        val cut = s.take(max).let { t -> t.lastIndexOf(' ').takeIf { it >= max / 2 }?.let { t.take(it) } ?: t }
+        return cut.trimEnd(' ', '[', '(', '<', '{', '-', ',', '·', ':') + "…"
     }
 
     /** 뜻 있는 글자(완성 한글·영문·숫자)가 하나라도 있는가 */
