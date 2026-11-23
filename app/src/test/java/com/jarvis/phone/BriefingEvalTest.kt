@@ -296,4 +296,27 @@ class BriefingEvalTest {
         File("build/briefing-flood.md").writeText(out.toString() + detail)
         println(out.toString() + detail)
     }
+
+    /** ✅ 할 일 중심을 채점 세트·쏟아지는 단톡에도(꼭 들어갈 말이 할 일·바뀐 것에 들었나) */
+    @Test fun 할일중심_다른_세트() = runBlocking {
+        assumeTrue("OLLAMA_MODEL 이 없어 건너뜀", model.isNotEmpty())
+        ollama("안녕")
+        val out = StringBuilder("# 할 일 중심 — 채점 세트 ($model)\n\n")
+        var hit = 0; var total = 0; var calls = 0; var ms = 0L
+        for (c in cases()) {
+            var n = 0; val t0 = System.currentTimeMillis()
+            val r = ActionDigest.compose(c.items) { n++; ollama(it) }
+            ms += System.currentTimeMillis() - t0; calls += n
+            // 마감은 [11/28(금)] 처럼 날짜로 바뀌어 보이므로 '금요일'·'28일'은 날짜 표시로도 인정
+            fun shown(w: String): Boolean = w in r.text ||
+                Regex("^([월화수목금토일])요일$").find(w)?.let { "(${it.groupValues[1]})]" in r.text } == true ||
+                Regex("^(\\d{1,2})일$").find(w)?.let { "/${it.groupValues[1]}(" in r.text } == true
+            val got = c.must.filter { m -> m.split('|').any { shown(it) } }
+            hit += got.size; total += c.must.size
+            out.append("\n### ${c.name} — ${got.size}/${c.must.size}\n```\n${r.text}\n```\n")
+        }
+        val head = "**꼭 들어갈 말 $hit/$total · AI ${calls}번 · ${ms / 1000.0}초** (지금 방식은 20/21 · AI 10번 · 약 23초)\n"
+        File("build/action-eval-cases.md").writeText(out.toString().replaceFirst("\n\n", "\n\n$head\n"))
+        println(head)
+    }
 }

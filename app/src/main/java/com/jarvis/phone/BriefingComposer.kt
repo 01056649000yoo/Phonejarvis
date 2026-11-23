@@ -340,6 +340,7 @@ object BriefingComposer {
             .map { it.value }.take(limit)
     }
     private fun grams(s: String) = s.filter { !it.isWhitespace() }.windowed(2).toSet()
+    fun overlapPublic(a: String, b: String) = overlap(a, b)
     private fun overlap(a: String, b: String): Double { val ga = grams(a); val gb = grams(b); return if (ga.isEmpty()) 0.0 else ga.count { it in gb }.toDouble() / ga.size }
 
     /**
