@@ -219,7 +219,7 @@ class BriefingComposerTest {
 
     @Test fun 시간이_모자라면_중요한_방부터_정리하고_남은_방_수를_알려_준다() = runBlocking {
         val big = (1..40).map { i -> kakao("잡담방", "사람${i % 4}", "오늘 점심 뭐 먹을까요 $i " + "가".repeat(10)) }   // 가장 최근
-        val parent = listOf(kakao("", "민준 어머님", "선생님 내일 체험학습 가는데 도시락 싸야 하나요? 물이랑 간식도 따로 챙겨야 하는지 궁금해요"), kakao("", "민준 어머님", "준비물도 알려 주세요 미리 사 두려고요"))
+        val parent = listOf(kakao("", "민준 어머님", "선생님 내일 체험학습 가는데 도시락 싸야 하나요? 물이랑 간식도 따로 챙겨야 하는지 궁금해요"), kakao("", "민준 어머님", "준비물도 알려 주세요 미리 사 두려고요 그리고 버스는 몇 시에 학교 앞에서 출발하는지도 궁금합니다"))
         val all = parent + big
         var calls = 0
         val r = BriefingComposer.compose(all, ask = { calls++; "요점: 정리\n요청: 없음" },
@@ -254,7 +254,8 @@ class BriefingComposerTest {
         // 읽는 순서: 묶음 → 업무 → 대화 → 앱
         val order = r.text
         assertTrue(order, order.indexOf("🤝 지인") < order.indexOf("💼 업무·일정"))
-        assertEquals(2, calls)   // 지인 한 사람(두 마디) + Gmail(두 건) — 캘린더 한 건은 AI 없이
+        assertEquals(1, calls)   // Gmail(두 건)만 AI — 지인 한 사람의 짧은 두 마디는 원문(2026-11-24), 캘린더 한 건은 AI 없이
+        assertTrue(r.groups, r.groups.contains("토요일 등산 갈래? / 7시 출발"))
     }
 
     @Test fun 미리_요약_글자_수는_AI_가_읽는_만큼만_센다() {
