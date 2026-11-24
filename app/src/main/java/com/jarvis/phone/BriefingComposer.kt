@@ -331,7 +331,7 @@ object BriefingComposer {
     fun splitAsks(ask: String): List<String> = ask.split(Regex("\\s*[,，]\\s*")).map { it.trim() }.filter { it.isNotEmpty() && hasWords(it) && !isRhetorical(it) }
 
     /** 혼잣말·감탄 물음('급락..?'·'카톡친추네여?')은 나에게 묻는 말이 아님(2026-11-24) */
-    private val RHETORICAL = Regex("(\\.\\.|…)\\s*\\?|(네여|네요|군요|구나|겠지)\\s*\\?+\\s*$")
+    private val RHETORICAL = Regex("(\\.\\.|…)\\s*\\?|(네여|네요|군요|구나|겠지)\\s*\\?+\\s*$|(거|것|게) ?(아녜요|아니에요|아닌가요|아냐|아님)\\s*\\?+\\s*$")
     fun isRhetorical(s: String) = RHETORICAL.containsMatchIn(s.trim())
 
     /** 1:1 대화에서 오늘·내일처럼 급한 물음·부탁 문장(모델이 놓쳐도 요청 칸에 오게) */
@@ -426,8 +426,11 @@ object BriefingComposer {
      * 줄 앞에 이름이 이미 굵게 있으니 내용 첫머리의 그 이름을 뗌 — '햅삐 · 햅삐가 2주 스윙 후…'(2026-11-24).
      * '서울_개복치(캔디)' 처럼 괄호가 붙은 이름은 괄호 앞 이름도 봄. 떼고 나서 남는 게 없으면 그대로
      */
-    fun dropName(point: String, name: String): String {
-        val names = listOf(name.trim(), name.substringBefore('(').trim()).filter { it.length >= 2 }.distinct()
+    fun dropName(point: String, name: String, group: String = ""): String {
+        val base = listOf(name.trim(), name.substringBefore('(').trim()).filter { it.length >= 2 }.distinct()
+        // '김진수 지인이 …' — 묶음 이름(👔 지인)을 프롬프트에서 보고 붙임(2026-11-24)
+        val word = group.trim().split(' ').last().takeIf { it.length >= 2 && it.any { c -> c in '가'..'힣' } }
+        val names = (if (word != null) base.map { "$it $word" } else emptyList()) + base
         for (n in names) {
             if (!point.startsWith(n)) continue
             val rest = point.substring(n.length)
@@ -717,10 +720,10 @@ object BriefingComposer {
     /** 요점과 부탁을 한 문단으로: '…하기로 함. 꽃을 사 와 달라고 함.' (부탁이 요점에 이미 있으면 요점만) */
     fun paragraph(point: String, ask: String, reply: Boolean = false): String {
         // 한 문단(2026-11-23 선생님) — 높임말은 '…함'으로 맞춤(2026-11-24: '말씀하심')
-        fun end(x: String) = soften(x.trim().trimEnd('.', '。')).let { if (it.isEmpty()) it else "$it." }
+        fun end(x: String) = soften(x.trim().trimEnd('.', '。')).let { if (it.isEmpty() || it.last() in "?!？！") it else "$it." }   // '아녜요?.' 처럼 겹치지 않게
         // 부탁 내용이 요점에 이미 들어 있으면(끝말 '…달라고 함'을 떼고 두 글자 조각이 절반 넘게 겹침) 한 번만
         fun core(x: String) = x.trim().replace(ENDING, "")
-        return if (ask.isEmpty() || point.contains(ask) || overlap(core(ask), core(point)) >= 0.5) end(point) else end(point) + (if (reply) " 🙋 " else " ") + end(groupAsk(ask))
+        return if (ask.isEmpty() || isRhetorical(ask) || point.contains(ask) || overlap(core(ask), core(point)) >= 0.5) end(point) else end(point) + (if (reply) " 🙋 " else " ") + end(groupAsk(ask))
     }
 
     /** 묶음 칸의 부탁이 원문 그대로면('…해주세요~~ 체육끝나고.') 짧은 말('…달라고 함')로 */
@@ -739,7 +742,7 @@ object BriefingComposer {
             append(if (title == WORK_TITLE) "$title 알림 (앱 ${list.size + rest.size}개 · ${n}건)\n" else "$title 연락 (${list.size + rest.size}명 · ${n}건)\n")
             // 사람 이름은 그대로, 그 사람이 한 말만 한 문단으로(요점 + 부탁을 이어서) — 2026-11-23 선생님
             list.sortedByDescending { it.conv.last }.forEach { r ->
-                val point = r.point.ifBlank { r.conv.items.last().text.replace('\n', ' ').take(60) }.removePrefix("${r.conv.room}: ").let { dropName(it, r.conv.room) }
+                val point = r.point.ifBlank { r.conv.items.last().text.replace('\n', ' ').take(60) }.removePrefix("${r.conv.room}: ").let { dropName(it, r.conv.room, title) }
                 append("- ${r.conv.room} (${r.conv.items.size}건) · ${fmt.format(r.conv.last)}: ${paragraph(point, r.ask, r.needReply)}\n")
             }
             if (rest.isNotEmpty()) append("- 그 밖에: " + rest.joinToString(", ") { "${it.room} ${it.items.size}건" } + "\n")

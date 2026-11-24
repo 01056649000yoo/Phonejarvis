@@ -444,11 +444,22 @@ object Briefings {
     }
 
     /** 중요 키워드가 들어간 알림 목록 (최근 것부터 최대 10개). 없으면 빈 문자열. */
+    /**
+     * 업체가 보낸 웹 문자(택배·카드…)인가 — '[Web발신] [CJ대한통운_배송완료] …' (2026-11-24: 택배 문자가 ⭐ 키워드 알림에 올라옴).
+     * 학교·학부모가 보낸 웹 문자는 대괄호 이름이 업체가 아니라 그대로 둠
+     */
+    private val BRACKET = Regex("\\[([^\\]]{2,30})\\]")
+    fun isBusinessMms(text: String): Boolean = text.contains("Web발신") &&
+        BRACKET.findAll(text).any { m -> AdFilter.isBusinessName(m.groupValues[1].split('_', ' ').first().trim()) }
+    /** 문자 앱의 '<제목: …>'·'[Web발신]' 머리를 떼고 한 줄로 */
+    fun cleanMms(text: String): String = text.replace('\n', ' ').replace(Regex("<제목:\\s*([^>]*)>"), "$1")
+        .replace("[Web발신]", "").replace(Regex("\\s{2,}"), " ").trim()
+
     fun keywordSection(items: List<NotiItem>, keywords: List<String>): String {
         if (keywords.isEmpty()) return ""
         val fmt = java.text.SimpleDateFormat("HH:mm", java.util.Locale.KOREA)
         // 광고·자동 알림은 빼고, 키워드가 부르는 말(OO님)로만 든 것도 뺌(2026-11-23)
-        val hits = items.filter { AppFilter.hasRealKeyword(keywords, it.title, it.text, it.room) && !AdFilter.isAd(it.title, it.text) }
+        val hits = items.filter { AppFilter.hasRealKeyword(keywords, it.title, it.text, it.room) && !AdFilter.isAd(it.title, it.text) && !isBusinessMms(it.text) }
             .distinctBy { it.roomOrTitle to it.text }
             .takeLast(10).reversed()
         if (hits.isEmpty()) return ""
@@ -456,7 +467,7 @@ object Briefings {
             append("⭐ 키워드 알림 (${hits.size}건)\n")
             hits.forEach { n ->
                 val who = if (n.room.isNotEmpty() && n.room != n.title) "[${n.room}] ${n.title}" else n.title
-                append("- ${fmt.format(n.time)} $who: ${n.text.replace('\n', ' ').take(80)}\n")
+                append("- ${fmt.format(n.time)} $who: ${cleanMms(n.text).take(80)}\n")
             }
             append("\n")
         }

@@ -45,6 +45,21 @@ class SummaryPolishTest {
         assertEquals("외장 SSD 박으면 안되는지 물음", BriefingComposer.soften("[댓글]  외장 SSD 박으면 안되는지 물음"))
     }
 
+    @Test fun 묶음_줄_문장_다듬기() {
+        // 묶음 이름(👔 지인)을 붙여 '김진수 지인이 …'
+        assertEquals("주식 하락과 날씨 때문에 늦을 것 같다고 함", BriefingComposer.dropName("김진수 지인이 주식 하락과 날씨 때문에 늦을 것 같다고 함", "김진수", "👔 지인"))
+        // 물음표 뒤에 마침표를 겹치지 않음, 짐작하는 물음은 붙이지 않음
+        assertEquals("묘도 소나무가 머리털이 빠지는 중이라고 함.", BriefingComposer.paragraph("묘도 소나무가 머리털이 빠지는 중이라고 함", "빠져죽는거 아녜요?"))
+        assertTrue(BriefingComposer.paragraph("일정을 알림", "내일 오세요?").endsWith("?"))
+    }
+
+    @Test fun 업체_웹문자는_키워드_칸에_안_올림() {
+        val mms = "<제목: [CJ대한통운]>  [Web발신]\n[CJ대한통운_배송완료] 일요일에도 신속하게!!"
+        assertTrue(Briefings.isBusinessMms(mms))
+        assertFalse(Briefings.isBusinessMms("[Web발신]\n[행복초등학교] 내일 민준이 체험학습 안내"))
+        assertEquals("[CJ대한통운] [CJ대한통운_배송완료] 일요일에도 신속하게!!", Briefings.cleanMms(mms))
+    }
+
     @Test fun 서비스_자동_메일은_업체() {
         listOf("GitHub", "Notion", "Zoom", "Slack").forEach { assertTrue(it, AdFilter.isBusinessName(it)) }
         assertFalse(AdFilter.isBusinessName("김민수 선생님"))
