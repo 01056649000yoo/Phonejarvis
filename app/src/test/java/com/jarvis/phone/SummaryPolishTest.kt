@@ -84,6 +84,19 @@ class SummaryPolishTest {
         assertTrue(g.groups, g.groups.contains("거기는 진짜 너무하네 ㅋ") && !g.groups.contains("ㅋ."))
     }
 
+    @Test fun 메일은_보낸_사람과_제목을_한_줄씩() = runBlocking {
+        fun gm(who: String, subject: String, t: Long) = NotiItem(t, "com.google.android.gm", "Gmail", who, "$subject\n본문 내용이 길게 이어짐", t)
+        val work = BriefingComposer.Group(BriefingComposer.WORK_TITLE, listOf(gm("yshgg", "[Phonejarvis] Run failed: Build APK", 1), gm("NC", "개인정보 이용내역 안내", 2)).map { it.app to it })
+        val r = BriefingComposer.compose(emptyList(), ask = { error("메일은 AI 를 부르지 않음") }, groups = listOf(work))
+        assertTrue(r.work, "NC: 개인정보 이용내역 안내 / yshgg: [Phonejarvis] Run failed: Build APK" in r.work)
+        assertFalse(r.work, "물음" in r.work)
+    }
+
+    @Test fun 원문_물음은_따옴표로() {
+        assertEquals("\"두형이형 차놔두고왔어요?\"라고 물음", BriefingComposer.quotedAsk("두형이형 차놔두고왔어요?"))
+        assertEquals("내일 도시락 챙겨야 하는지 물음", BriefingComposer.quotedAsk("내일 도시락 챙겨야 하나요?"))   // 바꿀 수 있으면 짧은 말
+    }
+
     @Test fun 서비스_자동_메일은_업체() {
         listOf("GitHub", "Notion", "Zoom", "Slack").forEach { assertTrue(it, AdFilter.isBusinessName(it)) }
         assertFalse(AdFilter.isBusinessName("김민수 선생님"))

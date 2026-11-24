@@ -976,7 +976,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
             val names = Students.names(ctx)
             val parents = if (People.isVisible(ctx, "parents")) ParentAdvisor.contacts(ctx, items) else emptyList()
             val book = People.customBook(ctx)
-            val people = items.filter(BriefingComposer::isPerson)   // 메시지 앱의 사람 연락만(카카오페이 송금 알림 등은 빼고)
+            val people = items.filter(BriefingComposer::isPerson).filter { it.room.isEmpty() }   // 메시지 앱의 사람 연락만(카카오페이 송금 알림 등은 빼고), 단톡방 말은 그 방에(2026-11-24)
                 .mapNotNull { n -> People.find(book, n, bodyToo = false)?.let { (g, name) -> Triple(g, name, n) } }   // 그 사람이 보낸 것만(내용에 이름만 나온 건 빼고)
                 .groupBy { it.first.id }.map { (_, l) -> l.first().first to l.map { it.second to it.third } }
             // 학생별 기록 채우기 (📌 할 일 자동 등록은 2026-11-23 에 없앰 — 직접 넣은 할 일만)

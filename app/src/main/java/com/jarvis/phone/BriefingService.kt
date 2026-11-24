@@ -365,7 +365,8 @@ object Briefings {
         val book = People.customBook(ctx)
         // 한 사람은 한 묶음에만(묶음 순서대로 먼저 맞는 곳) — 그 연락은 아래 대화 요약에 다시 나오지 않음
         // 메시지 앱의 사람 연락만(2026-11-23 선생님: 카카오페이가 지인으로 — 송금 알림 제목의 이름이 묶음 이름과 맞음)
-        val hits = (loud - workItems.toSet()).filter(BriefingComposer::isPerson)
+        // 단톡방에서 한 말은 그 방 대화 요약에 그대로(2026-11-24 선생님: 사람별로 떼어 모으니 대화 흐름이 사라져 엉뚱하게 이어 붙임) — 묶음 칸은 1:1 연락만
+        val hits = (loud - workItems.toSet()).filter(BriefingComposer::isPerson).filter { it.room.isEmpty() }
             .mapNotNull { n -> People.find(book, n, bodyToo = false)?.let { (g, name) -> Triple(g, name, n) } }
         val groups = hits.groupBy { it.first.id }.map { (_, l) -> BriefingComposer.Group(l.first().first.title, l.map { it.second to it.third }) } +
             listOfNotNull(workItems.takeIf { it.isNotEmpty() }?.let { w -> BriefingComposer.Group(BriefingComposer.WORK_TITLE, w.map { it.app to it }) })

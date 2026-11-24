@@ -282,7 +282,7 @@ object BriefingComposer {
             if (oneToOne) urgentQuestions(conv).filterNot { u -> URGENT.findAll(u).all { it.value in "$modelAsk $point" } } else emptyList())
         // 1:1 대화에서 묻는 말이 있는데 모델이 요청을 놓치면 마지막 물음·부탁을 그대로 요청에(단톡방은 서로 묻는 말이 많아 하지 않는다)
         // 글자 없는 물음('??'·'ㅋㅋ?')은 요청이 아님 — '→ ??' 가 붙던 것(2026-11-24)
-        val lastQ = if (oneToOne && modelAsk.isEmpty()) conv.items.lastOrNull { QUESTION.containsMatchIn(it.text) && hasWords(it.text) }?.text?.takeUnless(::isRhetorical)?.let(::askSentence)?.take(100)?.takeIf(::hasWords) else null
+        val lastQ = if (oneToOne && modelAsk.isEmpty()) conv.items.lastOrNull { QUESTION.containsMatchIn(it.text) && hasWords(it.text) }?.text?.takeUnless(::isRhetorical)?.let(::quotedAsk)?.take(100)?.takeIf(::hasWords) else null
         val limit = if (oneToOne) MAX_ASKS else MAX_GROUP_ASKS
         val ask = fixAskNames(asks + listOfNotNull(lastQ?.takeIf { q -> asks.none { overlap(q, it) >= 0.5 || overlap(it, q) >= 0.5 } }), conv)
             .take(limit).joinToString(", ")
@@ -322,6 +322,19 @@ object BriefingComposer {
     /** 요청 칸에 넣을 말: 물음·부탁이 든 마지막 문장을 짧게 */
     fun askSentence(text: String): String = text.replace('\n', ' ').split(SENT).map { it.trim() }
         .lastOrNull { QUESTION.containsMatchIn(it) }?.let(::condense) ?: condenseAll(text.replace('\n', ' ').trim())
+
+    /**
+     * 요청 칸에 원문 물음을 붙일 때: 짧은 말(…하는지 물음)로 바꿀 수 있으면 바꾸고, 못 바꾸면 따옴표로 묶어 원문임을 드러냄
+     * (2026-11-24: '…이야기함. 도만 냈어?.' — 요약 문장에 이어 붙어 요약의 일부처럼 읽힘)
+     */
+    fun quotedAsk(text: String): String {
+        val one = text.replace('\n', ' ').trim()
+        val s = one.split(SENT).map { it.trim() }.lastOrNull { QUESTION.containsMatchIn(it) } ?: one
+        val c = condense(s)
+        if (c != s.trim()) return c
+        val q = s.trim().trimEnd('.')
+        return "\"$q\"" + if (q.endsWith("?") || q.endsWith("？")) "라고 물음" else "라고 함"
+    }
 
     private val NUM = Regex("\\d+")
     /** 모델이 쓴 숫자가 모두 원문에 있고, 원문에 드러나지 않은 감정을 지어내지 않았는가 */
@@ -649,6 +662,8 @@ object BriefingComposer {
             var prev: RoomSummary? = c?.let { RoomSummary(conv, it.point, it.ask, it.needReply, byModel = true) }
             // 📅 캘린더는 대화가 아니라 일정 목록 — AI 없이 일정 이름·시각 그대로(2026-11-24: '모두모임에서 내일 관련하여 언급함')
             if (conv.app == WORK_TITLE && isCalendar(conv)) { rooms += calendar(conv); continue }
+            // 📧 메일은 제목이 곧 요약 — AI 가 여러 메일을 한 문장으로 엮어 오해가 생김(2026-11-24: 'yshgg가 … 알리고 NC가 … 물음')
+            if (conv.app == WORK_TITLE && isMail(conv)) { rooms += mails(conv); continue }
             // 🙏 인사·맞장구뿐인 방은 요약 줄 없이 '그 밖의 방'에 이름만(2026-11-24: '감사합니다 선배님 !!')
             if (conv.items.all { isFiller(it.text) }) { rooms += RoomSummary(conv, "", "", false, byModel = false); continue }
             // 🎯 온 연락은 간단한 내용까지, 많으면 핵심 요약(2026-11-24 선생님) — 중요하지 않은 방이 몇 마디뿐이면 AI 없이 그 말을 짧게
@@ -739,6 +754,21 @@ object BriefingComposer {
     private val CALENDAR = Regex("(?i)(calendar|캘린더|일정)")
     fun isCalendar(conv: Conversation) = conv.items.firstOrNull()?.let { CALENDAR.containsMatchIn(it.app + " " + it.pkg) } == true
 
+    private val MAIL_APP = Regex("(?i)(mail|메일|outlook|아웃룩)")
+    fun isMail(conv: Conversation) = conv.items.firstOrNull()?.let { MAIL_APP.containsMatchIn(it.app + " " + it.pkg) } == true
+
+    /** 메일 알림 → '보낸 사람: 제목 / …' (최근 것부터 4통, 나머지는 건수). AI 없이 — 메일마다 따로라 섞이지 않음 */
+    fun mails(conv: Conversation): RoomSummary {
+        val list = conv.items.asReversed().distinctBy { it.title.trim() to it.text.lineSequence().firstOrNull()?.trim() }
+        val lines = list.take(4).map { n ->
+            val subject = n.text.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() }.orEmpty()
+            val who = n.title.trim()
+            clip(if (who.isNotEmpty() && subject.isNotEmpty()) "$who: $subject" else who + subject, 50)
+        }
+        val more = if (list.size > 4) " 외 ${list.size - 4}통" else ""
+        return RoomSummary(conv, lines.joinToString(" / ") + more, "", false, byModel = false)
+    }
+
     /** 캘린더 알림 → '일정 (시각·장소), …' 한 줄. 같은 일정은 한 번(최근 알림의 내용으로) */
     fun calendar(conv: Conversation): RoomSummary {
         val events = conv.items.asReversed().distinctBy { it.title.trim() }.asReversed().map { n ->
@@ -762,7 +792,7 @@ object BriefingComposer {
     /** 묶음 칸의 부탁이 원문 그대로면('…해주세요~~ 체육끝나고.') 짧은 말('…달라고 함')로 */
     fun groupAsk(ask: String): String {
         val a = ask.trim().trimEnd('.')
-        return if (Regex("(함|물음|요청|부탁)$").containsMatchIn(a)) a else askSentence(a.replace(Regex("~+"), "")).trimEnd('.')
+        return if (Regex("(함|물음|요청|부탁)$").containsMatchIn(a)) a else quotedAsk(a.replace(Regex("~+"), "")).trimEnd('.')
     }
 
     /** 👥 묶음별: '🏠 가족 연락 (2명 · 5건)' 아래 사람마다 이름 그대로 + 한 말 한 문단 */
