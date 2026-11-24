@@ -60,6 +60,18 @@ class SummaryPolishTest {
         assertEquals("[CJ대한통운] [CJ대한통운_배송완료] 일요일에도 신속하게!!", Briefings.cleanMms(mms))
     }
 
+    @Test fun 원문에_없는_감정은_지어내지_않음() {
+        // 2026-11-24 '사랑하는 마누라': 짜증 낸 적 없는데 '짜증을 내며' → 요약 대신 원문
+        val conv = BriefingComposer.Conversation("카카오톡", "사랑하는 마누라",
+            listOf(n("사랑하는 마누라", "교감선생님이 계획서 보자고 하셨어", 1), n("사랑하는 마누라", "계획서 다 기억해야하겠지?", 2)))
+        val r = BriefingComposer.parse(conv, "요점: 교감 선생님 관련 언급에 대해 짜증을 내며 계획서 공유를 요청함\n요청: 없음")
+        assertFalse(r.point, "짜증" in r.point)
+        assertTrue(r.point, "계획서" in r.point)
+        // 드러난 감정은 그대로
+        assertFalse(BriefingComposer.madeUpFeeling("비행기 운항을 걱정함", "제주도 비행기 뜰까요 ㅠㅠ 걱정이네"))
+        assertTrue(BriefingComposer.madeUpFeeling("노트북 때문에 부끄러움을 느낌", "노트북 하드 녹음 기사님이 들으심"))
+    }
+
     @Test fun 서비스_자동_메일은_업체() {
         listOf("GitHub", "Notion", "Zoom", "Slack").forEach { assertTrue(it, AdFilter.isBusinessName(it)) }
         assertFalse(AdFilter.isBusinessName("김민수 선생님"))

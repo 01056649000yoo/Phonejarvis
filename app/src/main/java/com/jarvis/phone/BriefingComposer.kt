@@ -221,6 +221,7 @@ object BriefingComposer {
 단톡방에서 '각 반', '모두', '선생님들'에게 하는 부탁과 '너'에게 하는 부탁도 사용자에게 하는 요청이다.
 이름: 보낸 사람의 이름과 호칭(예: 김민수 선생님)은 줄이거나 바꾸지 말고 그대로 써. '선생님'처럼 호칭만 남기지 마.
 말투: 보낸 사람이 한 말을 부드럽게 옮겨(…하자고 함, …해 달라고 함, …라고 함). '지시', '명령', '통보', '언급' 같은 딱딱한 말은 쓰지 마.
+오해 없게: 메시지에 없는 감정(짜증·걱정·불만·부끄러움), 까닭(…때문에), 이어짐(…하며, …했으나)을 지어내지 마. 서로 다른 이야기는 한 문장으로 잇지 말고 '·'로 나눠 짧게. 누구·무엇에 대한 말인지 모르면 메시지 표현 그대로 써.
 
 예시(내용은 다름):
 요점: 수요일 학부모 상담 시간이 2시에서 4시로 바뀜
@@ -322,11 +323,28 @@ object BriefingComposer {
         .lastOrNull { QUESTION.containsMatchIn(it) }?.let(::condense) ?: condenseAll(text.replace('\n', ' ').trim())
 
     private val NUM = Regex("\\d+")
-    /** 모델이 쓴 숫자가 모두 원문에 있는가 */
+    /** 모델이 쓴 숫자가 모두 원문에 있고, 원문에 드러나지 않은 감정을 지어내지 않았는가 */
     fun grounded(text: String, source: String): Boolean {
         val have = NUM.findAll(source).map { it.value.trimStart('0').ifEmpty { "0" } }.toSet()
-        return NUM.findAll(text).all { it.value.trimStart('0').ifEmpty { "0" } in have }
+        return NUM.findAll(text).all { it.value.trimStart('0').ifEmpty { "0" } in have } && !madeUpFeeling(text, source)
     }
+
+    /**
+     * 요약에 쓴 감정 낱말 → 원문에 그 감정이 드러난 말이 있어야 함.
+     * 2026-11-24: '교감 선생님 관련 언급에 대해 짜증을 내며' — 짜증 내지 않았는데 요약이 그렇게 읽혀 오해가 생김. 없으면 요약 대신 원문.
+     */
+    private val FEELINGS = listOf(
+        Regex("짜증") to Regex("짜증|짱나|빡|열받|화나|화가|싫|ㅡㅡ|-_-"),
+        Regex("화를 ?(냄|내)|분노|격분") to Regex("화나|화가|열받|빡|분노|짜증"),
+        Regex("걱정|우려|불안") to Regex("걱정|우려|불안|큰일|무섭|어떡|어쩌|ㅠ|ㅜ|위험|조심"),
+        Regex("불만|불평") to Regex("불만|불평|싫|짜증|별로|왜 이렇|너무하"),
+        Regex("부끄러|창피") to Regex("부끄|창피|쪽팔"),
+        Regex("실망") to Regex("실망|아쉽|별로"),
+        Regex("서운|섭섭") to Regex("서운|섭섭"),
+        Regex("아쉬워|아쉬움") to Regex("아쉽|아쉬|아깝|ㅠ|ㅜ"),
+        Regex("비꼬|비난|조롱|비웃") to Regex("비꼬|비난|조롱|비웃|ㅋㅋ|웃기"),
+    )
+    fun madeUpFeeling(text: String, source: String) = FEELINGS.any { (said, shown) -> said.containsMatchIn(text) && !shown.containsMatchIn(source) }
 
     fun splitAsks(ask: String): List<String> = ask.split(Regex("\\s*[,，]\\s*")).map { it.trim() }.filter { it.isNotEmpty() && hasWords(it) && !isRhetorical(it) }
 
