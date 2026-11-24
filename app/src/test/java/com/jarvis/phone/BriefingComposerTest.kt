@@ -8,6 +8,9 @@ import org.junit.Test
 
 /** 요약 규칙: 대화방마다 세 줄, 짧은 한 마디는 모델 없이, 앱 알림은 AI 없이 건수 */
 class BriefingComposerTest {
+    // 이 시험들은 단톡방 AI 요약(요점·요청) 길을 봄 — 고르기만(pickLines)은 ChatContextTest 에서
+    @org.junit.Before fun off() { BriefingComposer.pickLines = false }
+    @org.junit.After fun on() { BriefingComposer.pickLines = true }
     private var t = 1_700_000_000_000L
     private fun kakao(room: String, who: String, text: String) = NotiItem(0, "com.kakao.talk", "카카오톡", who, text, t++ * 1, room)
     private fun app(name: String, pkg: String, title: String, text: String = "") = NotiItem(0, pkg, name, title, text, t++)

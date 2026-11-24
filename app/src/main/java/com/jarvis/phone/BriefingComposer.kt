@@ -247,10 +247,11 @@ object BriefingComposer {
             .let { l -> if (l.trim().startsWith("없")) emptyList() else NUMS.findAll(l).mapNotNull { it.value.toIntOrNull()?.minus(1) }.filter { it in ts.indices }.distinct().toList() }
         val picked = nums("핵심").take(3).sorted().ifEmpty { ts.indices.toList().takeLast(2) }
         fun said(n: NotiItem) = n.text.replace('\n', ' ').replace(URL, "(링크)").trim()
-        var last = "\u0000"
+        var last = "\u0000"; var lastI = -2
         val point = picked.joinToString(" / ") { i ->
             val n = ts[i]; val w = conv.who(n).ifEmpty { n.title.trim() }
-            (if (w != last) "$w: " else "").also { last = w } + clip(said(n), 60)
+            // 이름은 바로 앞 줄과 같은 사람이 이어질 때만 생략 — 사이에 다른 사람 말이 빠졌으면 다시 적음
+            (if (w != last || i != lastI + 1) "$w: " else "").also { last = w; lastI = i } + clip(said(n), 60)
         }
         val asks = nums("부탁").map { ts[it] }
             .filter { n -> val t = said(n); (QUESTION.containsMatchIn(t) || REQUEST.containsMatchIn(t)) && hasWords(t) && !isRhetorical(t) }
