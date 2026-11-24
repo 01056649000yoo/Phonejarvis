@@ -50,7 +50,7 @@ class SummaryPolishTest {
         assertEquals("주식 하락과 날씨 때문에 늦을 것 같다고 함", BriefingComposer.dropName("김진수 지인이 주식 하락과 날씨 때문에 늦을 것 같다고 함", "김진수", "👔 지인"))
         // 물음표 뒤에 마침표를 겹치지 않음, 짐작하는 물음은 붙이지 않음
         assertEquals("묘도 소나무가 머리털이 빠지는 중이라고 함.", BriefingComposer.paragraph("묘도 소나무가 머리털이 빠지는 중이라고 함", "빠져죽는거 아녜요?"))
-        assertTrue(BriefingComposer.paragraph("일정을 알림", "내일 오세요?").endsWith("?"))
+        assertEquals("일정을 알림. \"내일 오세요?\"라고 물음.", BriefingComposer.paragraph("일정을 알림", "내일 오세요?"))   // 원문 물음은 따옴표로
     }
 
     @Test fun 업체_웹문자는_키워드_칸에_안_올림() {

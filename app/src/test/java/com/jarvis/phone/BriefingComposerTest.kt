@@ -254,7 +254,7 @@ class BriefingComposerTest {
         // 읽는 순서: 묶음 → 업무 → 대화 → 앱
         val order = r.text
         assertTrue(order, order.indexOf("🤝 지인") < order.indexOf("💼 업무·일정"))
-        assertEquals(1, calls)   // Gmail(두 건)만 AI — 지인 한 사람의 짧은 두 마디는 원문(2026-11-24), 캘린더 한 건은 AI 없이
+        assertEquals(0, calls)   // 메일은 보낸 사람: 제목 그대로, 지인 짧은 두 마디는 원문, 캘린더는 일정 그대로 — AI 없음(2026-11-24)
         assertTrue(r.groups, r.groups.contains("토요일 등산 갈래? / 7시 출발"))
     }
 
