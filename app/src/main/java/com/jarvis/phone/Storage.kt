@@ -70,6 +70,7 @@ object Storage {
         val before = dbBytes(ctx)
         val db = NotificationDb.get(ctx)
         db.clearNotis()
+        ThreadMemo.clear(ctx)   // 원문에서 뽑아 둔 이어가기 메모도
         runCatching { db.vacuum() }
         return (before - dbBytes(ctx)).coerceAtLeast(0)
     }

@@ -54,9 +54,14 @@ class ChatContextTest {
             before = { listOf(k("", "민준이 아빠", "오늘 볼테르 갈래?", -10)) })
         assertTrue(prompt, "[앞 대화" in prompt && "오늘 볼테르 갈래?" in prompt)
         assertTrue(r.people, "↪ 앞: “민준이 아빠: 오늘 볼테르 갈래?”" in r.people)
-        // 30분보다 오래전이면 이어진 대화가 아님
-        val old = BriefingComposer.compose(now, ask = { "요점: 7시에 보자고 함\n요청: 없음" },
+        // 30분보다 오래전이어도 앞이 물음이고 새 말이 답처럼 시작하면 이어진 대화(v1.14 이어 보기)
+        val answer = BriefingComposer.compose(now, ask = { "요점: 7시에 보자고 함\n요청: 없음" },
             before = { listOf(k("", "민준이 아빠", "오늘 볼테르 갈래?", -45)) })
+        assertTrue(answer.people, "↪ 앞: “민준이 아빠: 오늘 볼테르 갈래?”" in answer.people)
+        // 30분보다 오래전이고 물음도 답도 같은 일도 아니면 이어진 대화가 아님
+        val other = listOf(k("", "민준이 아빠", "내일 7시에 보자 주차는 지하에 하면 돼 길 막히면 연락할게 늦으면 먼저 들어가 있어 그리고 아까 말한 책도 챙겨 갈게", 0))
+        val old = BriefingComposer.compose(other, ask = { "요점: 7시에 보자고 함\n요청: 없음" },
+            before = { listOf(k("", "민준이 아빠", "사진 잘 받았어", -45)) })
         assertFalse(old.people, "↪" in old.people)
     }
 

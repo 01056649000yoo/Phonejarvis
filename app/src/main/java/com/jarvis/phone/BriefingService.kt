@@ -306,7 +306,7 @@ object Briefings {
         val load = PhoneLoad.state(ctx)
         val skipAi = PhoneLoad.skipAiReason(load)
         val focus = focusOn(ctx)   // 🎯 중요한 대화만 요약(IDENTITY.md 원칙 2)
-        val before = beforeOf(db, from)   // 🧵 지난 요약 끝에서 이어진 대화(참고용)
+        val before = beforeOf(db, from, ThreadMemo.load(ctx))   // 🧵 지난 요약 끝에서 이어진 대화 + 📝 방별 이어가기 메모(참고용)
         val ai = when {
             rest.isEmpty() && split.groups.isEmpty() -> null
             skipAi != null -> BriefingComposer.compose(rest, ask = { "" }, replyAllowed = { c -> c.items.any { rules.mentionsRoster(it) } }, cache = cache, since = from, groups = split.groups, focus = focus, before = before)
@@ -334,6 +334,8 @@ object Briefings {
         // time = 이번 요약이 덮은 마지막 시각 (다음 요약은 이 다음부터)
         db.insertBriefing(Briefing(time = cutoff, fromTime = from, label = label, count = items.size, text = text))
         PreSummary.clear(ctx)   // 이번 구간은 끝 — 다음 구간은 새로 미리 요약
+        // 📝 이번 구간의 안 풀린 물음·정해진 것을 방마다 적어 둠 — 다음 요약이 이어 볼 수 있게(AI 없이)
+        runCatching { ThreadMemo.update(ctx, BriefingComposer.memoConvs(rest, split.groups), cutoff) }
         onStatus("완료 (${(now - start) / 1000}초)")
         // 알림 맨 위에 이번 요약이 맡은 구간 — 앞선 요약(위젯·지금 정리하기·이전 시각)에 이미 들어간 메시지는 다시 나오지 않으므로
         val hm = java.text.SimpleDateFormat("M/d HH:mm", java.util.Locale.KOREA)
@@ -385,10 +387,12 @@ object Briefings {
     }
 
     /** 🧵 대화방마다 이번 구간(from) 바로 앞 30분 안의 같은 방 메시지 — 업무 앱(💼)은 빼고 */
-    fun beforeOf(db: NotificationDb, from: Long): (BriefingComposer.Conversation) -> List<NotiItem> = { c ->
+    fun beforeOf(db: NotificationDb, from: Long, memo: Map<String, List<BriefingComposer.Memo>> = emptyMap()): (BriefingComposer.Conversation) -> List<NotiItem> = { c ->
         val n = c.items.firstOrNull()
         if (n == null || from <= 0L || c.app == BriefingComposer.WORK_TITLE) emptyList()
-        else db.lastBefore(n.pkg, n.room, n.title, from, from - BriefingComposer.CONTINUE_MS)
+        // 📝 방별 이어가기 메모(오래된 물음·정해진 것) + 지난 구간 끝의 원문 — 어느 것이 이번 대화와 이어지는지는 BriefingComposer.linked 가 고름
+        else memo[BriefingComposer.keyOf(c)].orEmpty().filter { it.time < from }.map { NotiItem(0, n.pkg, n.app, it.who, it.text, it.time, n.room) } +
+            db.lastBefore(n.pkg, n.room, n.title, from, from - BriefingComposer.LINK_MS)
     }
 
     /** 메일 앱 알림인가(제목이 보낸 사람) — 캘린더 같은 다른 업무 앱은 제목이 일정 이름이라 업체 이름 거르기를 하지 않음 */

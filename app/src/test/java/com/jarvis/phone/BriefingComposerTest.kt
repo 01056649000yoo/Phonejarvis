@@ -96,7 +96,9 @@ class BriefingComposerTest {
         val more = old + kakao("동학년방", "김부장", "마감이 목요일로 당겨졌어요")
         var prompt = ""
         val r = BriefingComposer.compose(more, ask = { prompt = it; "요점: 명단 마감이 목요일로 당겨짐\n요청: 목요일까지 명단 올려 달라고 함" }, cache = saved, since = since)
-        assertTrue(prompt, "금요일까지 명단 제출" in prompt && "목요일로 당겨졌어요" in prompt && "양식은 어디" !in prompt)
+        // 바로 앞 말 차례는 참고로 겹쳐 줌(꼬리 겹치기) — 새 메시지 칸(--- 사이)에는 새 메시지만
+        assertTrue(prompt, "금요일까지 명단 제출" in prompt && "목요일로 당겨졌어요" in prompt && "[바로 앞 대화" in prompt)
+        assertTrue(prompt, "양식은 어디" in prompt.substringBefore("---") && "양식은 어디" !in prompt.substringAfter("---"))
         assertTrue(r.people, r.people.contains("목요일로 당겨짐"))
         // 구간이 바뀌었거나(다음 요약 뒤) 메시지 수가 다르면(뺀 방·지운 알림) 버리고 처음부터
         assertEquals(0, BriefingComposer.pendingForModel(old, saved, since))
