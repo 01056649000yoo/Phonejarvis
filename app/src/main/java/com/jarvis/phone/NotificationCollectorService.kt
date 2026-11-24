@@ -31,6 +31,8 @@ class NotificationCollectorService : NotificationListenerService() {
         val room = (ex.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)
             ?: style?.conversationTitle
             ?: (if (sbn.packageName == "com.kakao.talk") ex.getCharSequence(Notification.EXTRA_SUB_TEXT) else null)
+            // 2026-11-24: 오픈채팅이 그래도 사람마다 갈라짐 — 1:1 로 표시하는 대화는 방 이름을 숨긴 제목 칸에 넣기도 함
+            ?: groupTitle(ex.getCharSequence("android.hiddenConversationTitle")?.toString().orEmpty(), burst.map { it.who })
             ?: groupTitle(title, burst.map { it.who }))
             ?.toString()?.trim().orEmpty().take(100)
 
@@ -54,6 +56,9 @@ class NotificationCollectorService : NotificationListenerService() {
             // 🔐 인증번호·승인번호 알림은 모으지 않음(저장·요약·위젯에 남지 않게) — 상태바에는 그대로 둠
             if (isSecretCode("${m.title} ${m.text}")) continue
             val t = m.title.take(200); val body = m.text.take(1000)
+            // 📜 카톡 알림에는 그 방의 지난 메시지(어제 것까지)가 딸려 옴 — 이미 모은 것이면 넣지 않음.
+            // 방 이름 알아보기가 바뀌거나 예전 판에서 모은 것은 열쇠가 달라 지금 시각으로 다시 들어가 '어제 일이 섞이던' 것(2026-11-24)
+            if (m.key != null && m.key > 0 && NotificationDb.get(this).has(sbn.packageName, t, body, m.key - 60_000L)) continue
             val added = NotificationDb.get(this).insert(pkg = sbn.packageName, app = app, title = t, text = body, time = m.time, room = room,
                 dedupe = m.key?.let { "${sbn.packageName}|$room|$t|$body|$it" })
             if (!added) continue                                           // 이미 모은 메시지(알림이 고쳐져 다시 온 것)

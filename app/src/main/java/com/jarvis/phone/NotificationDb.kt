@@ -279,6 +279,11 @@ class NotificationDb private constructor(ctx: Context) :
         return id > 0
     }
 
+    /** 같은 앱·보낸 사람·내용의 메시지가 [fromMillis] 뒤에 이미 있는가 — 메시지 목록에 딸려 다시 온 지난 메시지 거르기 */
+    fun has(pkg: String, title: String, text: String, fromMillis: Long): Boolean =
+        readableDatabase.rawQuery("SELECT 1 FROM noti WHERE time>=? AND pkg=? AND title=? AND text=? LIMIT 1",
+            arrayOf(fromMillis.toString(), pkg, title, text)).use { it.moveToFirst() }
+
     fun since(fromMillis: Long): List<NotiItem> {
         val out = mutableListOf<NotiItem>()
         readableDatabase.rawQuery(
