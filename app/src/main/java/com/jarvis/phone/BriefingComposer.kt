@@ -32,7 +32,8 @@ object BriefingComposer {
     // 2026-11-22 빠르게(선생님: "2건인데 오래 걸림"): 넣는 글·받는 글을 줄이고, 짧은 1:1 은 모델 없이
     const val ROOM_CHARS = 1600       // 한 번에 넣는 글자 상한(최근 메시지부터 채움) — 2400 에서 줄임
     const val LINE_CHARS = 200        // 메시지 한 개에서 넣는 글자(300 에서 줄임)
-    const val SHORT_CHARS = 60        // 이보다 짧은 메시지만 있는 1:1 대화(3개까지)는 모델 없이
+    const val SHORT_CHARS = 60        // (예전 기준 — 지금은 RAW_CHARS)
+    const val RAW_CHARS = 80          // 2026-11-24 선생님: 짧으면 원문 — 맞장구를 뺀 말이 합쳐 이만큼 이하면 AI 없이 그대로
     const val SHORT_MAX_MSGS = 1      // 2026-11-23 선생님: 한 사람 말은 종합해서 — 원문 그대로는 한 마디일 때만(3개까지 이어 붙이니 나열처럼 보임)
     const val MAX_ASKS = 2            // 요청 칸은 가장 중요한 것 2개까지(여러 개를 쉼표로 늘어놓으면 핵심이 흐려짐)
     const val MAX_GROUP_ASKS = 3      // 단톡방은 사람마다 '이름: 부탁' 3개까지(2026-11-23 — 큰 방에서 한 사람 부탁만 남고 나머지가 빠지던 것)
@@ -466,8 +467,21 @@ object BriefingComposer {
         val texts = conv.items.map { it.text.replace('\n', ' ').trim() }
         if (texts.all { isChatter(it) }) return if (texts.size == 1) RoomSummary(conv, "", "", false, byModel = false) else null
         val said = conv.items.zip(texts).filterNot { isChatter(it.second) }
-        // 'ㅋㅋ' 같은 말은 세지 않고, 뜻 있는 말이 한 마디뿐일 때만(1:1·단톡 같음)
-        if (said.size > SHORT_MAX_MSGS || said.any { it.second.length > SHORT_CHARS }) return null
+        // 🔍 짧으면 원문(2026-11-24 선생님): 'ㅋㅋ' 같은 말을 뺀 말이 합쳐 [RAW_CHARS]자 이하면 몇 마디든 AI 없이 그대로 이어서.
+        // '에이씨...해양교육 오ㅐ이리 많오 / 화양 또 냅?' 을 AI 가 '해양교육에 불만이 많다'로 바꿔 오해가 생김 — 짧은 말은 원문이 더 빠르고 정확
+        if (said.size > SHORT_MAX_MSGS) {
+            if (said.sumOf { it.second.length } > RAW_CHARS) return null
+            var last = "\u0000"
+            val point = said.joinToString(" / ") { (n, t) ->
+                val w = conv.who(n); (if (w.isNotEmpty() && w != last) "$w: " else "").also { last = w } + t
+            }
+            val oneToOne = conv.items.all { it.room.isEmpty() }
+            // 물음은 원문 그대로 한 개(마지막) — 화면에서 요점과 겹치면 한 번만. 단톡방은 기한이 든 물음만 🙋
+            val q = said.lastOrNull { QUESTION.containsMatchIn(it.second) && hasWords(it.second) && !isRhetorical(it.second) }?.second
+            val ask = q?.takeIf { oneToOne || URGENT.containsMatchIn(it) }.orEmpty()
+            return RoomSummary(conv, point, ask, ask.isNotEmpty(), byModel = false)
+        }
+        if (said.any { it.second.length > RAW_CHARS }) return null
         val who = conv.who(said.last().first).let { if (it.isNotEmpty()) "$it: " else "" }
         // 한 마디는 AI 없이 — 물음·부탁은 짧은 말로(…하는지 물음·…달라고 함), 인사는 뗌(2026-11-23)
         val point = who + said.joinToString(" / ") { condenseAll(it.second) }
@@ -738,7 +752,7 @@ object BriefingComposer {
     /** 요점과 부탁을 한 문단으로: '…하기로 함. 꽃을 사 와 달라고 함.' (부탁이 요점에 이미 있으면 요점만) */
     fun paragraph(point: String, ask: String, reply: Boolean = false): String {
         // 한 문단(2026-11-23 선생님) — 높임말은 '…함'으로 맞춤(2026-11-24: '말씀하심')
-        fun end(x: String) = soften(x.trim().trimEnd('.', '。')).let { if (it.isEmpty() || it.last() in "?!？！") it else "$it." }   // '아녜요?.' 처럼 겹치지 않게
+        fun end(x: String) = soften(x.trim().trimEnd('.', '。')).let { if (it.isEmpty() || !(it.last() in '가'..'힣' || it.last().isLetterOrDigit() && it.last().code < 0x3130)) it else "$it." }   // '아녜요?.'·'ㅋ.' 처럼 겹치지 않게
         // 부탁 내용이 요점에 이미 들어 있으면(끝말 '…달라고 함'을 떼고 두 글자 조각이 절반 넘게 겹침) 한 번만
         fun core(x: String) = x.trim().replace(ENDING, "")
         return if (ask.isEmpty() || isRhetorical(ask) || point.contains(ask) || overlap(core(ask), core(point)) >= 0.5) end(point) else end(point) + (if (reply) " 🙋 " else " ") + end(groupAsk(ask))
@@ -781,7 +795,11 @@ object BriefingComposer {
         if (replies.isNotEmpty() || talk.isNotEmpty() || others.isNotEmpty()) {
             append("💬 대화 요약 (${rooms.size + leftover.size}개 방" + (if (replies.isNotEmpty()) " · 🙋 답장 ${replies.size}" else "") + ")\n")
             replies.forEach { r ->
-                val detail = if (r.ask.isNotEmpty() && r.byModel && !r.point.contains(r.ask)) "${r.ask} (${dropName(r.point, r.conv.room)})" else r.ask.ifEmpty { dropName(r.point, r.conv.room) }
+                val detail = when {
+                    r.ask.isNotEmpty() && r.byModel && !r.point.contains(r.ask) -> "${r.ask} (${dropName(r.point, r.conv.room)})"
+                    !r.byModel && r.ask.isNotEmpty() && r.point.contains(r.ask) -> dropName(r.point, r.conv.room)   // 원문 그대로 — 물음만 떼지 않고 앞뒤 말까지
+                    else -> r.ask.ifEmpty { dropName(r.point, r.conv.room) }
+                }
                 append("- 🙋 ${r.conv.room} · ${fmt.format(r.conv.last)}: $detail" + more(r) + "\n")
             }
             talk.forEach { r ->
