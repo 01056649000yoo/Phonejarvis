@@ -25,8 +25,13 @@ class NotificationCollectorService : NotificationListenerService() {
         if (title.isEmpty() && text.isEmpty()) return
 
         // 단톡방 이름: 메시지 앱은 대화 제목(단톡방)을 따로 넣어 줌. 1:1 대화면 비어 있고 제목(보낸 사람)이 곧 방.
+        // 💬 메시지 목록이 든 알림(카톡·문자 등): 한 번에 여러 메시지가 오면 마지막 것만 남던 것(2026-11-24 점검) → 목록의 메시지를 하나씩
+        val style = runCatching { androidx.core.app.NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(n) }.getOrNull()
+        val burst = runCatching { style?.let { messagesOf(it, sbn.postTime) } }.getOrNull().orEmpty()
         val room = (ex.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)
-            ?: if (sbn.packageName == "com.kakao.talk") ex.getCharSequence(Notification.EXTRA_SUB_TEXT) else null)
+            ?: style?.conversationTitle
+            ?: (if (sbn.packageName == "com.kakao.talk") ex.getCharSequence(Notification.EXTRA_SUB_TEXT) else null)
+            ?: groupTitle(title, burst.map { it.who }))
             ?.toString()?.trim().orEmpty().take(100)
 
         // 📒 앱·방 이름 기억 (내용 X): 뺀 앱·끈 방도 목록에서 사라지지 않고 다시 켤 수 있게
@@ -39,8 +44,6 @@ class NotificationCollectorService : NotificationListenerService() {
 
         // 설정에서 뺀 방은 모으지 않음 (단, 중요 키워드가 있으면 모음)
         val rules = AppFilter.rules(this)
-        // 💬 메시지 목록이 든 알림(카톡·문자 등): 한 번에 여러 메시지가 오면 마지막 것만 남던 것(2026-11-24 점검) → 목록의 메시지를 하나씩
-        val burst = runCatching { messagesOf(n, sbn.postTime) }.getOrNull().orEmpty()
         val incoming = if (burst.isNotEmpty()) burst.map { Incoming(it.who.ifEmpty { title }, it.text, it.time, it.key) }
             else listOf(Incoming(title, text, sbn.postTime, null))
         var kept = 0
@@ -144,8 +147,7 @@ class NotificationCollectorService : NotificationListenerService() {
     private data class Incoming(val title: String, val text: String, val time: Long, val key: Long?)
 
     /** 알림의 메시지 목록(MessagingStyle). 내가 보낸 말은 뺌. 없으면 빈 목록 */
-    private fun messagesOf(n: Notification, postTime: Long): List<Msg> {
-        val style = androidx.core.app.NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(n) ?: return emptyList()
+    private fun messagesOf(style: androidx.core.app.NotificationCompat.MessagingStyle, postTime: Long): List<Msg> {
         val me = style.user.name?.toString().orEmpty()
         val raw = style.messages.mapNotNull { m ->
             val text = m.text?.toString()?.trim().orEmpty()
@@ -157,6 +159,17 @@ class NotificationCollectorService : NotificationListenerService() {
     }
 
     companion object {
+        /**
+         * 방 이름이 따로 없을 때 알림 제목이 곧 단톡방 이름인가(순수 규칙 — 시험).
+         * 2026-11-24: 오픈채팅은 제목이 방 이름, 메시지마다 보낸 사람이 따로 있어 — 보낸 사람마다 1:1 방으로 갈라져 13개 방이 됨.
+         * 보낸 사람 중 누구와도 제목이 다르면(1:1 은 제목이 곧 보낸 사람) 제목을 방 이름으로
+         */
+        fun groupTitle(title: String, senders: List<String>): String? {
+            val who = senders.filter { it.isNotBlank() }.distinct()
+            if (title.isBlank() || who.isEmpty()) return null
+            return title.takeIf { t -> who.none { t == it || t.startsWith(it) || it.startsWith(t) } }
+        }
+
         /** 메시지 목록에서 꺼낸 메시지 하나 */
         data class Msg(val who: String, val text: String, val time: Long, val key: Long)
 

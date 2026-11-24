@@ -46,4 +46,14 @@ class CollectorRulesTest {
         org.junit.Assert.assertEquals(listOf(post - 2, post - 1, post), late.map { it.time })
         assertTrue(late.zipWithNext().all { (a, b) -> a.time < b.time })
     }
+
+    @Test fun 오픈채팅은_제목이_방_이름() {
+        // 2026-11-24: 오픈채팅 사람마다 1:1 방으로 갈라져 13개 방이 됨
+        org.junit.Assert.assertEquals("교사 개발자 모임", NotificationCollectorService.groupTitle("교사 개발자 모임", listOf("좌절하는 라이언", "보스코허")))
+        org.junit.Assert.assertEquals("교사 개발자 모임", NotificationCollectorService.groupTitle("교사 개발자 모임", listOf("방장아님")))
+        // 1:1 은 제목이 곧 보낸 사람
+        org.junit.Assert.assertNull(NotificationCollectorService.groupTitle("햅삐", listOf("햅삐", "햅삐")))
+        org.junit.Assert.assertNull(NotificationCollectorService.groupTitle("김민수 선생님", listOf("김민수")))
+        org.junit.Assert.assertNull(NotificationCollectorService.groupTitle("엄마", emptyList()))
+    }
 }

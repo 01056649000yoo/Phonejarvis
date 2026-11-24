@@ -18,6 +18,25 @@ class SummaryPolishTest {
         assertEquals("햅삐네 가게 이야기", BriefingComposer.dropName("햅삐네 가게 이야기", "햅삐"))      // 조사가 아니면 그대로
     }
 
+    @Test fun 높임말로_줄이지_않음() {
+        assertEquals("사진을 보내며 이런 활동을 하는구나 하고 말함", BriefingComposer.soften("사진을 보내며 이런 활동을 하는구나 하고 말씀하심"))
+        assertEquals("자료를 보냄", BriefingComposer.soften("자료를 보내심"))
+        assertEquals("회의에 참석했다고 함", BriefingComposer.soften("회의에 참석하셨다고 함"))
+        assertEquals("관심을 보임", BriefingComposer.soften("관심을 보임"))
+    }
+
+    @Test fun 묶음_부탁은_짧게_답장은_표시() {
+        val p = BriefingComposer.paragraph("12월 1일 5교시 보결을 넣기로 함", "4학년애들 급식실 임장 해주세요~~ 체육끝나고.", reply = true)
+        assertTrue(p, p.startsWith("12월 1일 5교시 보결을 넣기로 함. 🙋 "))
+        assertFalse(p, "~~" in p)
+        assertEquals("사진을 보냄.", BriefingComposer.paragraph("사진을 보내심", ""))
+    }
+
+    @Test fun 맞장구_물음은_요청이_아님() {
+        listOf("아 그래요?", "진짜요?", "헐 대박", "그렇군요 ㅎㅎ").forEach { assertTrue(it, BriefingComposer.isFiller(it)) }
+        assertFalse(BriefingComposer.isFiller("그래요? 그럼 내일 몇 시에 가요?"))
+    }
+
     @Test fun 서비스_자동_메일은_업체() {
         listOf("GitHub", "Notion", "Zoom", "Slack").forEach { assertTrue(it, AdFilter.isBusinessName(it)) }
         assertFalse(AdFilter.isBusinessName("김민수 선생님"))

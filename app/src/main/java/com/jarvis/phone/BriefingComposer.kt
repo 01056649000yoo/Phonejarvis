@@ -44,7 +44,7 @@ object BriefingComposer {
     /** 오늘·내일·기한이 든 말 — 급한 요청을 앞에(2026-11-23) */
     private val URGENT = Regex("(오늘|내일|지금|당장|아침|오전|오후|저녁|이따|까지|급히|급해|빨리|\\d+시|\\d+교시)")
     /** 맞장구·인사뿐인 말 — 모델에 넣지 않음(단톡방 '네 알겠습니다'가 요점이 되던 것) */
-    private val ACK = Regex("^((네+|넵+|넹|예|옙|알겠습니다|알겠어요|알겠어|감사합니다|감사해요|고맙습니다|고마워|수고하셨(어요|습니다)|수고 ?많으셨(어요|습니다)|확인했(어요|습니다)|확인했음|좋아요|좋습니다|오케이|ok|ㅇㅋ|ㅇㅇ)[\\s.,!~^ㅎㅋㅠ]*)+$", RegexOption.IGNORE_CASE)
+    private val ACK = Regex("^((네+|넵+|넹|예|옙|알겠습니다|알겠어요|알겠어|감사합니다|감사해요|고맙습니다|고마워|수고하셨(어요|습니다)|수고 ?많으셨(어요|습니다)|확인했(어요|습니다)|확인했음|좋아요|좋습니다|오케이|ok|ㅇㅋ|ㅇㅇ|((아|오|와|헐|앗|엥) ?)?(그래요|그렇군요|그렇구나|그런가요|그쵸|그죠|진짜요|정말요|대박))[\\s.,!?~^ㅎㅋㅠ]*)+$", RegexOption.IGNORE_CASE)
     private val QUESTION = Regex("[?？]|(주세요|주시면|주실|부탁|가능할까|될까요|되나요|인가요|있나요|어떠세요|알려|확인해|회신|답장|연락 ?주)")
 
     /** 사람 메시지(메시지 앱)인가 — 업무 앱·사람 묶음은 이 앞에서 이미 빠진다. 메시지 앱이어도 봇·채널·앱 안내는 사람이 아니다 */
@@ -400,6 +400,15 @@ object BriefingComposer {
         Regex("(지시|명령|통보)(함|했음|하였음)") to "말함",
         Regex("(지시|명령)") to "부탁",
         Regex("통보") to "알림",
+        // 2026-11-24: '사진을 보내며 … 말씀하심' — 다른 줄은 '…함'인데 높임말로 줄이는 일이 있음
+        Regex("말씀하(심|셨음|셨습니다|셨다)") to "말함",
+        Regex("말씀하시(며|고)") to "말하$1",
+        Regex("하(셨음|심)(?![가-힣])") to "함",
+        Regex("하셨(다고|으며|고)") to "했$1",
+        Regex("보내(셨음|심)(?![가-힣])") to "보냄",
+        Regex("주(셨음|심)(?![가-힣])") to "줌",
+        Regex("물으(셨음|심)(?![가-힣])") to "물음",
+        Regex("말씀") to "말",
     )
     /** 요약 글에서 '지시·명령·통보'를 '…라고 함'·'부탁'·'알림'으로 */
     fun soften(s: String): String = STIFF.fold(s) { acc, (re, to) -> re.replace(acc, to) }
@@ -699,11 +708,18 @@ object BriefingComposer {
 
     private val ENDING = Regex("(해 ?)?(달라고|라고|자고|고) ?함\\.?$")
     /** 요점과 부탁을 한 문단으로: '…하기로 함. 꽃을 사 와 달라고 함.' (부탁이 요점에 이미 있으면 요점만) */
-    fun paragraph(point: String, ask: String): String {
-        fun end(x: String) = x.trim().trimEnd('.', '。').let { if (it.isEmpty()) it else "$it." }
+    fun paragraph(point: String, ask: String, reply: Boolean = false): String {
+        // 한 문단(2026-11-23 선생님) — 높임말은 '…함'으로 맞춤(2026-11-24: '말씀하심')
+        fun end(x: String) = soften(x.trim().trimEnd('.', '。')).let { if (it.isEmpty()) it else "$it." }
         // 부탁 내용이 요점에 이미 들어 있으면(끝말 '…달라고 함'을 떼고 두 글자 조각이 절반 넘게 겹침) 한 번만
         fun core(x: String) = x.trim().replace(ENDING, "")
-        return if (ask.isEmpty() || point.contains(ask) || overlap(core(ask), core(point)) >= 0.5) end(point) else end(point) + " " + end(ask)
+        return if (ask.isEmpty() || point.contains(ask) || overlap(core(ask), core(point)) >= 0.5) end(point) else end(point) + (if (reply) " 🙋 " else " ") + end(groupAsk(ask))
+    }
+
+    /** 묶음 칸의 부탁이 원문 그대로면('…해주세요~~ 체육끝나고.') 짧은 말('…달라고 함')로 */
+    fun groupAsk(ask: String): String {
+        val a = ask.trim().trimEnd('.')
+        return if (Regex("(함|물음|요청|부탁)$").containsMatchIn(a)) a else askSentence(a.replace(Regex("~+"), "")).trimEnd('.')
     }
 
     /** 👥 묶음별: '🏠 가족 연락 (2명 · 5건)' 아래 사람마다 이름 그대로 + 한 말 한 문단 */
@@ -717,7 +733,7 @@ object BriefingComposer {
             // 사람 이름은 그대로, 그 사람이 한 말만 한 문단으로(요점 + 부탁을 이어서) — 2026-11-23 선생님
             list.sortedByDescending { it.conv.last }.forEach { r ->
                 val point = r.point.ifBlank { r.conv.items.last().text.replace('\n', ' ').take(60) }.removePrefix("${r.conv.room}: ").let { dropName(it, r.conv.room) }
-                append("- ${r.conv.room} (${r.conv.items.size}건) · ${fmt.format(r.conv.last)}: ${paragraph(point, r.ask)}\n")
+                append("- ${r.conv.room} (${r.conv.items.size}건) · ${fmt.format(r.conv.last)}: ${paragraph(point, r.ask, r.needReply)}\n")
             }
             if (rest.isNotEmpty()) append("- 그 밖에: " + rest.joinToString(", ") { "${it.room} ${it.items.size}건" } + "\n")
             append("\n")
