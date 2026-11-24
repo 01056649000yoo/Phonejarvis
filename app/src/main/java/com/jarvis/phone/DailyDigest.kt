@@ -20,10 +20,10 @@ object DailyDigest {
     fun isDaily(b: Briefing) = b.label == LABEL
 
     /** 요약 글들 → 하루 정리 글. [briefings] 는 그날 요약(오래된 것부터), [taskPart] 는 📌 마감 칸(없으면 "") */
-    fun compose(briefings: List<Briefing>, taskPart: String): String = merge(briefings, taskPart).first
+    fun compose(briefings: List<Briefing>, taskPart: String, replied: Map<String, Long> = emptyMap()): String = merge(briefings, taskPart, replied).first
 
     /** 합친 글과 앱별 건수(모든 앱). 글의 📦 줄은 앞 6개 앱만 적으므로 건수는 여기서 바로 받는다 */
-    private fun merge(briefings: List<Briefing>, taskPart: String): Pair<String, Map<String, Int>> {
+    private fun merge(briefings: List<Briefing>, taskPart: String, replied: Map<String, Long> = emptyMap()): Pair<String, Map<String, Int>> {
         val reply = LinkedHashMap<String, String>()      // 방 → 줄 (최근 것이 이김)
         val talk = LinkedHashMap<String, Pair<String, Int>>()   // 방 → (줄, 건수 합)
         val others = linkedMapOf<String, LinkedHashMap<String, Pair<String, Int>>>()   // 칸 머리 → (사람·앱 → (줄, 건수 합))
@@ -38,7 +38,11 @@ object DailyDigest {
                     head.startsWith("🙋") -> items.forEach { l -> l.substringBefore(" · ").removePrefix("- ").let { k -> reply.remove(k); reply[k] = "- 🙋 " + l.removePrefix("- ") } }
                     head.startsWith("💬") -> {
                         items.filter { it.startsWith("- 🙋 ") }.forEach { l ->
-                            l.removePrefix("- 🙋 ").substringBefore(" · ").let { k -> reply.remove(k); reply[k] = l }
+                            l.removePrefix("- 🙋 ").substringBefore(" · ").let { k ->
+                                reply.remove(k)
+                                // ✔ 이 요약 뒤에 내가 그 방에 답했으면 답할 연락에서 내림(2026-11-24)
+                                if ((replied[k] ?: 0L) > b.time) talk[k] = ("- " + l.removePrefix("- 🙋 ") + " · ✔ 답함") to 1 else reply[k] = l
+                            }
                         }
                         items.filterNot { it.startsWith("- 그 밖의 방") || it.startsWith("- 🙋 ") }.forEach { l ->
                             val k = l.substringBefore(" (")
@@ -112,9 +116,9 @@ object DailyDigest {
     private val RANK_CAP = mapOf(1 to 8, 2 to 8)   // 1·2순위가 많아도 3순위 자리가 조금은 남게
 
     /** 그날 요약본들 → 순위 매긴 줄들(같은 방·같은 줄은 한 번, 최근 것이 이김) */
-    fun material(briefings: List<Briefing>, taskPart: String, students: List<String>): Material {
+    fun material(briefings: List<Briefing>, taskPart: String, students: List<String>, replied: Map<String, Long> = emptyMap()): Material {
         // 위의 규칙 합치기로 먼저 중복을 없앰. 앱 건수는 모든 앱을 더한 값(📦 줄은 6개 앱만 적어 '23건'처럼 적게 나오던 것, 2026-11-23)
-        val (merged, apps) = merge(briefings, "")
+        val (merged, apps) = merge(briefings, "", replied)
         val lines = mutableListOf<Line>()
         fun body(l: String) = l.removePrefix("- ").trim()
         fun hasStudent(l: String) = students.any { it.length >= 2 && it in l }
@@ -264,7 +268,7 @@ object DailyDigest {
         val day = SummarySchedule.startOfDay(now)
         val today = db.briefings(300).filter { it.time >= day && !isDaily(it) }.sortedBy { it.time }
         if (today.isEmpty()) return null
-        val m = material(today, Briefings.taskSection(db.tasks()), Students.names(ctx))
+        val m = material(today, Briefings.taskSection(db.tasks()), Students.names(ctx), ReplyLog.all(ctx))
         val (text, byAi) = write(m, now, ask)
         db.insertBriefing(Briefing(time = now, fromTime = day, label = LABEL, count = 0, text = text))
         val d = SimpleDateFormat("M/d (E)", Locale.KOREA).format(now)

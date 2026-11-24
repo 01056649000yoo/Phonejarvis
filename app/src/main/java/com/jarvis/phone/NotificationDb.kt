@@ -279,6 +279,15 @@ class NotificationDb private constructor(ctx: Context) :
         return id > 0
     }
 
+    /** 🧵 [until] 바로 앞(그리고 [after] 뒤)의 같은 방 메시지 최근 [limit]개, 오래된 것부터 — 단톡방은 방 이름, 1:1 은 보낸 사람으로 */
+    fun lastBefore(pkg: String, room: String, title: String, until: Long, after: Long, limit: Int = 5): List<NotiItem> {
+        val (where, args) = if (room.isNotEmpty()) "pkg=? AND room=?" to listOf(pkg, room) else "pkg=? AND room='' AND title=?" to listOf(pkg, title)
+        return readableDatabase.rawQuery(
+            "SELECT id,pkg,app,title,text,time,room FROM noti WHERE $where AND time<? AND time>=? ORDER BY time DESC LIMIT $limit",
+            (args + until.toString() + after.toString()).toTypedArray()
+        ).use { c -> buildList { while (c.moveToNext()) add(NotiItem(c.getLong(0), c.getString(1), c.getString(2), c.getString(3), c.getString(4), c.getLong(5), c.getString(6))) } }.asReversed()
+    }
+
     /** 같은 앱·보낸 사람·내용의 메시지가 [fromMillis] 뒤에 이미 있는가 — 메시지 목록에 딸려 다시 온 지난 메시지 거르기 */
     fun has(pkg: String, title: String, text: String, fromMillis: Long): Boolean =
         readableDatabase.rawQuery("SELECT 1 FROM noti WHERE time>=? AND pkg=? AND title=? AND text=? LIMIT 1",

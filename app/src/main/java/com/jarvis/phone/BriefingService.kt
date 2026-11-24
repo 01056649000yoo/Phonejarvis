@@ -306,20 +306,21 @@ object Briefings {
         val load = PhoneLoad.state(ctx)
         val skipAi = PhoneLoad.skipAiReason(load)
         val focus = focusOn(ctx)   // 🎯 중요한 대화만 요약(IDENTITY.md 원칙 2)
+        val before = beforeOf(db, from)   // 🧵 지난 요약 끝에서 이어진 대화(참고용)
         val ai = when {
             rest.isEmpty() && split.groups.isEmpty() -> null
-            skipAi != null -> BriefingComposer.compose(rest, ask = { "" }, replyAllowed = { c -> c.items.any { rules.mentionsRoster(it) } }, cache = cache, since = from, groups = split.groups, focus = focus)
+            skipAi != null -> BriefingComposer.compose(rest, ask = { "" }, replyAllowed = { c -> c.items.any { rules.mentionsRoster(it) } }, cache = cache, since = from, groups = split.groups, focus = focus, before = before)
             else -> {
                 // 2026-11-23 선생님: 알림이 100건 넘으면 요약이 중간에 끊김 — 정리한 방은 기억해 두고(캐시), 6분 안에 못 끝내면
                 // 지금까지 정리한 것을 먼저 알리고 남은 방을 이어서 마무리(중요한 방부터 정리하므로 먼저 간 알림에도 꼭 볼 것은 들어 있음)
                 val mem = cache.toMutableMap()
                 val allowed = { c: BriefingComposer.Conversation -> c.items.any { rules.mentionsRoster(it) } }
-                val first = summarizer.summarize(rest, onStatus, allowed, mem, from, onCached = { mem[it.key] = it }, groups = split.groups, maxMillis = FIRST_PASS_MS, focus = focus)
+                val first = summarizer.summarize(rest, onStatus, allowed, mem, from, onCached = { mem[it.key] = it }, groups = split.groups, maxMillis = FIRST_PASS_MS, focus = focus, before = before)
                 if (first.cutRooms > 0 && summarizer.cutByTime) {
                     val partial = (order(first.groups, keywordPart, first.work, first.people, first.apps) +
                         "\n\n(⏳ 남은 대화방 ${first.cutRooms}곳은 이어서 정리하고 있어요. 다 되면 이 알림이 바뀌어요)")
                     runCatching { onPartial("$label · 알림 ${items.size}건 (정리 중)", partial, cutoff) }
-                    summarizer.summarize(rest, onStatus, allowed, mem, from, onCached = { mem[it.key] = it }, groups = split.groups, maxMillis = SECOND_PASS_MS, focus = focus)
+                    summarizer.summarize(rest, onStatus, allowed, mem, from, onCached = { mem[it.key] = it }, groups = split.groups, maxMillis = SECOND_PASS_MS, focus = focus, before = before)
                 } else first
             }
         }
@@ -381,6 +382,13 @@ object Briefings {
     fun roster(ctx: Context): (BriefingComposer.Conversation) -> Boolean {
         val rules = AppFilter.rules(ctx)
         return { c -> c.items.any { rules.mentionsRoster(it) } }
+    }
+
+    /** 🧵 대화방마다 이번 구간(from) 바로 앞 30분 안의 같은 방 메시지 — 업무 앱(💼)은 빼고 */
+    fun beforeOf(db: NotificationDb, from: Long): (BriefingComposer.Conversation) -> List<NotiItem> = { c ->
+        val n = c.items.firstOrNull()
+        if (n == null || from <= 0L || c.app == BriefingComposer.WORK_TITLE) emptyList()
+        else db.lastBefore(n.pkg, n.room, n.title, from, from - BriefingComposer.CONTINUE_MS)
     }
 
     /** 메일 앱 알림인가(제목이 보낸 사람) — 캘린더 같은 다른 업무 앱은 제목이 일정 이름이라 업체 이름 거르기를 하지 않음 */

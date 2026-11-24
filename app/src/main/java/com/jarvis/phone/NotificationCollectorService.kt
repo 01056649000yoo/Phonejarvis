@@ -37,6 +37,12 @@ class NotificationCollectorService : NotificationListenerService() {
             ?.toString()?.trim().orEmpty().take(100)
         // 🔧 카톡 알림 구조 기록(메시지 내용 없이) — 오픈채팅 방 이름이 어디 들어오는지 설정 → 시스템에서 보려고
         if (sbn.packageName == "com.kakao.talk") runCatching { NotiProbe.record(this, ex, style, burst.map { it.who }, room) }
+        // ✔ 내가 이 방에 답한 시각(알림에 딸려 온 내 말) — 하루 정리에서 답한 🙋 물음을 내리려고
+        runCatching {
+            val me = style?.user?.name?.toString().orEmpty()
+            style?.messages?.filter { m -> m.person == null || (me.isNotEmpty() && m.person?.name?.toString()?.trim() == me) }
+                ?.maxOfOrNull { it.timestamp }?.let { ReplyLog.mark(this, room.ifEmpty { title }, it) }
+        }
 
         // 📒 앱·방 이름 기억 (내용 X): 뺀 앱·끈 방도 목록에서 사라지지 않고 다시 켤 수 있게
         val app = appLabel(sbn.packageName)

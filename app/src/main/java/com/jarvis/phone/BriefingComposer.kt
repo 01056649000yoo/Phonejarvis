@@ -26,7 +26,8 @@ object BriefingComposer {
     /** 모델이 돌려준 세 줄(또는 규칙으로 만든 값) */
     /** fellBack: 모델 답에 원문에 없는 숫자가 있어 버렸음 — 한 번 더 물어볼 신호 */
     data class RoomSummary(val conv: Conversation, val point: String, val ask: String, val needReply: Boolean, val byModel: Boolean, val fellBack: Boolean = false,
-                           /** 요약 줄에 못 들어간 부탁 수(단톡방) — '외 부탁 N건' */ val extra: Int = 0)
+                           /** 요약 줄에 못 들어간 부탁 수(단톡방) — '외 부탁 N건' */ val extra: Int = 0,
+                           /** 지난 요약 구간 끝에서 이어진 대화면 그 마지막 말('보낸 사람: 말') — 줄 끝에 '↪ 앞: …' */ val prevLine: String = "")
 
     const val CHUNK = 30              // 대화방 하나에서 모델에 한 번에 넣는 메시지 수 — 넘으면 30개씩 나눠 요약한 뒤 합침(2026-11-21 선생님)
     // 2026-11-22 빠르게(선생님: "2건인데 오래 걸림"): 넣는 글·받는 글을 줄이고, 짧은 1:1 은 모델 없이
@@ -193,12 +194,79 @@ object BriefingComposer {
         return out.flatMap { fit(it) }
     }
 
+    /**
+     * 💬 말 차례(turn): 같은 사람이 [TURN_GAP_MS] 안에 잇따라 보낸 메시지를 ' / '로 이어 한 개로(시각은 마지막 것).
+     * 카톡은 '교감샘도드시냐' '성우 유예를위해 오늘 달려야겠네'처럼 한 생각을 여러 토막으로 보냄 — 토막마다 따로 보면 뜻이 끊김
+     */
+    const val TURN_GAP_MS = 3 * 60_000L
+    const val CONTINUE_MS = 30 * 60_000L   // 앞 구간 마지막 말과 이만큼 안이면 이어진 대화
+    fun turns(conv: Conversation, items: List<NotiItem>): List<NotiItem> {
+        val out = mutableListOf<NotiItem>()
+        fun speaker(n: NotiItem) = conv.who(n).ifEmpty { n.title.trim() }
+        for (n in items) {
+            val last = out.lastOrNull()
+            if (last != null && speaker(last) == speaker(n) && last.room == n.room && n.time - last.time <= TURN_GAP_MS)
+                out[out.size - 1] = last.copy(text = last.text.trimEnd() + " / " + n.text.trim(), time = n.time)
+            else out += n
+        }
+        return out
+    }
+
+    // ── 🧵 단톡방은 고르기만(2026-11-24 선생님 — 카톡은 짧은 말·물음·토막이 많아 AI 가 바꿔 쓰면 뜻이 틀어짐) ──
+    // AI 는 핵심 줄 번호만 고르고, 화면에는 그 줄의 원문. 여러 사람이 말한 단톡방에만
+    @Volatile var pickLines = true
+    fun multiSpeaker(conv: Conversation) = conv.items.any { it.room.isNotEmpty() } &&
+        conv.items.filterNot { isFiller(it.text) }.map { conv.who(it) }.filter { it.isNotEmpty() }.distinct().size >= 2
+
+    /** 고를 줄: 잡담을 뺀 말 차례를 최근부터 roomChars 안에서, 시간 순서로 */
+    fun pickTurns(conv: Conversation): List<NotiItem> {
+        val all = turns(conv, conv.items.filterNot { isFiller(it.text) })
+        val out = ArrayDeque<NotiItem>(); var size = 0
+        for (n in all.asReversed()) {
+            val len = lineOf(conv, n).length + 4
+            if (size + len > roomChars && out.isNotEmpty()) break
+            out.addFirst(n); size += len
+        }
+        return out.toList()
+    }
+
+    fun pickPrompt(conv: Conversation, ts: List<NotiItem>, context: List<String>): String =
+        "너는 교사인 사용자의 비서야. 단톡방 '${conv.room}'의 대화야. 사용자도 이 방에 있어.\n" +
+        (if (context.isNotEmpty()) "[앞 대화 — 참고만 해. 번호가 없고 고르지 마]\n${context.joinToString("\n")}\n" else "") +
+        "[이번 대화] 번호. 시각 보낸 사람: 말\n" +
+        ts.mapIndexed { i, n -> "${i + 1}. ${lineOf(conv, n)}" }.joinToString("\n") + "\n" +
+        "정확히 두 줄로 답해. 번호만 쓰고 다른 말, 꾸밈, 별표는 쓰지 마.\n" +
+        "핵심: 이 대화에서 무슨 일이 있었는지 가장 잘 보여 주는 줄 번호 1~3개를 쉼표로. 약속·결정·날짜·시간·장소가 든 줄을 먼저, 맞장구·감탄은 고르지 마.\n" +
+        "부탁: 사용자(선생님)나 방 사람 모두에게 무엇을 해 달라거나 묻는 줄 번호를 쉼표로. 혼잣말·농담은 빼. 없으면 없음.\n" +
+        "예시:\n핵심: 2, 5\n부탁: 없음"
+
+    private val NUMS = Regex("\\d{1,2}")
+    /** 답 → 고른 줄의 원문('보낸 사람: 말', 같은 사람이 이어지면 이름은 한 번). 번호를 못 읽으면 마지막 두 줄 */
+    fun parsePicks(conv: Conversation, ts: List<NotiItem>, reply: String): RoomSummary {
+        fun nums(name: String) = reply.lines().firstOrNull { it.trim().startsWith(name) }?.substringAfter(':').orEmpty()
+            .let { l -> if (l.trim().startsWith("없")) emptyList() else NUMS.findAll(l).mapNotNull { it.value.toIntOrNull()?.minus(1) }.filter { it in ts.indices }.distinct().toList() }
+        val picked = nums("핵심").take(3).sorted().ifEmpty { ts.indices.toList().takeLast(2) }
+        fun said(n: NotiItem) = n.text.replace('\n', ' ').replace(URL, "(링크)").trim()
+        var last = "\u0000"
+        val point = picked.joinToString(" / ") { i ->
+            val n = ts[i]; val w = conv.who(n).ifEmpty { n.title.trim() }
+            (if (w != last) "$w: " else "").also { last = w } + clip(said(n), 60)
+        }
+        val asks = nums("부탁").map { ts[it] }
+            .filter { n -> val t = said(n); (QUESTION.containsMatchIn(t) || REQUEST.containsMatchIn(t)) && hasWords(t) && !isRhetorical(t) }
+            .takeLast(MAX_GROUP_ASKS)
+            .map { n -> "${conv.who(n).ifEmpty { n.title.trim() }}: ${clip(quotedAsk(said(n)), 60)}" }
+        val ask = asks.joinToString(", ")
+        return RoomSummary(conv, clip(point, 200), ask, ask.isNotEmpty(), byModel = true)
+    }
+
     /** 모델에 넣는 대화 내용: 최근 메시지부터 roomChars 안에서, 시간 순서로 */
     fun transcript(conv: Conversation): String {
         val picked = ArrayDeque<String>()
         var size = 0
         // 'ㅋㅋ'·'네 알겠습니다' 같은 말은 빼고(모두 그런 말이면 그대로) — 넣는 글이 줄어 빠르고, 모델이 잡담을 요점으로 삼지 않음
-        val meaningful = conv.items.filterNot { isFiller(it.text) }.ifEmpty { conv.items }
+        // 한 사람이 잇따라 보낸 짧은 말은 한 줄로(turns) — 카톡의 토막 말이 한 덩어리가 되어 뜻이 이어짐(2026-11-24)
+        val meaningful = turns(conv, conv.items.filterNot { isFiller(it.text) }.ifEmpty { conv.items })
         for (n in meaningful.asReversed()) {
             val line = lineOf(conv, n)
             if (size + line.length > roomChars && picked.isNotEmpty()) break
@@ -235,11 +303,15 @@ object BriefingComposer {
     @Volatile var rulesFirst = false
     private const val HEAD = "너는 교사인 사용자의 비서야. 메시지 대화를 읽고 정확히 두 줄로 답해. 다른 말, 꾸밈, 별표는 쓰지 마. 사용자도 그 대화에 들어 있는 사람이야."
 
-    fun prompt(conv: Conversation): String = if (rulesFirst)
-        HEAD + "\n" + RULES.trim() + "\n\n" + "이제 '${conv.room}'(${conv.app})에 온 메시지 ${conv.items.size}개야.\n---\n${transcript(conv)}\n---\n위 메시지만 보고 두 줄로 답해."
+    /** 앞 대화(참고용) 칸 — 지난 요약 구간 끝에서 이어진 대화의 맥락만, 요약하지 않게 */
+    private fun contextBlock(context: List<String>) =
+        if (context.isEmpty()) "" else "[앞 대화 — 참고만 해. 요약하지 마]\n${context.joinToString("\n")}\n"
+
+    fun prompt(conv: Conversation, context: List<String> = emptyList()): String = if (rulesFirst)
+        HEAD + "\n" + RULES.trim() + "\n\n" + contextBlock(context) + "이제 '${conv.room}'(${conv.app})에 온 메시지 ${conv.items.size}개야.\n---\n${transcript(conv)}\n---\n위 메시지만 보고 두 줄로 답해."
     else
         "너는 교사인 사용자의 비서야. 아래는 '${conv.room}'(${conv.app})에 온 메시지 ${conv.items.size}개야. 사용자도 이 대화에 들어 있는 사람이야.\n" +
-        "---\n${transcript(conv)}\n---\n" +
+        contextBlock(context) + "---\n${transcript(conv)}\n---\n" +
         "위 메시지만 보고 정확히 두 줄로 답해. 다른 말, 꾸밈, 별표는 쓰지 마.\n" + RULES.trim()
 
     /**
@@ -636,6 +708,8 @@ object BriefingComposer {
         groups: List<Group> = emptyList(),
         /** 🎯 중요한 대화만 요약(설정 '중요한 대화만', 기본 켬) — 중요한지는 [important]([replyAllowed] 를 명부로) */
         focus: Boolean = false,
+        /** 🧵 이 구간 바로 앞(지난 요약 구간 끝)의 같은 방 메시지 — AI 에 참고로만 주고, 이어진 대화면 줄 끝에 '↪ 앞: …' */
+        before: (Conversation) -> List<NotiItem> = { emptyList() },
     ): Result {
         val (people, apps) = items.partition(::isPerson)
         val groupList = groups.map { it.title to groupConvs(it) }.filter { it.second.isNotEmpty() }
@@ -666,11 +740,32 @@ object BriefingComposer {
             if (conv.app == WORK_TITLE && isMail(conv)) { rooms += mails(conv); continue }
             // 🙏 인사·맞장구뿐인 방은 요약 줄 없이 '그 밖의 방'에 이름만(2026-11-24: '감사합니다 선배님 !!')
             if (conv.items.all { isFiller(it.text) }) { rooms += RoomSummary(conv, "", "", false, byModel = false); continue }
+            // 🧵 앞 대화(참고용) — 30분 안에 이어진 것만
+            val earlier = runCatching { before(conv) }.getOrDefault(emptyList()).filterNot { isFiller(it.text) }
+                .filter { conv.items.first().time - it.time <= CONTINUE_MS }.takeLast(5)
+            val context = earlier.map { lineOf(conv, it) }
+            val prevLine = earlier.lastOrNull()?.let { n -> clip(conv.who(n).ifEmpty { n.title.trim() }.let { if (it.isNotEmpty()) "$it: " else "" } + n.text.replace('\n', ' ').trim(), 40) }.orEmpty()
             // 🎯 온 연락은 간단한 내용까지, 많으면 핵심 요약(2026-11-24 선생님) — 중요하지 않은 방이 몇 마디뿐이면 AI 없이 그 말을 짧게
-            if (focus && keyOf(conv) !in groupKeys && !important(conv, replyAllowed) && said(conv).size <= PEEK_MAX) { rooms += peek(conv); continue }
-            if (fresh.isEmpty() && prev != null) { rooms += prev; continue }        // 미리 요약해 둔 그대로
-            if (prev == null) direct(conv)?.let { rooms += it; continue }
+            if (focus && keyOf(conv) !in groupKeys && !important(conv, replyAllowed) && said(conv).size <= PEEK_MAX) { rooms += peek(conv).copy(prevLine = prevLine); continue }
+            if (fresh.isEmpty() && prev != null) { rooms += prev.copy(prevLine = prevLine); continue }        // 미리 요약해 둔 그대로
+            if (prev == null) direct(conv)?.let { rooms += it.copy(prevLine = prevLine); continue }
             var covered = c?.count ?: 0
+            // 🧵 여러 사람이 말한 단톡방은 고르기만 — 원문 줄을 그대로(2026-11-24)
+            if (pickLines && multiSpeaker(conv) && keyOf(conv) !in groupKeys && fresh.any { !isFiller(it.text) }) {
+                if (cut == null) cut = stopReason()
+                if (cut == null) {
+                    asked++
+                    onStatus("요약 중… $asked/$total")
+                    val ts = pickTurns(conv)
+                    val got = parsePicks(conv, ts, ask(pickPrompt(conv, ts, context)))
+                    prev = got
+                    onCached(Cached(keyOf(conv), since, conv.items.last().time, conv.items.size, got.point, got.ask, got.needReply))
+                }
+                val done = prev
+                if (done == null) { leftover += conv; continue }
+                rooms += done.copy(conv = conv, prevLine = prevLine)
+                continue
+            }
             // 🧩 사실 먼저(factFirst): 단톡방은 앱이 부탁 후보를 (보낸 사람, 문장)으로 뽑고 AI 는 번호만 골라 줄임 — 이름은 앱이 붙임
             if (factFirst && conv.items.any { it.room.isNotEmpty() } && fresh.any { !isFiller(it.text) }) {
                 if (cut == null) cut = stopReason()
@@ -695,7 +790,7 @@ object BriefingComposer {
                 onStatus("요약 중… $asked/$total")
                 val part = Conversation(conv.app, conv.room, chunk)
                 val p = prev
-                val q = if (p == null) prompt(part) else updatePrompt(part, p, covered)
+                val q = if (p == null) prompt(part, context) else updatePrompt(part, p, covered)
                 var got = parse(part, ask(q), p)
                 // 원문에 없는 숫자를 써서 버렸으면 한 번 더 — 숫자는 그대로 옮기라고 덧붙여(2026-11-23, 원문으로 떨어지는 일 줄이기)
                 if (got.fellBack && (cut ?: stopReason()) == null) {
@@ -708,7 +803,7 @@ object BriefingComposer {
             }
             val done = prev
             if (done == null) { leftover += conv; continue }
-            rooms += done.copy(conv = conv)
+            rooms += done.copy(conv = conv, prevLine = prevLine)
         }
         // 👥 묶음 사람들은 따로 떼어 묶음별로
         val (groupRooms, plainRooms) = rooms.partition { keyOf(it.conv) in groupKeys }
@@ -814,7 +909,9 @@ object BriefingComposer {
     }.trimEnd().let { if (it.isEmpty()) it else it + "\n\n" }
 
     /** 사람 메시지 요약 → 화면 글 */
-    private fun more(r: RoomSummary) = if (r.extra > 0) " · 외 부탁 ${r.extra}건(세부 내역)" else ""
+    private fun more(r: RoomSummary) = (if (r.extra > 0) " · 외 부탁 ${r.extra}건(세부 내역)" else "") +
+        // 🧵 지난 요약 끝에서 이어진 대화 — 앞의 마지막 말을 같이(줄 끝이라 하루 정리의 방 이름 읽기에 영향 없음)
+        (if (r.prevLine.isNotEmpty()) " · ↪ 앞: “${r.prevLine}”" else "")
 
     fun render(rooms: List<RoomSummary>, leftover: List<Conversation>, notes: List<String>): String = buildString {
         val fmt = SimpleDateFormat("HH:mm", Locale.KOREA)
