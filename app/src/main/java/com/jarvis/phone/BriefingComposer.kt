@@ -470,7 +470,8 @@ object BriefingComposer {
         // 🔍 짧으면 원문(2026-11-24 선생님): 'ㅋㅋ' 같은 말을 뺀 말이 합쳐 [RAW_CHARS]자 이하면 몇 마디든 AI 없이 그대로 이어서.
         // '에이씨...해양교육 오ㅐ이리 많오 / 화양 또 냅?' 을 AI 가 '해양교육에 불만이 많다'로 바꿔 오해가 생김 — 짧은 말은 원문이 더 빠르고 정확
         if (said.size > SHORT_MAX_MSGS) {
-            if (said.sumOf { it.second.length } > RAW_CHARS) return null
+            // 한 사람의 말(1:1·👥 사람별)만 — 여러 사람이 섞인 단톡방은 누가 누구에게 한 부탁인지 봐야 해서 AI 로
+            if (conv.app == WORK_TITLE || said.map { conv.who(it.first) }.distinct().size > 1 || said.sumOf { it.second.length } > RAW_CHARS) return null
             var last = "\u0000"
             val point = said.joinToString(" / ") { (n, t) ->
                 val w = conv.who(n); (if (w.isNotEmpty() && w != last) "$w: " else "").also { last = w } + t
@@ -481,7 +482,7 @@ object BriefingComposer {
             val ask = q?.takeIf { oneToOne || URGENT.containsMatchIn(it) }.orEmpty()
             return RoomSummary(conv, point, ask, ask.isNotEmpty(), byModel = false)
         }
-        if (said.any { it.second.length > RAW_CHARS }) return null
+        if (said.any { it.second.length > SHORT_CHARS }) return null
         val who = conv.who(said.last().first).let { if (it.isNotEmpty()) "$it: " else "" }
         // 한 마디는 AI 없이 — 물음·부탁은 짧은 말로(…하는지 물음·…달라고 함), 인사는 뗌(2026-11-23)
         val point = who + said.joinToString(" / ") { condenseAll(it.second) }

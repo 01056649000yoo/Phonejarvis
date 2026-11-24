@@ -180,8 +180,12 @@ class BriefingComposerTest {
 
     @Test fun 한_사람의_여러_마디는_모델이_종합하고_한_마디만_원문() = runBlocking {   // 2026-11-23 선생님: 나열 말고 종합
         val items = listOf(kakao("", "도윤 아버님", "선생님 안녕하세요"), kakao("", "도윤 아버님", "내일 체험학습"), kakao("", "도윤 아버님", "도시락 싸야 하나요?"))
+        // 2026-11-24 선생님: 짧으면(합쳐 80자 이하) 원문 그대로 — AI 가 뜻을 바꾸지 않게
+        val short = BriefingComposer.compose(items, ask = { error("부르면 안 됨") })
+        assertTrue(short.people, short.people.contains("- 🙋 도윤 아버님") && short.people.contains("내일 체험학습 / 도시락 싸야 하나요?"))
+        val long = items.map { it.copy(text = it.text + " 그리고 준비물이랑 차량 시간도 같이 알려 주시면 좋겠어요") }
         var calls = 0
-        val r = BriefingComposer.compose(items, ask = { calls++; "요점: 내일 체험학습 도시락을 싸야 하는지 물음\n요청: 도시락 필요 여부 알려 달라고 함\n답장: 필요" })
+        val r = BriefingComposer.compose(long, ask = { calls++; "요점: 내일 체험학습 도시락을 싸야 하는지 물음\n요청: 도시락 필요 여부 알려 달라고 함\n답장: 필요" })
         assertEquals(1, calls)
         assertTrue(r.people, r.people.contains("- 🙋 도윤 아버님") && r.people.contains("도시락 필요 여부") && !r.people.contains(" / "))
         val one = BriefingComposer.compose(listOf(kakao("", "서윤 어머니", "2교시 후에 등교해도 될까요?"), kakao("", "서윤 어머니", "ㅎㅎ")), ask = { error("부르면 안 됨") })
@@ -215,7 +219,7 @@ class BriefingComposerTest {
 
     @Test fun 시간이_모자라면_중요한_방부터_정리하고_남은_방_수를_알려_준다() = runBlocking {
         val big = (1..40).map { i -> kakao("잡담방", "사람${i % 4}", "오늘 점심 뭐 먹을까요 $i " + "가".repeat(10)) }   // 가장 최근
-        val parent = listOf(kakao("", "민준 어머님", "선생님 내일 도시락 싸야 하나요?"), kakao("", "민준 어머님", "준비물도 알려 주세요"))
+        val parent = listOf(kakao("", "민준 어머님", "선생님 내일 체험학습 가는데 도시락 싸야 하나요? 물이랑 간식도 따로 챙겨야 하는지 궁금해요"), kakao("", "민준 어머님", "준비물도 알려 주세요 미리 사 두려고요"))
         val all = parent + big
         var calls = 0
         val r = BriefingComposer.compose(all, ask = { calls++; "요점: 정리\n요청: 없음" },

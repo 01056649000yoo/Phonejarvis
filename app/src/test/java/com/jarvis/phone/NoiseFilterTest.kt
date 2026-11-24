@@ -58,7 +58,7 @@ class NoiseFilterTest {
 
     @Test fun 내_묶음은_같은_이름이면_카톡_문자_단톡을_합쳐_사람마다_한_줄() = runBlocking {
         val g = BriefingComposer.Group("🏠 가족", listOf(
-            "엄마" to kakao("", "엄마", "일요일 할머니 생신 점심 12시야"),
+            "엄마" to kakao("", "엄마", "일요일 할머니 생신 점심 12시야 다들 시간 맞춰서 와야 해 할머니가 많이 기다리셔 선물도 미리 챙겨 둬"),
             "엄마" to sms("엄마", "꽃도 좀 사 와 줄래?"),
             "엄마" to kakao("우리 가족", "엄마", "늦지 말고 와"),
             "동생" to kakao("우리 가족", "동생", "나 케이크 사 갈게"),

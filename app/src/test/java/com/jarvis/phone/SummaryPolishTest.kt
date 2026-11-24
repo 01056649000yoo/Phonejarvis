@@ -72,6 +72,18 @@ class SummaryPolishTest {
         assertTrue(BriefingComposer.madeUpFeeling("노트북 때문에 부끄러움을 느낌", "노트북 하드 녹음 기사님이 들으심"))
     }
 
+    @Test fun 짧으면_원문_그대로() = runBlocking {
+        // 2026-11-24 '사랑하는 마누라' 3건 → AI 가 '해양교육 관련하여 불만이 많다고 함'으로 뜻을 바꿈
+        val items = listOf(n("사랑하는 마누라", "에이씨...해양교육 오ㅐ이리 많오", 1), n("사랑하는 마누라", "화양 또 냅?", 2), n("사랑하는 마누라", "거기는 진짜 너무하네 ㅋ", 3))
+        val r = BriefingComposer.compose(items, ask = { error("짧은 말은 AI 를 부르지 않음") })
+        assertTrue(r.people, "에이씨...해양교육 오ㅐ이리 많오 / 화양 또 냅? / 거기는 진짜 너무하네 ㅋ" in r.people)
+        assertFalse(r.people, "불만" in r.people)
+        // 👥 묶음 줄도 원문 그대로, 'ㅋ.' 처럼 마침표를 붙이지 않음
+        val g = BriefingComposer.compose(emptyList(), ask = { error("짧은 말은 AI 를 부르지 않음") },
+            groups = listOf(BriefingComposer.Group("👔 지인", items.map { "마누라" to it })))
+        assertTrue(g.groups, g.groups.contains("거기는 진짜 너무하네 ㅋ") && !g.groups.contains("ㅋ."))
+    }
+
     @Test fun 서비스_자동_메일은_업체() {
         listOf("GitHub", "Notion", "Zoom", "Slack").forEach { assertTrue(it, AdFilter.isBusinessName(it)) }
         assertFalse(AdFilter.isBusinessName("김민수 선생님"))
