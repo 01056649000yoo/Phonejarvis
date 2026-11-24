@@ -35,6 +35,8 @@ class NotificationCollectorService : NotificationListenerService() {
             ?: groupTitle(ex.getCharSequence("android.hiddenConversationTitle")?.toString().orEmpty(), burst.map { it.who })
             ?: groupTitle(title, burst.map { it.who }))
             ?.toString()?.trim().orEmpty().take(100)
+        // 🔧 카톡 알림 구조 기록(메시지 내용 없이) — 오픈채팅 방 이름이 어디 들어오는지 설정 → 시스템에서 보려고
+        if (sbn.packageName == "com.kakao.talk") runCatching { NotiProbe.record(this, ex, style, burst.map { it.who }, room) }
 
         // 📒 앱·방 이름 기억 (내용 X): 뺀 앱·끈 방도 목록에서 사라지지 않고 다시 켤 수 있게
         val app = appLabel(sbn.packageName)

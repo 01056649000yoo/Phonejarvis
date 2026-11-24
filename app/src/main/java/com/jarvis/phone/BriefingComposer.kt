@@ -280,7 +280,7 @@ object BriefingComposer {
             if (oneToOne) urgentQuestions(conv).filterNot { u -> URGENT.findAll(u).all { it.value in "$modelAsk $point" } } else emptyList())
         // 1:1 대화에서 묻는 말이 있는데 모델이 요청을 놓치면 마지막 물음·부탁을 그대로 요청에(단톡방은 서로 묻는 말이 많아 하지 않는다)
         // 글자 없는 물음('??'·'ㅋㅋ?')은 요청이 아님 — '→ ??' 가 붙던 것(2026-11-24)
-        val lastQ = if (oneToOne && modelAsk.isEmpty()) conv.items.lastOrNull { QUESTION.containsMatchIn(it.text) && hasWords(it.text) }?.text?.let(::askSentence)?.take(100)?.takeIf(::hasWords) else null
+        val lastQ = if (oneToOne && modelAsk.isEmpty()) conv.items.lastOrNull { QUESTION.containsMatchIn(it.text) && hasWords(it.text) }?.text?.takeUnless(::isRhetorical)?.let(::askSentence)?.take(100)?.takeIf(::hasWords) else null
         val limit = if (oneToOne) MAX_ASKS else MAX_GROUP_ASKS
         val ask = fixAskNames(asks + listOfNotNull(lastQ?.takeIf { q -> asks.none { overlap(q, it) >= 0.5 || overlap(it, q) >= 0.5 } }), conv)
             .take(limit).joinToString(", ")
@@ -328,7 +328,11 @@ object BriefingComposer {
         return NUM.findAll(text).all { it.value.trimStart('0').ifEmpty { "0" } in have }
     }
 
-    fun splitAsks(ask: String): List<String> = ask.split(Regex("\\s*[,，]\\s*")).map { it.trim() }.filter { it.isNotEmpty() && hasWords(it) }
+    fun splitAsks(ask: String): List<String> = ask.split(Regex("\\s*[,，]\\s*")).map { it.trim() }.filter { it.isNotEmpty() && hasWords(it) && !isRhetorical(it) }
+
+    /** 혼잣말·감탄 물음('급락..?'·'카톡친추네여?')은 나에게 묻는 말이 아님(2026-11-24) */
+    private val RHETORICAL = Regex("(\\.\\.|…)\\s*\\?|(네여|네요|군요|구나|겠지)\\s*\\?+\\s*$")
+    fun isRhetorical(s: String) = RHETORICAL.containsMatchIn(s.trim())
 
     /** 1:1 대화에서 오늘·내일처럼 급한 물음·부탁 문장(모델이 놓쳐도 요청 칸에 오게) */
     fun urgentQuestions(conv: Conversation): List<String> = conv.items.asReversed().asSequence()
@@ -409,6 +413,9 @@ object BriefingComposer {
         Regex("주(셨음|심)(?![가-힣])") to "줌",
         Regex("물으(셨음|심)(?![가-힣])") to "물음",
         Regex("말씀") to "말",
+        // 긴 주소는 줄을 다 차지함(2026-11-24: '→ https://n.news.naver.com/article/050/…')
+        Regex("https?://\\S+") to "(링크)",
+        Regex("\\[댓글\\]\\s*") to "",
     )
     /** 요약 글에서 '지시·명령·통보'를 '…라고 함'·'부탁'·'알림'으로 */
     fun soften(s: String): String = STIFF.fold(s) { acc, (re, to) -> re.replace(acc, to) }
@@ -443,7 +450,7 @@ object BriefingComposer {
         val who = conv.who(said.last().first).let { if (it.isNotEmpty()) "$it: " else "" }
         // 한 마디는 AI 없이 — 물음·부탁은 짧은 말로(…하는지 물음·…달라고 함), 인사는 뗌(2026-11-23)
         val point = who + said.joinToString(" / ") { condenseAll(it.second) }
-        val ask = said.filter { QUESTION.containsMatchIn(it.second) && hasWords(it.second) }.joinToString(" / ") { askSentence(it.second) }
+        val ask = said.filter { QUESTION.containsMatchIn(it.second) && hasWords(it.second) && !isRhetorical(it.second) }.joinToString(" / ") { askSentence(it.second) }
         return RoomSummary(conv, point, ask, ask.isNotEmpty(), byModel = false)
     }
 

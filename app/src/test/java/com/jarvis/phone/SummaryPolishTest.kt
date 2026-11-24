@@ -37,6 +37,14 @@ class SummaryPolishTest {
         assertFalse(BriefingComposer.isFiller("그래요? 그럼 내일 몇 시에 가요?"))
     }
 
+    @Test fun 혼잣말_물음은_요청이_아니고_긴_주소는_링크로() {
+        listOf("급락..?", "와이프에게 빌붙기 정도..?", "아니 카톡친추네여?").forEach { assertTrue(it, BriefingComposer.isRhetorical(it)) }
+        listOf("내일 몇 시에 오세요?", "외장 SSD 박으면 안되나요?", "밥 먹었니?").forEach { assertFalse(it, BriefingComposer.isRhetorical(it)) }
+        assertEquals(listOf("교육쪽인지 물음"), BriefingComposer.splitAsks("교육쪽인지 물음, 급락..?"))
+        assertEquals("모두 축하해 달라고 함 (링크)", BriefingComposer.soften("모두 축하해 달라고 함 https://n.news.naver.com/article/050/0000113676?cds=news_media_pc"))
+        assertEquals("외장 SSD 박으면 안되는지 물음", BriefingComposer.soften("[댓글]  외장 SSD 박으면 안되는지 물음"))
+    }
+
     @Test fun 서비스_자동_메일은_업체() {
         listOf("GitHub", "Notion", "Zoom", "Slack").forEach { assertTrue(it, AdFilter.isBusinessName(it)) }
         assertFalse(AdFilter.isBusinessName("김민수 선생님"))
