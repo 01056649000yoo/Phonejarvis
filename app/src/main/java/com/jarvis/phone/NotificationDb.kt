@@ -29,11 +29,13 @@ data class Briefing(
     val label: String,
     val count: Int,
     val text: String,
+    /** 이 요약이 맡은 마지막 알림 번호(noti.id) — 다음 요약은 이 번호 다음부터(시각으로 자르면 늦게 저장된 알림이 빠짐, 2026-11-24). 0 = 예전 요약 */
+    val uptoId: Long = 0L,
 )
 
 /** 수집한 알림을 휴대폰 안에만 저장하는 SQLite DB (7일 보관). */
 class NotificationDb private constructor(ctx: Context) :
-    SQLiteOpenHelper(ctx, "jarvis.db", null, 7) {
+    SQLiteOpenHelper(ctx, "jarvis.db", null, 8) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -49,10 +51,12 @@ class NotificationDb private constructor(ctx: Context) :
         )
         db.execSQL("CREATE INDEX idx_noti_time ON noti(time)")
         createBriefingTable(db)
+        db.execSQL("ALTER TABLE briefing ADD COLUMN upto_id INTEGER NOT NULL DEFAULT 0")   // v8 (예전 판에서 올라올 때와 같은 꼴로)
         createTeacherTables(db)
         createSeenTable(db)
         createReplyTable(db)
         createSearchIndex(db)
+        createRoomDayTable(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldV: Int, newV: Int) {
@@ -67,7 +71,52 @@ class NotificationDb private constructor(ctx: Context) :
         if (oldV < 6) createReplyTable(db)
         // v7: 🔎 검색 색인 (지금 있는 알림도 한 번 넣음)
         if (oldV < 7) createSearchIndex(db, fill = true)
+        // v8: 요약이 맡은 마지막 알림 번호 + 🗓 하루 정리용 방별 하루 기록
+        if (oldV < 8) {
+            db.execSQL("ALTER TABLE briefing ADD COLUMN upto_id INTEGER NOT NULL DEFAULT 0")
+            createRoomDayTable(db)
+        }
     }
+
+    /**
+     * v8: 🗓 방별 하루 기록(2026-11-24 선생님: 하루 정리는 하루 종일 온 알림을 총정리) — 요약할 때마다 방 하나를 한 줄로 쌓아 둠.
+     * 하루 정리는 요약 글을 다시 읽지 않고 이 표를 방별로 모은다. 값은 RoomDay.Entry 를 JSON 으로(규칙은 RoomDay, 시험 가능)
+     */
+    private fun createRoomDayTable(db: SQLiteDatabase) {
+        db.execSQL(
+            """CREATE TABLE IF NOT EXISTS room_day(
+                day INTEGER NOT NULL,
+                rkey TEXT NOT NULL,
+                last INTEGER NOT NULL,
+                data TEXT NOT NULL,
+                PRIMARY KEY(day, rkey))"""
+        )
+    }
+
+    /** 그날의 방별 하루 기록 */
+    fun roomDays(day: Long): List<RoomDay.Entry> =
+        readableDatabase.rawQuery("SELECT data FROM room_day WHERE day=? ORDER BY last DESC", arrayOf(day.toString()))
+            .use { c -> buildList { while (c.moveToNext()) RoomDay.fromJson(c.getString(0))?.let { add(it) } } }
+
+    /** 이번 요약의 방들을 그날 기록에 이어 붙임(같은 방은 RoomDay.merge) */
+    fun addRoomDays(day: Long, fresh: List<RoomDay.Entry>) {
+        if (fresh.isEmpty()) return
+        val w = writableDatabase
+        w.beginTransaction()
+        try {
+            val old = roomDays(day).associateBy { it.key }
+            for (e in fresh) {
+                val m = RoomDay.merge(old[e.key], e)
+                w.insertWithOnConflict("room_day", null, ContentValues().apply {
+                    put("day", day); put("rkey", m.key); put("last", m.last); put("data", RoomDay.toJson(m))
+                }, SQLiteDatabase.CONFLICT_REPLACE)
+            }
+            w.setTransactionSuccessful()
+        } finally { w.endTransaction() }
+    }
+
+    /** 지금까지 모은 마지막 알림 번호 */
+    fun maxNotiId(): Long = readableDatabase.rawQuery("SELECT IFNULL(MAX(id),0) FROM noti", null).use { c -> if (c.moveToFirst()) c.getLong(0) else 0L }
 
     /** v7: 🔎 검색 색인(FTS4, 두 글자 조각 — SearchIndex). 알림을 지우면 색인도 함께 지움(트리거) */
     private fun createSearchIndex(db: SQLiteDatabase, fill: Boolean = false) {
@@ -186,8 +235,8 @@ class NotificationDb private constructor(ctx: Context) :
     /** 브리핑 모음: 최근 브리핑들 (새것부터). 보관 기간(7~90일) 안의 것을 날짜별로 보여 주려고 넉넉히 */
     fun briefings(limit: Int = 1000): List<Briefing> =
         readableDatabase.rawQuery(
-            "SELECT time,from_time,label,count,text FROM briefing ORDER BY time DESC LIMIT $limit", null
-        ).use { c -> buildList { while (c.moveToNext()) add(Briefing(c.getLong(0), c.getLong(1), c.getString(2), c.getInt(3), c.getString(4))) } }
+            "SELECT time,from_time,label,count,text,upto_id FROM briefing ORDER BY time DESC LIMIT $limit", null
+        ).use { c -> buildList { while (c.moveToNext()) add(Briefing(c.getLong(0), c.getLong(1), c.getString(2), c.getInt(3), c.getString(4), c.getLong(5))) } }
 
     // ── 학생별 기록 ──
     fun logStudent(student: String, n: NotiItem) {
@@ -246,21 +295,21 @@ class NotificationDb private constructor(ctx: Context) :
     fun insertBriefing(b: Briefing) {
         val v = ContentValues().apply {
             put("time", b.time); put("from_time", b.fromTime); put("label", b.label)
-            put("count", b.count); put("text", b.text)
+            put("count", b.count); put("text", b.text); put("upto_id", b.uptoId)
         }
         writableDatabase.insert("briefing", null, v)
     }
 
     /** 그 시각의 브리핑 하나 (완료 알림을 눌렀을 때) */
     fun briefingAt(time: Long): Briefing? =
-        readableDatabase.rawQuery("SELECT time,from_time,label,count,text FROM briefing WHERE time=?", arrayOf(time.toString()))
-            .use { c -> if (c.moveToFirst()) Briefing(c.getLong(0), c.getLong(1), c.getString(2), c.getInt(3), c.getString(4)) else null }
+        readableDatabase.rawQuery("SELECT time,from_time,label,count,text,upto_id FROM briefing WHERE time=?", arrayOf(time.toString()))
+            .use { c -> if (c.moveToFirst()) Briefing(c.getLong(0), c.getLong(1), c.getString(2), c.getInt(3), c.getString(4), c.getLong(5)) else null }
 
     fun lastBriefing(): Briefing? =
         readableDatabase.rawQuery(
-            "SELECT time,from_time,label,count,text FROM briefing WHERE label<>'${DailyDigest.LABEL}' ORDER BY time DESC LIMIT 1", null
+            "SELECT time,from_time,label,count,text,upto_id FROM briefing WHERE label<>'${DailyDigest.LABEL}' ORDER BY time DESC LIMIT 1", null
         ).use { c ->
-            if (c.moveToFirst()) Briefing(c.getLong(0), c.getLong(1), c.getString(2), c.getInt(3), c.getString(4))
+            if (c.moveToFirst()) Briefing(c.getLong(0), c.getLong(1), c.getString(2), c.getInt(3), c.getString(4), c.getLong(5))
             else null
         }
 
@@ -367,6 +416,7 @@ class NotificationDb private constructor(ctx: Context) :
         val w = writableDatabase
         w.delete("noti", "time<?", arrayOf((now - notiDays * day).toString()))
         w.delete("briefing", "time<?", arrayOf((now - briefDays * day).toString()))
+        w.delete("room_day", "day<?", arrayOf((now - briefDays * day).toString()))
         w.delete("student_log", "time<?", arrayOf((now - logDays * day).toString()))
         w.delete("seen", "last<?", arrayOf((now - 180 * day).toString()))
         // ✉️ 답장 초안: 보낸 것은 지우고, 안 보낸 것도 받은 알림과 같은 기간이 지나면 지움
@@ -382,7 +432,7 @@ class NotificationDb private constructor(ctx: Context) :
     }
 
     /** 받은 알림 원문 모두 지우기 */
-    fun clearNotis() { writableDatabase.delete("noti", null, null); writableDatabase.delete("reply_draft", null, null) }   // 문자 원문이 든 답장 초안도
+    fun clearNotis() { writableDatabase.delete("noti", null, null); writableDatabase.delete("reply_draft", null, null); writableDatabase.delete("room_day", null, null) }   // 문자 원문이 든 답장 초안도
 
     /** 지운 자리를 정리해 파일 크기를 실제로 줄임 */
     fun vacuum() { writableDatabase.execSQL("VACUUM") }

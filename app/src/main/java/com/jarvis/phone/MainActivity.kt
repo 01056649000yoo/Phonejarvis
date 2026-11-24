@@ -986,7 +986,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
             val done = ParentAdvisor.handled(ctx)
             // 아직 요약하지 않은 새 알림 수 ("지금 정리하기" 버튼)
             val from = Briefings.pendingFrom(db)
-            val pendingList = db.since(from).filter { rules.allows(it) }   // 어제 저녁 요약 뒤에 온 것도(오늘 0시로 자르지 않음)
+            val pendingList = Briefings.pendingItems(db).filter { rules.allows(it) }   // 어제 저녁 요약 뒤에 온 것도(오늘 0시로 자르지 않음)
             val pending = pendingList.size
             withContext(Dispatchers.Main) {
                 parentContacts = parents; handledKeys = done; pendingCount = pending; pendingItems = pendingList

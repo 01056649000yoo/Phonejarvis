@@ -757,7 +757,10 @@ object BriefingComposer {
     /** cutRooms: 시간·중지로 다 못 한 방 수(이름만 적음) — 요약이 이어서 마무리할지 정할 때 */
     data class Result(val people: String, val apps: String, val replies: List<RoomSummary> = emptyList(), val groups: String = "", val cutRooms: Int = 0,
                       /** 💼 지정한 업무·일정 앱 요약(앱마다 한 문단) */
-                      val work: String = "") {
+                      val work: String = "",
+                      /** 🗓 하루 정리용: 정리한 대화방(💬)·묶음 방(👥·💼), 시간이 모자라 정리 못 한 방 */
+                      val rooms: List<RoomSummary> = emptyList(), val groupRooms: List<RoomSummary> = emptyList(),
+                      val cut: List<Conversation> = emptyList(), val groupCut: List<Conversation> = emptyList()) {
         val text: String get() = listOf(groups.trim(), work.trim(), people, apps.trim()).filter { it.isNotBlank() }.joinToString("\n\n").ifEmpty { "요약할 알림이 없어요." }
     }
 
@@ -962,7 +965,8 @@ object BriefingComposer {
             else if (cut != null) add(cut!!)
         }
         return Result(render(rooms, leftover, notes), appSection(apps.filterNot { AD.containsMatchIn(it.title) || AD.containsMatchIn(it.text) }),
-            rooms.filter { it.needReply }, groupText, cutRooms = leftover.size + groupLeft, work = workText)
+            rooms.filter { it.needReply }, groupText, cutRooms = leftover.size + groupLeft, work = workText,
+            rooms = rooms.toList(), groupRooms = groupRooms, cut = leftover.toList(), groupCut = groupLeftover)
     }
 
     /** 선생님을 부르는 말 */

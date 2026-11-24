@@ -268,11 +268,234 @@ object DailyDigest {
         val day = SummarySchedule.startOfDay(now)
         val today = db.briefings(300).filter { it.time >= day && !isDaily(it) }.sortedBy { it.time }
         if (today.isEmpty()) return null
+        val d = SimpleDateFormat("M/d (E)", Locale.KOREA).format(now)
+        val entries = db.roomDays(day)
+        // 🗓 총정리(방별 하루 기록이 있는 날) — 예전 판에서 요약한 날은 아래 예전 방식으로
+        if (entries.isNotEmpty()) {
+            val t = total(Day(entries, keywordLines(today), Briefings.taskSection(db.tasks()), today.size, today.sumOf { it.count },
+                today.minOf { it.fromTime }), ReplyLog.all(ctx), now, ask)
+            db.insertBriefing(Briefing(time = now, fromTime = day, label = LABEL, count = 0, text = t.full))
+            return Briefings.Outcome("$LABEL · $d" + if (t.byAi) "" else " (AI 없이)", t.short, now)
+        }
         val m = material(today, Briefings.taskSection(db.tasks()), Students.names(ctx), ReplyLog.all(ctx))
         val (text, byAi) = write(m, now, ask)
         db.insertBriefing(Briefing(time = now, fromTime = day, label = LABEL, count = 0, text = text))
-        val d = SimpleDateFormat("M/d (E)", Locale.KOREA).format(now)
         return Briefings.Outcome("$LABEL · $d" + if (byAi) "" else " (AI 없이)", text, now)
+    }
+
+    // ───────── 🗓 총정리 (2026-11-24 선생님: "하루 종일 온 알림을 전체적으로 총정리 — 하루 500개를 가정") ─────────
+    //  1층 ✨ 오늘의 핵심(AI 5줄) · 📅 내일   ← 알림창에는 여기와 🙋 까지
+    //  2층 🙋 답할 것(상한 없이 모두) · 📌 마감 · ⭐ 키워드 · 👥 묶음 · 💼 업무 · 💬 방별 하루(내용 있는 방 모두, 나머지는 이름·건수) · 📦 앱 건수
+    //  3층 방마다 구간별 요약(화면에서 펼쳐 봄 — '  · ' 줄)
+    // 원문은 다시 읽지 않는다(폰 AI 작업 공간 4096): 낮 동안 요약하며 쌓은 방별 하루 기록(RoomDay)만 모은다.
+
+    data class Day(val entries: List<RoomDay.Entry>, val keywords: List<String>, val taskPart: String,
+                   val briefings: Int, val count: Int, val from: Long = 0L)
+    /** full: 저장·화면용 전체, short: 알림창용(1층 + 🙋), byAi: 핵심을 AI 가 썼는가 */
+    data class Total(val full: String, val short: String, val byAi: Boolean)
+
+    const val DETAIL = "  · "          // 3층 구간별 요약 줄의 머리(화면에서 접어 둠)
+    const val MAX_SEGS = 3             // 방별 하루 한 줄에 넣는 조각
+    const val MAX_PICK_ROOMS = 12      // 조각이 많은 방 중 AI 로 고르는 방(건수 많은 순) — 나머지는 규칙으로
+    const val PICK_DEADLINE_MS = 4 * 60_000L
+    const val MAX_OTHER_NAMES = 30
+    private const val CORE_TOKENS = 2000   // 핵심 질문에 넣는 줄의 토큰 어림 상한(폰 작업 공간 4096)
+
+    /** 그날 요약들의 ⭐ 키워드 줄(같은 줄은 한 번, 최근 것부터 10개) */
+    fun keywordLines(briefings: List<Briefing>): List<String> = briefings.flatMap { b ->
+        b.text.split(Regex("\\n\\s*\\n")).filter { it.trimStart().startsWith("⭐") }
+            .flatMap { blk -> blk.lines().filter { it.startsWith("- ") } }
+    }.distinct().takeLast(10).reversed()
+
+    private val SPEAKER = Regex("^([^:/]{1,24}): ")
+    /** 방의 구간 요약들 → 조각('보낸 사람: 말'). 같은 사람이 이어져 이름을 뗀 조각은 앞 이름을 다시 붙임 */
+    fun segments(parts: List<RoomDay.Part>): List<String> = parts.flatMap { p ->
+        val segs = p.point.split(" / ").map { it.trim() }.filter { it.isNotEmpty() }
+        var who: String? = SPEAKER.find(segs.firstOrNull().orEmpty())?.groupValues?.get(1)
+        segs.map { s ->
+            val w = SPEAKER.find(s)?.groupValues?.get(1)
+            if (w != null) { who = w; s } else if (who != null) "$who: $s" else s
+        }
+    }.map { BriefingComposer.clip(it, 70) }.distinct()
+
+    private val KEEP = Regex("(까지|오늘|내일|모레|[월화수목금토일]요일|\\d{1,2}일|\\d{1,2}시|\\d{1,2}:\\d{2}|\\d+교시|\\?|주세요|부탁)")
+    /** AI 없이 고르기: 날짜·시간·부탁이 든 조각(최근 것)과 마지막 조각, 3개까지 시간 순서로 */
+    fun rulePick(segs: List<String>): List<Int> {
+        if (segs.size <= MAX_SEGS) return segs.indices.toList()
+        val keep = segs.indices.filter { KEEP.containsMatchIn(segs[it]) }.takeLast(MAX_SEGS - 1)
+        return (keep + segs.lastIndex).distinct().sorted().takeLast(MAX_SEGS)
+    }
+
+    fun pickPrompt(room: String, segs: List<String>): String =
+        "너는 교사인 사용자의 비서야. '$room'에서 오늘 하루 나온 말을 정리해 둔 줄들이야.\n" +
+        segs.mapIndexed { i, s -> "${i + 1}. $s" }.joinToString("\n") + "\n" +
+        "오늘 이 방에서 있었던 일을 가장 잘 보여 주는 줄 번호를 $MAX_SEGS개까지 쉼표로만 답해. 다른 말은 쓰지 마. " +
+        "약속·결정·날짜·시간·장소·부탁이 든 줄을 먼저, 맞장구·감탄은 고르지 마.\n예시: 2, 5"
+
+    /** AI 답 → 고른 번호(시간 순서). 못 읽으면 null(규칙으로) */
+    fun parsePick(reply: String, size: Int): List<Int>? = Regex("\\d{1,3}").findAll(reply)
+        .mapNotNull { it.value.toIntOrNull()?.minus(1) }.filter { it in 0 until size }.distinct().take(MAX_SEGS).toList()
+        .sorted().ifEmpty { null }
+
+    /** 고른 조각을 한 줄로 — 바로 앞과 같은 사람이면 이름은 한 번 */
+    fun joinSegs(segs: List<String>): String {
+        var last: String? = null
+        return segs.joinToString(" / ") { s ->
+            val w = SPEAKER.find(s)?.groupValues?.get(1)
+            (if (w != null && w == last) s.removePrefix("$w: ") else s).also { last = w }
+        }
+    }
+
+    /** 이 방에 아직 답하지 않은 🙋 (내가 그 방에 답한 시각보다 뒤에 온 것) */
+    fun openAsks(e: RoomDay.Entry, replied: Map<String, Long>): List<RoomDay.Ask> {
+        val at = replied[e.room] ?: 0L
+        return e.asks.filter { it.time >= at }
+    }
+
+    /** 방별 하루 줄에 쓸 구간: 아직 답할 🙋 이 있으면 그 내용(🙋 칸에 있음)은 빼고 */
+    fun lineParts(e: RoomDay.Entry, replied: Map<String, Long>): List<RoomDay.Part> =
+        if (openAsks(e, replied).isEmpty()) e.parts else e.parts.filterNot { it.asked }
+
+    /** 재료 → 총정리 글. [ask] 가 null 이면 AI 없이(핵심 칸 없이 방별로만) */
+    suspend fun total(d: Day, replied: Map<String, Long>, now: Long, ask: (suspend (String) -> String)?): Total {
+        val fmt = SimpleDateFormat("HH:mm", Locale.KOREA)
+        val span = SimpleDateFormat("HH:mm", Locale.KOREA)
+        val apps = d.entries.filter { it.kind == RoomDay.APP }
+        val rooms = d.entries.filter { it.kind != RoomDay.APP }
+        // 방마다 하루 한 줄: 조각이 많은 방은 AI 가 고르고(건수 많은 순, 시간 안에서), 나머지는 규칙
+        val segsOf = rooms.associate { it.key to segments(lineParts(it, replied)) }
+        val needPick = rooms.filter { (segsOf[it.key]?.size ?: 0) > MAX_SEGS }.sortedByDescending { it.count }
+        val picks = mutableMapOf<String, List<Int>>()
+        var usedAi = false
+        if (ask != null) {
+            val until = System.currentTimeMillis() + PICK_DEADLINE_MS
+            for (e in needPick.take(MAX_PICK_ROOMS)) {
+                if (System.currentTimeMillis() > until) break
+                val segs = segsOf[e.key]!!
+                runCatching { parsePick(ask(pickPrompt(e.room, segs)), segs.size) }.getOrNull()?.let { picks[e.key] = it; usedAi = true }
+            }
+        }
+        fun line(e: RoomDay.Entry): String? {
+            val segs = segsOf[e.key].orEmpty()
+            if (segs.isEmpty()) return null
+            val idx = picks[e.key] ?: rulePick(segs)
+            val done = if (e.asks.isNotEmpty() && openAsks(e, replied).isEmpty()) " · ✔ 답함" else ""
+            return joinSegs(idx.map { segs[it] }) + done
+        }
+        /** 3층: 구간이 둘 넘는 방은 구간별 요약을 접어 둠 */
+        fun details(e: RoomDay.Entry): List<String> = lineParts(e, replied).takeIf { it.size >= 2 }.orEmpty()
+            .map { p -> "$DETAIL${span.format(p.from)}~${span.format(p.to)} · ${p.count}건: ${BriefingComposer.clip(p.point, 160)}" }
+
+        // 🙋 답할 것 — 상한 없이 모두(최근 것부터)
+        val asks = rooms.flatMap { e -> openAsks(e, replied).map { e to it } }.sortedByDescending { it.second.time }
+        val askLines = asks.map { (e, a) -> "- ${e.room} · ${fmt.format(a.time)}: ${a.text}" }
+
+        val talk = rooms.filter { it.kind == RoomDay.TALK }
+        val talkLines = talk.mapNotNull { e -> line(e)?.let { e to it } }
+            .sortedWith(compareByDescending<Pair<RoomDay.Entry, String>> { it.first.important }.thenByDescending { it.first.count })
+        val shownKeys = talkLines.map { it.first.key }.toSet() + asks.map { it.first.key }
+        val others = talk.filter { it.key !in shownKeys }.sortedByDescending { it.count }
+
+        val body = StringBuilder()
+        fun section(head: String, lines: List<String>) {
+            if (lines.isEmpty()) return
+            body.append(head).append('\n'); lines.forEach { body.append(it).append('\n') }; body.append('\n')
+        }
+        // 👥 묶음 · 💼 업무
+        val grouped = rooms.filter { it.kind == RoomDay.GROUP || it.kind == RoomDay.WORK }
+        val groupBlocks = grouped.groupBy { it.app }.entries
+            .sortedBy { if (it.key == BriefingComposer.WORK_TITLE) 1 else 0 }
+            .map { (title, list) ->
+                val shown = list.mapNotNull { e -> line(e)?.let { e to it } }.sortedByDescending { it.first.last }
+                val rest = list.filter { e -> shown.none { it.first.key == e.key } && asks.none { it.first.key == e.key } }
+                val n = list.sumOf { it.count }
+                val head = if (title == BriefingComposer.WORK_TITLE) "$title (앱 ${list.size}개 · ${n}건)" else "$title 연락 (${list.size}명 · ${n}건)"
+                head to (shown.flatMap { (e, l) -> listOf("- ${e.room} (${e.count}건) · ${fmt.format(e.last)}: $l") + details(e) } +
+                    (if (rest.isNotEmpty()) listOf("- 그 밖에: " + rest.joinToString(", ") { "${it.room} ${it.count}건" }) else emptyList()))
+            }
+
+        // ✨ 오늘의 핵심 · 📅 내일 — AI 한 번
+        var core: Pair<List<String>, List<String>>? = null
+        if (ask != null) {
+            val material = coreMaterial(asks.map { (e, a) -> "[답할 것] ${e.room}: ${a.text}" }, d.keywords.map { "[키워드] " + it.removePrefix("- ") },
+                groupBlocks.flatMap { (h, ls) -> ls.filter { it.startsWith("- ") && !it.startsWith("- 그 밖에") }.map { "[${h.substringBefore(" (")}] " + it.removePrefix("- ") } },
+                talkLines.map { (e, l) -> "[대화] ${e.room} (${e.count}건): $l" })
+            if (material.isNotEmpty()) core = runCatching { parseCore(ask(corePrompt(material)), material.joinToString(" ")) }.getOrNull()
+            if (core != null) usedAi = true
+        }
+
+        val talkRooms = talk.size
+        val since = if (d.from in 1 until SummarySchedule.startOfDay(now)) " (${SimpleDateFormat("M/d (E) HH:mm", Locale.KOREA).format(d.from)}부터)" else ""
+        val intro = "요약 ${d.briefings}번 · 알림 ${d.count}건${since} · 대화방 ${talkRooms}곳을 모두 정리했어요."
+        val top = StringBuilder()
+        core?.let { (c, t) ->
+            if (c.isNotEmpty()) { top.append("✨ 오늘의 핵심\n"); c.forEach { top.append(it).append('\n') }; top.append('\n') }
+            if (t.isNotEmpty()) { top.append("📅 내일 챙길 것\n"); t.forEach { top.append(it).append('\n') }; top.append('\n') }
+        }
+        val askBlock = if (askLines.isEmpty()) "" else "🙋 답할 것 (${askLines.size})\n" + askLines.joinToString("\n") + "\n\n"
+
+        if (d.taskPart.isNotBlank()) body.append(d.taskPart.trim()).append("\n\n")
+        section("⭐ 키워드 알림 (${d.keywords.size})", d.keywords)
+        groupBlocks.forEach { (h, ls) -> section(h, ls) }
+        val talkBody = talkLines.flatMap { (e, l) -> listOf("- ${e.room} (${e.count}건): $l") + details(e) } +
+            (if (others.isNotEmpty()) listOf("- 그 밖의 방: " + others.take(MAX_OTHER_NAMES).joinToString(", ") { "${it.room} ${it.count}건" } +
+                (if (others.size > MAX_OTHER_NAMES) " 외 ${others.size - MAX_OTHER_NAMES}곳" else "")) else emptyList())
+        section("💬 방별 하루 (${talkLines.size}곳" + (if (others.isNotEmpty()) " · 그 밖의 방 ${others.size}곳" else "") + " · ${talk.sumOf { it.count }}건)", talkBody)
+        if (apps.isNotEmpty()) {
+            val top6 = apps.sortedByDescending { it.count }
+            body.append("📦 앱 알림 ${apps.sumOf { it.count }}건 · " + top6.take(8).joinToString(", ") { "${it.app} ${it.count}" } +
+                (if (top6.size > 8) " 외 ${top6.size - 8}개 앱" else "")).append("\n\n")
+        }
+        val noAi = if (ask == null) "(🌡️ 폰 상태 때문에 AI 없이 정리했어요 — 핵심 줄 없이 방별로만)\n\n" else ""
+        val full = (intro + "\n\n" + top + askBlock + body + noAi).trim()
+        val hint = "(📱 눌러서 열면 " + listOfNotNull(
+            if (talkLines.isNotEmpty()) "방별 하루 ${talkLines.size}곳" else null,
+            if (groupBlocks.isNotEmpty()) "묶음·업무" else null,
+            if (apps.isNotEmpty()) "앱 알림" else null,
+        ).joinToString(" · ").ifEmpty { "전체" } + "까지 모두 볼 수 있어요)"
+        val short = (intro + "\n\n" + top + askBlock + (if (top.isEmpty() && askBlock.isEmpty()) "오늘은 따로 답할 연락이 없어요.\n\n" else "") + hint).trim()
+        return Total(full, short, usedAi)
+    }
+
+    /** 핵심 질문에 넣는 줄: 답할 것 → 키워드 → 묶음·업무 → 대화(중요·건수 순), 토큰 어림 상한까지 */
+    fun coreMaterial(vararg groups: List<String>): List<String> {
+        val out = mutableListOf<String>(); var tokens = 0
+        for (l in groups.flatMap { it }.map { BriefingComposer.clip(it, 120) }) {
+            val t = BriefingComposer.estTokens(l) + 2
+            if (tokens + t > CORE_TOKENS) break
+            out += l; tokens += t
+        }
+        return out
+    }
+
+    fun corePrompt(material: List<String>): String = """
+        너는 교사인 사용자의 비서야. 아래는 오늘 사용자 폰에 온 알림을 방마다 정리해 둔 줄들이야. 위에 있는 줄일수록 중요해.
+        ---
+        ${material.joinToString("\n        ")}
+        ---
+        위 줄들만 보고 아래 두 칸으로 답해. 줄에 없는 내용은 지어내지 마. 날짜·시간·숫자·이름은 그대로 옮겨. 별표·꾸밈·다른 말은 쓰지 마.
+        한 사람의 말을 다른 사람 말처럼 쓰지 말고, 서로 다른 이야기는 다른 줄에 써. 줄에 없는 감정·까닭은 붙이지 마.
+        ✨ 오늘의 핵심: 오늘 하루에서 꼭 알아야 할 일을 중요한 것부터 5줄까지. 각 줄은 '- 이름: 내용' 꼴로 40자 안쪽.
+        📅 내일 챙길 것: 줄에 '내일'이라고 적힌 것만 2줄까지, 없으면 '- 없음'
+    """.trimIndent()
+
+    /** AI 답 → (핵심 5줄, 내일 2줄). 원문에 없는 숫자·감정이 든 줄은 버림. 핵심을 못 읽으면 null */
+    fun parseCore(reply: String, source: String): Pair<List<String>, List<String>>? {
+        val core = mutableListOf<String>(); val tomorrow = mutableListOf<String>()
+        var cur: MutableList<String>? = null
+        reply.replace("*", "").lines().map { it.trim() }.filter { it.isNotEmpty() }.forEach { l ->
+            when {
+                l.startsWith("✨") || l.contains("오늘의 핵심") -> { cur = core; l.substringAfter(":", "").trim().takeIf { it.isNotEmpty() }?.let { core += it } }
+                l.startsWith("📅") || l.contains("내일 챙길") -> { cur = tomorrow; l.substringAfter(":", "").trim().takeIf { it.isNotEmpty() }?.let { tomorrow += it } }
+                l.startsWith("-") -> cur?.add(l.removePrefix("-").trim())
+            }
+        }
+        fun clean(ls: List<String>, cap: Int) = ls.map { it.removePrefix("- ").trim() }
+            .filter { it.isNotEmpty() && !it.startsWith("없음") && BriefingComposer.grounded(it, source) }
+            .map { "- " + BriefingComposer.soften(it) }.distinct().take(cap)
+        val c = clean(core, 5)
+        if (c.isEmpty()) return null
+        return c to clean(tomorrow, 2).filter { "내일" in it || "내일" in source }
     }
 
     /** 다음 하루 정리 시각. 끄면 null. 모아서 알림의 '주말·공휴일엔 쉬기'를 켰으면 쉬는 날은 건너뜀 */

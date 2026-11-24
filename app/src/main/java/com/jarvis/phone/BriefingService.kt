@@ -240,6 +240,24 @@ object Briefings {
     fun pendingFrom(db: NotificationDb, now: Long = System.currentTimeMillis()): Long =
         maxOf((db.lastBriefing()?.time ?: -1L) + 1, now - MAX_BACK_MS)
 
+    /**
+     * 🕳 빠지는 알림 막기(2026-11-24 선생님: 9시 55분에 온 문자가 요약에서 빠짐).
+     * 예전엔 '지난 요약 시각 다음부터'를 알림의 시각으로 잘랐다. 그런데 문자·카톡은 보낸 시각(알림 속 시각)으로 저장되고,
+     * 그 시각은 폰에 도착한 때보다 몇 초~2분 이를 수 있다 — 요약(특히 정각 5분 전 미리 준비)이 그 사이에 돌면
+     * 그 메시지는 이번 요약엔 아직 없고, 다음 요약엔 '지난 요약 시각보다 앞'이라 빠졌다.
+     * 이제 요약마다 맡은 마지막 알림 번호(uptoId)를 남기고, 다음 요약은 그 번호 다음에 저장된 알림을 모두 맡는다(시각은 넉넉히 거슬러 봄).
+     */
+    const val LATE_MS = 30 * 60_000L
+    fun pendingItems(db: NotificationDb, now: Long = System.currentTimeMillis(), uptoId: Long = Long.MAX_VALUE): List<NotiItem> {
+        val last = db.lastBriefing()
+        val from = pendingFrom(db, now)
+        return uncovered(db.since(if ((last?.uptoId ?: 0L) > 0) from - LATE_MS else from), from, last?.uptoId ?: 0L, uptoId)
+    }
+
+    /** 아직 어느 요약도 맡지 않은 알림(순수 — 시험): 지난 요약이 번호를 남겼으면 번호로, 예전 요약이면 시각으로 */
+    fun uncovered(items: List<NotiItem>, from: Long, afterId: Long, uptoId: Long = Long.MAX_VALUE): List<NotiItem> =
+        items.filter { it.id <= uptoId && if (afterId > 0) it.id > afterId else it.time >= from }
+
     /** 자동 브리핑·"지금 정리하기" 공용: 지난 요약 이후 새로 온 오늘 알림만 요약해 저장. */
     /**
      * 🗓 하루 정리: 아직 요약 안 한 알림이 있으면 먼저 요약(알림은 따로 안 보냄)한 뒤, 오늘 요약들을 합쳐 한 번 알림.
@@ -248,7 +266,7 @@ object Briefings {
     suspend fun runDaily(ctx: Context) {
         val db = NotificationDb.get(ctx)
         val rules = AppFilter.rules(ctx)
-        val pending = db.since(pendingFrom(db)).count { rules.allows(it) }
+        val pending = pendingItems(db).count { rules.allows(it) }
         if (pending > 0 && Summarizer.get(ctx).hasModel()) runCatching {
             val hm = "%02d:%02d".format(java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY), java.util.Calendar.getInstance().get(java.util.Calendar.MINUTE))
             run(ctx, "🌙 $hm 요약", pendingFrom(db), { s -> Notifications.notify(ctx, Notifications.ID_PROGRESS,
@@ -282,10 +300,12 @@ object Briefings {
 
         // 이 시각까지 온 알림을 이번 요약이 맡음. 요약하는 몇 분 사이에 온 알림은 다음 요약으로 넘어감.
         val cutoff = System.currentTimeMillis()
+        val uptoId = db.maxNotiId()   // 이 번호까지 저장된 알림을 이번 요약이 맡음(시각 말고 번호로 — pendingItems)
         val prevBriefing = db.lastBriefing()   // 알림 맨 위 '언제부터' 표시용(이번 요약을 저장하기 전)
         // 설정에서 뺀 앱·방은 요약에서도 제외 (뺀 방이라도 중요 키워드가 있으면 포함)
         val rules = AppFilter.rules(ctx)
-        val items = db.since(from).filter { it.time <= cutoff && rules.allows(it) }
+        // [from] 은 늘 pendingFrom(지난 요약 다음) — 어떤 알림을 맡을지는 번호로(pendingItems)
+        val items = pendingItems(db, cutoff, uptoId).filter { rules.allows(it) }
         if (items.isEmpty()) return Outcome("$label · 새 알림 없음", db.lastBriefing()?.let { b ->
             "${java.text.SimpleDateFormat("M/d HH:mm", java.util.Locale.KOREA).format(b.time)} ${b.label} 이후 새로 온 알림이 없어요."
         } ?: "지난 요약 이후 새로 온 알림이 없어요.")
@@ -332,7 +352,9 @@ object Briefings {
         val text = ((order(ai?.groups ?: "", keywordPart, ai?.work ?: "", ai?.people ?: "", ai?.apps ?: "") + "\n\n" + Routine.line(split.quiet)).trim()
             .ifEmpty { "요약할 알림이 없어요." }) + (if (skipAi != null && rest.isNotEmpty()) "\n\n$skipAi" else "") + "\n\n($timing)"
         // time = 이번 요약이 덮은 마지막 시각 (다음 요약은 이 다음부터)
-        db.insertBriefing(Briefing(time = cutoff, fromTime = from, label = label, count = items.size, text = text))
+        db.insertBriefing(Briefing(time = cutoff, fromTime = from, label = label, count = items.size, text = text, uptoId = uptoId))
+        // 🗓 방별 하루 기록 — 하루 정리가 그날 모든 방을 모으는 재료(요약 글을 다시 읽지 않음)
+        runCatching { db.addRoomDays(SummarySchedule.startOfDay(cutoff), roomDays(ai, split, from, rules)) }
         PreSummary.clear(ctx)   // 이번 구간은 끝 — 다음 구간은 새로 미리 요약
         // 📝 이번 구간의 안 풀린 물음·정해진 것을 방마다 적어 둠 — 다음 요약이 이어 볼 수 있게(AI 없이)
         runCatching { ThreadMemo.update(ctx, BriefingComposer.memoConvs(rest, split.groups), cutoff) }
@@ -342,6 +364,19 @@ object Briefings {
         val range = "🕘 " + (prevBriefing?.let { "${hm.format(it.time)} ${it.label} 뒤" } ?: hm.format(items.minOf { it.time })) +
             " ~ ${hm.format(cutoff)}에 온 알림"
         return Outcome("$label · 알림 ${items.size}건", range + "\n\n" + text, cutoff, timing)
+    }
+
+    /** 이번 요약 → 방별 하루 기록들(💬 대화방·👥 묶음·💼 업무·📦 앱 건수) */
+    fun roomDays(ai: BriefingComposer.Result?, split: Split, from: Long, rules: AppFilter.Rules): List<RoomDay.Entry> {
+        val roster = { c: BriefingComposer.Conversation -> c.items.any { rules.mentionsRoster(it) } }
+        fun imp(c: BriefingComposer.Conversation) = BriefingComposer.important(c, roster)
+        val out = mutableListOf<RoomDay.Entry>()
+        ai?.rooms?.forEach { out += RoomDay.of(it, RoomDay.TALK, imp(it.conv), from) }
+        ai?.cut?.forEach { out += RoomDay.ofCut(it, RoomDay.TALK, imp(it), from) }
+        ai?.groupRooms?.forEach { out += RoomDay.of(it, RoomDay.groupKind(it.conv), true, from) }
+        ai?.groupCut?.forEach { out += RoomDay.ofCut(it, RoomDay.groupKind(it), true, from) }
+        out += RoomDay.apps(split.quiet + split.rest.filterNot(BriefingComposer::isPerson))
+        return out
     }
 
     /** 읽는 순서(2026-11-23 선생님): 👥 사람 묶음 → ⭐ 키워드 → 💼 업무·일정 → 💬 대화 요약 → 📦 앱 알림(건수) */

@@ -95,7 +95,7 @@ object PreSummary {
         val db = NotificationDb.get(ctx)
         val from = Briefings.pendingFrom(db)
         val rules = AppFilter.rules(ctx)
-        val items = db.since(from).filter { rules.allows(it) }
+        val items = Briefings.pendingItems(db).filter { rules.allows(it) }
         val split = Briefings.splitForAi(ctx, items)
         val cache = load(ctx, from)
         val chars = BriefingComposer.pendingCharsForModel(split.rest, cache, from, split.groups)
@@ -154,7 +154,7 @@ object PreSummary {
         val from = Briefings.pendingFrom(db)
         val rules = AppFilter.rules(ctx)
         val cutoff = System.currentTimeMillis()
-        val items = db.since(from).filter { it.time <= cutoff && rules.allows(it) }
+        val items = Briefings.pendingItems(db).filter { it.time <= cutoff && rules.allows(it) }
         val all = Briefings.splitForAi(ctx, items)
         val cache = load(ctx, from)
         // 🤫 말이 오가는 방은 조용해진 뒤에 — 많이 쌓였으면 기다리지 않고 모두
