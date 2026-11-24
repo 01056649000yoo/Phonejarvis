@@ -329,7 +329,7 @@ object DailyDigest {
     fun pickPrompt(room: String, segs: List<String>): String =
         "너는 교사인 사용자의 비서야. '$room'에서 오늘 하루 나온 말을 정리해 둔 줄들이야.\n" +
         segs.mapIndexed { i, s -> "${i + 1}. $s" }.joinToString("\n") + "\n" +
-        "오늘 이 방에서 있었던 일을 가장 잘 보여 주는 줄 번호를 $MAX_SEGS개까지 쉼표로만 답해. 다른 말은 쓰지 마. " +
+        "오늘 이 방에서 있었던 일을 가장 잘 보여 주는 줄 번호를 ${MAX_SEGS}개까지 쉼표로만 답해. 다른 말은 쓰지 마. " +
         "약속·결정·날짜·시간·장소·부탁이 든 줄을 먼저, 맞장구·감탄은 고르지 마.\n예시: 2, 5"
 
     /** AI 답 → 고른 번호(시간 순서). 못 읽으면 null(규칙으로) */
