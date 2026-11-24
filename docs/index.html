@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>쌤톡스 · 선생님의 연락 비서</title>
-<meta name="description" content="수업과 퇴근 후를 지켜 주는 선생님의 연락 비서. 알림은 조용히 모아 두었다가 정한 시각에 한 번에, 학부모·동료가 묻고 부탁한 연락은 맨 위에. 폰을 안 봐도 놓치는 연락이 없어요. 알림 내용은 폰 밖으로 나가지 않아요.">
-<meta property="og:title" content="쌤톡스 · 선생님의 연락 비서">
-<meta property="og:description" content="폰을 안 봐도 놓치는 연락이 없게. 알림은 쌤톡스가 모아 두고, 꼭 답할 연락은 맨 위에. 폰 안의 AI, 인터넷 권한 없는 앱.">
+<title>쌤톡스 · 단톡방 알림 요약 비서</title>
+<meta name="description" content="단톡방·메시지·SNS 알림이 너무 많은 선생님께. 쌓인 알림을 모아 폰 안의 AI가 한 장으로 요약해, 방마다 열어 읽던 시간을 아껴 드려요. 꼭 답할 연락은 맨 위에. 인터넷 권한이 없어 알림 내용이 폰 밖으로 나가지 않아요.">
+<meta property="og:title" content="쌤톡스 · 단톡방 알림 요약 비서">
+<meta property="og:description" content="단톡방 수십 개, 하나하나 열지 마세요. 쌓인 알림을 한 장으로 요약해 시간을 아껴 드려요. 폰 안의 AI, 인터넷 권한 없는 앱.">
 <meta name="theme-color" content="#2E4A3D">
 <script>
   // 카톡·네이버·인스타 등 앱 안 브라우저는 APK 다운로드를 막음 → 폰 기본 브라우저로 다시 열기
@@ -227,7 +227,7 @@
     .vs { grid-template-columns: minmax(0,1fr) auto minmax(0,1fr); gap: 20px; }
     .tabs { grid-template-columns: repeat(4, minmax(0,1fr)); }
     .twocol { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 28px; align-items: start; }
-    .safe { grid-template-columns: repeat(3, minmax(0,1fr)); }
+    .safe { grid-template-columns: repeat(2, minmax(0,1fr)); }
     .download { grid-template-columns: minmax(0,1fr) auto; padding: 36px; }
     .twocol .gap { margin-top: 0; }
   }
@@ -282,9 +282,9 @@
     <!-- 첫 화면 -->
     <div class="hero">
       <div>
-        <span class="eyebrow">👩‍🏫 선생님의 연락 비서 · 무료</span>
-        <h1>폰을 안 봐도<br><em>놓치는 연락이 없게</em></h1>
-        <p class="lead">학부모 카톡, 동학년 단톡, 문자, 업무 메일. 쌤톡스가 조용히 모아 두었다가 정한 시각에 폰 안의 AI가 <b>누가 무엇을 묻고 부탁했는지</b>부터 정리해 드려요. 사적인 잡담 방은 이름과 건수만. 수업하는 동안, 퇴근한 뒤에는 폰을 내려놓으셔도 돼요.</p>
+        <span class="eyebrow">⏱ 단톡방 알림 요약 비서 · 무료</span>
+        <h1>단톡방 수십 개,<br><em>한 장으로 읽고 끝</em></h1>
+        <p class="lead">동학년 단톡, 학부모 카톡, 문자, 밴드, SNS, 업무 메일. 방마다 열어 읽던 알림을 쌤톡스가 모아 두었다가 정한 시각에 폰 안의 AI가 <b>한 장으로 요약</b>해 드려요. 누가 무엇을 묻고 부탁했는지는 맨 위에, 잡담은 짧게, 광고는 건수만. 알림 읽는 시간은 줄이고, 알림 내용은 <b>폰 밖으로 한 글자도 나가지 않아요</b>.</p>
         <div class="cta">
           <a class="btn primary" id="heroBtn" href="https://github.com/01056649000yoo/Phonejarvis/releases/latest/download/SsamTox.apk">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0l-5-5m5 5l5-5M5 21h14"/></svg>
@@ -293,6 +293,7 @@
           <a class="btn ghost" href="#who">나에게 맞을까?</a>
         </div>
         <ul class="trust">
+          <li>쌓인 알림을 한 화면에 — 방마다 열어 볼 필요 없어요</li>
           <li>인터넷 권한 없는 앱 — 알림이 폰 밖으로 나가지 않아요</li>
           <li>전화·알람·재난 문자는 평소 그대로</li>
           <li>회원가입·광고 없음</li>
@@ -319,8 +320,8 @@
     <!-- 누구에게 -->
     <section id="who">
       <p class="kicker">이런 분께 필요해요</p>
-      <h2>폰 알림에 하루가 자꾸 끊기는 선생님</h2>
-      <p class="sub">알림을 하나하나 열어 보지 않아도, 나에게 온 부탁과 꼭 답해야 할 연락은 놓치지 않게 해 드려요.</p>
+      <h2>단톡방·알림 읽느라 시간이 새는 선생님</h2>
+      <p class="sub">알림을 하나하나 열어 읽는 시간을 줄여 드려요. 그래도 나에게 온 부탁과 꼭 답해야 할 연락은 놓치지 않게요.</p>
       <div class="who">
         <div class="card"><div class="ico" aria-hidden="true">👪</div><div><b>학부모 연락이 수시로 오는 담임 선생님</b><span>결석·조퇴·준비물 문의가 카톡과 문자로 흩어져 와요. 쌤톡스는 '누가, 무엇을 묻는지'를 대화 요약 맨 위에 🙋 표시로 올려요. 학부모 이름을 사람 묶음에 넣어 두면 따로 모아 봐요.</span></div></div>
         <div class="card"><div class="ico" aria-hidden="true">🏫</div><div><b>수업 중엔 폰을 못 보는데, 놓칠까 걱정되는 분</b><span>모아 두는 동안 알림은 조용히 쌓이고, 정한 시각에 한 번에 받아요. 전화는 언제나 그대로 울려요.</span></div></div>
@@ -453,13 +454,14 @@
 
     <!-- 안심 -->
     <section id="safe">
-      <p class="kicker">안심하고 쓰세요</p>
-      <h2>요약은 선생님 폰 안에서만</h2>
-      <p class="sub">학부모·학생 이야기가 담긴 알림이라, 처음부터 폰 밖으로 나갈 길을 만들지 않았어요.</p>
+      <p class="kicker">보안</p>
+      <h2>알림은 폰 밖으로 한 글자도 나가지 않아요</h2>
+      <p class="sub">학부모·학생 이야기가 담긴 알림이라, 처음부터 폰 밖으로 나갈 길을 만들지 않았어요. 알림을 서버로 보내 요약하는 앱들과 가장 다른 점이에요.</p>
       <div class="safe">
         <div class="card"><span aria-hidden="true">🔒</span><div><b>인터넷 권한이 없는 앱</b><p>알림 내용이 어떤 서버로도 보내지지 않아요. 계정도 필요 없어요.</p></div></div>
         <div class="card"><span aria-hidden="true">🤖</span><div><b>폰 안의 AI</b><p>구글이 공개한 Gemma 4 모델을 폰에 받아, 폰의 GPU로 요약해요.</p></div></div>
         <div class="card"><span aria-hidden="true">🧹</span><div><b>오래된 알림은 저절로 지움</b><p>원래 알림은 기본 7일(3일~3개월 중 선택). 인증번호 알림은 처음부터 저장하지 않아요.</p></div></div>
+        <div class="card"><span aria-hidden="true">🔐</span><div><b>백업도 비밀번호로 잠금</b><p>다시 설치할 때 쓰는 백업 파일은 비밀번호를 걸어 암호화할 수 있어요. 학생·학부모 이름과 번호를 지켜요.</p></div></div>
       </div>
       <p class="note">폰이 뜨겁거나 배터리가 15% 이하(충전 중 아님)면 AI를 켜지 않고 간단히 정리해요. 미리 요약은 화면이 꺼져 있을 때만 하고, 화면을 켜면 멈춰요.</p>
     </section>
@@ -519,7 +521,7 @@
       <details><summary>광고나 매일 오는 알림이 요약에 섞여요.</summary>
         <p>광고 문자는 키워드(내 이름 등)가 들어 있어도 걸러요. 대표번호로 온 문자나 토스·OO은행·카드사처럼 업체 이름으로 온 메시지는 사람 연락이 아니라 📦 앱 알림으로 가고, 'OO님'처럼 이름을 부르기만 한 알림은 ⭐ 키워드 알림에 올리지 않아요. 매일 비슷한 시각에 오는 알림과 봇 알림은 🔁 건수 한 줄로만 적어요. 그 밖에 빼고 싶은 알림은 알림 탭에서 길게 눌러 '요약에서 빼기'를 하세요(언제든 되돌릴 수 있어요).</p></details>
       <details><summary>어떤 방은 AI 요약 대신 메시지가 짧게 그대로 나와요.</summary>
-        <p>쌤톡스는 '폰을 안 봐도 놓치는 연락이 없게' 하는 연락 비서라서, 온 연락은 모두 내용을 짧게라도 보여 주고, 꼭 봐야 할 대화는 AI가 꼼꼼히 요약해요. 학생·학부모 명부와 키워드가 나오는 대화, '선생님'을 부르는 대화, 나에게 직접 온 1:1 연락(인사·맞장구뿐인 것은 빼고), 기한이 있는 단톡방 부탁, 👥 사람 묶음과 💼 업무 앱이 그 대상이에요. 그 밖의 방은 몇 마디뿐이면 AI 없이 그 말을 짧게, 많으면 핵심 한 줄로 적어요. 인사·맞장구뿐인 방만 맨 아래 '그 밖의 방'에 이름과 건수를 적어요. 중요한데 빠지는 방이 있으면 그 사람을 👥 묶음에 넣거나 자주 나오는 낱말을 키워드로 넣어 주세요. 모든 방을 AI로 요약하려면 설정 → 🔕 모아서 알림 → '🎯 중요한 대화만 요약'을 끄면 돼요.</p></details>
+        <p>쌤톡스는 알림 읽는 시간을 아껴 주는 요약 비서라서, 온 연락은 모두 내용을 짧게라도 보여 주고, 꼭 봐야 할 대화는 AI가 꼼꼼히 요약해요. 학생·학부모 명부와 키워드가 나오는 대화, '선생님'을 부르는 대화, 나에게 직접 온 1:1 연락(인사·맞장구뿐인 것은 빼고), 기한이 있는 단톡방 부탁, 👥 사람 묶음과 💼 업무 앱이 그 대상이에요. 그 밖의 방은 몇 마디뿐이면 AI 없이 그 말을 짧게, 많으면 핵심 한 줄로 적어요. 인사·맞장구뿐인 방만 맨 아래 '그 밖의 방'에 이름과 건수를 적어요. 중요한데 빠지는 방이 있으면 그 사람을 👥 묶음에 넣거나 자주 나오는 낱말을 키워드로 넣어 주세요. 모든 방을 AI로 요약하려면 설정 → 🔕 모아서 알림 → '🎯 중요한 대화만 요약'을 끄면 돼요.</p></details>
       <details><summary>요약이 원문 그대로 나와요.</summary>
         <p>⭐ 키워드 칸은 놓치면 안 되는 것이라 일부러 원문 그대로 보여 줘요. 👥 사람 묶음·💼 업무·일정·💬 대화 요약은 AI가 줄여요. 대화방 요약은 한 마디뿐이어도 '…하는지 물음', '…달라고 함'처럼 짧게 바꿔요. 폰이 뜨겁거나 배터리가 15% 이하면 AI 없이 정리하고 요약 끝에 그 까닭을 적어요.</p></details>
       <details><summary>요약이 정한 시각에 안 와요.</summary>
@@ -539,7 +541,7 @@
 <footer>
   <div class="wrap">
     <span class="jua" style="font-size:18px;color:var(--fg)">쌤톡스</span><br>
-    선생님의 연락 비서 · AI 모델: Google Gemma 4 E4B·E2B (Apache 2.0)<br>
+    단톡방 알림 요약 비서 · AI 모델: Google Gemma 4 E4B·E2B (Apache 2.0)<br>
     문의 <a href="mailto:yshgg@naver.com" style="color:inherit">yshgg@naver.com</a>
   </div>
 </footer>
