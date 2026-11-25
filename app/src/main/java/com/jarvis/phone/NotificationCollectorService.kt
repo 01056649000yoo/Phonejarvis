@@ -83,7 +83,8 @@ class NotificationCollectorService : NotificationListenerService() {
 
         // 🏫 수업 중 · 🌙 퇴근 후: 모은 알림을 상태바에서 숨김 (나중에 브리핑으로 한 번에)
         //    단, 전화·알람·재난문자·인증번호는 절대 숨기지 않음
-        if (shouldHide(this) && !mustNeverHide(sbn, title, text)) {
+        //    숨기면 안 되는 말은 새로 온 문자 하나로만 봄(judgeText) — 안 읽은 문자 묶음 전체를 보면 예전 문자의 '긴급' 하나로 뒤 문자마다 묶음째 뜸
+        if (shouldHide(this) && !mustNeverHide(sbn, title, judgeText(text, burst))) {
             runCatching { cancelNotification(sbn.key) }
             cleanGroup(sbn.packageName, sbn.groupKey)
         }
@@ -136,7 +137,10 @@ class NotificationCollectorService : NotificationListenerService() {
                 val text = (ex.getCharSequence(Notification.EXTRA_BIG_TEXT) ?: ex.getCharSequence(Notification.EXTRA_TEXT))?.toString()?.trim().orEmpty()
                 val room = (ex.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)
                     ?: if (sbn.packageName == "com.kakao.talk") ex.getCharSequence(Notification.EXTRA_SUB_TEXT) else null)?.toString()?.trim().orEmpty()
-                if (rules.allows(sbn.packageName, room, title, text) && !mustNeverHide(sbn, title, text)) runCatching { cancelNotification(sbn.key) }
+                val burst = runCatching {
+                    androidx.core.app.NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(sbn.notification)?.let { messagesOf(it, sbn.postTime) }
+                }.getOrNull().orEmpty()
+                if (rules.allows(sbn.packageName, room, title, text) && !mustNeverHide(sbn, title, judgeText(text, burst))) runCatching { cancelNotification(sbn.key) }
             }
         active.map { it.packageName to it.groupKey }.distinct().forEach { (p, g) -> if (p !in excluded) cleanGroup(p, g) }
     }
@@ -146,8 +150,7 @@ class NotificationCollectorService : NotificationListenerService() {
         val cat = sbn.notification.category
         if (cat in NEVER_HIDE_CATEGORIES) return true
         if (NEVER_HIDE_PACKAGES.any { sbn.packageName.startsWith(it) }) return true
-        val t = "$title $text"
-        return NEVER_HIDE_WORDS.any { it in t } || OTP.containsMatchIn(t)
+        return urgentWords("$title $text")
     }
 
     private fun appLabel(pkg: String): String = try {
@@ -182,6 +185,16 @@ class NotificationCollectorService : NotificationListenerService() {
             if (title.isBlank() || who.isEmpty()) return null
             return title.takeIf { t -> who.none { t == it || t.startsWith(it) || it.startsWith(t) } }
         }
+
+        /** 숨기면 안 되는 말(재난·긴급·경보·부재중·인증번호)이 들었는가(순수 — 시험) */
+        fun urgentWords(t: String): Boolean = NEVER_HIDE_WORDS.any { it in t } || OTP.containsMatchIn(t)
+
+        /**
+         * 숨길지 판단할 글(순수 — 시험): 메시지 목록이 있으면 새로 온 것(보낸 시각이 가장 늦은 것) 하나만.
+         * 2026-11-25: 삼성 메시지는 안 읽은 문자를 한 알림에 모두 묶어 다시 보냄 — 묶음 전체를 보면
+         * 예전 문자 하나의 '긴급'·'부재중' 때문에 뒤에 오는 평범한 문자마다 묶음째 상태바에 떴다.
+         */
+        fun judgeText(text: String, burst: List<Msg>): String = burst.maxByOrNull { it.key }?.text ?: text
 
         /** 메시지 목록에서 꺼낸 메시지 하나 */
         data class Msg(val who: String, val text: String, val time: Long, val key: Long)
