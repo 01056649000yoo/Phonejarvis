@@ -218,8 +218,9 @@ object AppAdvisor {
      * 알림이 0건인 메시지 앱 경고: 선생님이 실제로 쓰는 앱만 (카톡, 기본 문자 앱, ＋로 직접 추가한 앱).
      * 깔려만 있고 안 쓰는 앱(밴드 등)은 보여 주지 않고, "안 써요"를 누른 앱도 다시 묻지 않음.
      */
-    fun silentMessagingApps(ctx: Context, stats: List<AppStat>): List<Pair<String, String>> {
-        val seen = stats.filter { it.count > 0 }.map { it.pkg }.toSet()
+    fun silentMessagingApps(ctx: Context, stats: List<AppStat>, arrived: Set<String> = emptySet()): List<Pair<String, String>> {
+        // [arrived]: 최근 7일에 알림이 오기는 한 앱 — 방을 다 꺼 두었거나 광고만 와서 모은 것이 0건이어도 알림은 들어오는 것
+        val seen = stats.filter { it.count > 0 }.map { it.pkg }.toSet() + arrived
         val sms = runCatching { android.provider.Telephony.Sms.getDefaultSmsPackage(ctx) }.getOrNull()
         val added = AppFilter.addedApps(ctx)
         val dismissed = AppFilter.silentDismissed(ctx)

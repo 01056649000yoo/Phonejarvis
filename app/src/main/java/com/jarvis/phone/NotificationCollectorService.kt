@@ -9,6 +9,11 @@ import android.service.notification.StatusBarNotification
 class NotificationCollectorService : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
+        // 알림 하나에서 난 오류(저장 공간 부족·이상한 알림)로 수집 서비스가 죽으면 그 뒤 알림을 모두 놓침 — 그 알림만 건너뜀
+        try { collect(sbn) } catch (e: Exception) { android.util.Log.w("Collector", "알림 하나를 모으지 못함: ${sbn.packageName}", e) }
+    }
+
+    private fun collect(sbn: StatusBarNotification) {
         val n = sbn.notification ?: return
         if (sbn.packageName == packageName) return                       // 내 앱 알림 제외
         if (sbn.isOngoing) return                                          // 음악 재생, 다운로드 진행 등 상시 알림 제외
@@ -28,13 +33,7 @@ class NotificationCollectorService : NotificationListenerService() {
         // 💬 메시지 목록이 든 알림(카톡·문자 등): 한 번에 여러 메시지가 오면 마지막 것만 남던 것(2026-11-24 점검) → 목록의 메시지를 하나씩
         val style = runCatching { androidx.core.app.NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(n) }.getOrNull()
         val burst = runCatching { style?.let { messagesOf(it, sbn.postTime) } }.getOrNull().orEmpty()
-        val room = (ex.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)
-            ?: style?.conversationTitle
-            ?: (if (sbn.packageName == "com.kakao.talk") ex.getCharSequence(Notification.EXTRA_SUB_TEXT) else null)
-            // 2026-11-24: 오픈채팅이 그래도 사람마다 갈라짐 — 1:1 로 표시하는 대화는 방 이름을 숨긴 제목 칸에 넣기도 함
-            ?: groupTitle(ex.getCharSequence("android.hiddenConversationTitle")?.toString().orEmpty(), burst.map { it.who })
-            ?: groupTitle(title, burst.map { it.who }))
-            ?.toString()?.trim().orEmpty().take(100)
+        val room = roomOf(sbn, style, burst, title)
         // 🔧 카톡 알림 구조 기록(메시지 내용 없이) — 오픈채팅 방 이름이 어디 들어오는지 설정 → 시스템에서 보려고
         if (sbn.packageName == "com.kakao.talk") runCatching { NotiProbe.record(this, ex, style, burst.map { it.who }, room) }
         // ✔ 내가 이 방에 답한 시각(알림에 딸려 온 내 말) — 하루 정리에서 답한 🙋 물음을 내리려고
@@ -69,7 +68,7 @@ class NotificationCollectorService : NotificationListenerService() {
             // 방 이름 알아보기가 바뀌거나 예전 판에서 모은 것은 열쇠가 달라 지금 시각으로 다시 들어가 '어제 일이 섞이던' 것(2026-11-24)
             if (m.key != null && m.key > 0 && NotificationDb.get(this).has(sbn.packageName, t, body, m.key - 60_000L)) continue
             val added = NotificationDb.get(this).insert(pkg = sbn.packageName, app = app, title = t, text = body, time = m.time, room = room,
-                dedupe = m.key?.let { "${sbn.packageName}|$room|$t|$body|$it" })
+                dedupe = dedupeKey(sbn.packageName, room, t, body, m.time, m.key))
             if (!added) continue                                           // 이미 모은 메시지(알림이 고쳐져 다시 온 것)
             kept++
             runCatching {
@@ -95,6 +94,13 @@ class NotificationCollectorService : NotificationListenerService() {
         instance = this
         // 🌱 알림창 훑기: 지금 알림창에 남은 알림을 앱별로 세어 '알림 앱 정리' 추천 재료로(요약 재료에는 넣지 않음)
         val active = runCatching { activeNotifications }.getOrNull() ?: return
+        // 🔁 다시 연결됐을 때(앱 업데이트·폰 재시작·시스템이 서비스를 쉬게 한 뒤): 끊긴 동안 와서 알림창에 남아 있는 알림을 모음.
+        //    마지막으로 알림을 본 시각(seen) 뒤에 온 것만 — 처음 연결할 때(본 적 없음)는 이미 읽은 알림이 첫 요약에 섞이지 않게 모으지 않음.
+        //    이미 모은 것은 중복 열쇠로 걸러짐. 아래 훑기가 seen 을 고치기 전에 먼저.
+        runCatching {
+            val lastSeen = NotificationDb.get(this).lastSeenTime()
+            if (lastSeen > 0) active.filter { it.postTime > lastSeen }.sortedBy { it.postTime }.forEach { onNotificationPosted(it) }
+        }
         AppScope.io.launch {
             runCatching {
                 val db = NotificationDb.get(this@NotificationCollectorService)
@@ -113,7 +119,26 @@ class NotificationCollectorService : NotificationListenerService() {
             }
         }
     }
-    override fun onListenerDisconnected() { if (instance === this) instance = null }
+    override fun onListenerDisconnected() {
+        if (instance === this) instance = null
+        // 시스템이 연결을 끊으면 다시 붙여 달라고 요청(권한을 끈 경우에는 아무 일도 없음) — 그대로 두면 다음 재시작까지 알림을 못 모음
+        runCatching { requestRebind(android.content.ComponentName(this, NotificationCollectorService::class.java)) }
+    }
+
+    /**
+     * 이 알림의 방 이름(없으면 빈 값 — 1:1·일반 앱). 모을 때와 상태바를 정리할 때(sweep) 같은 규칙으로 —
+     * 예전엔 sweep 이 방 이름을 따로(더 단순하게) 구해, 오픈채팅처럼 제목에서 방을 알아낸 '끈 방'을 켠 방으로 보고 모으지도 않은 알림을 지웠다.
+     */
+    private fun roomOf(sbn: StatusBarNotification, style: androidx.core.app.NotificationCompat.MessagingStyle?, burst: List<Msg>, title: String): String {
+        val ex = sbn.notification.extras
+        return (ex.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)
+            ?: style?.conversationTitle
+            ?: (if (sbn.packageName == "com.kakao.talk") ex.getCharSequence(Notification.EXTRA_SUB_TEXT) else null)
+            // 2026-11-24: 오픈채팅이 그래도 사람마다 갈라짐 — 1:1 로 표시하는 대화는 방 이름을 숨긴 제목 칸에 넣기도 함
+            ?: groupTitle(ex.getCharSequence("android.hiddenConversationTitle")?.toString().orEmpty(), burst.map { it.who })
+            ?: groupTitle(title, burst.map { it.who }))
+            ?.toString()?.trim().orEmpty().take(100)
+    }
 
     /** 묶음 안에 보이는 알림이 하나도 없으면 묶음 요약("새 메시지 N개")도 지움 */
     private fun cleanGroup(pkg: String, groupKey: String?) {
@@ -129,19 +154,26 @@ class NotificationCollectorService : NotificationListenerService() {
     fun sweep() {
         val rules = AppFilter.rules(this)
         val excluded = AppFilter.excluded(this)
+        val db = NotificationDb.get(this)
         val active = runCatching { activeNotifications }.getOrNull() ?: return
         active.filter { it.packageName != packageName && !it.isOngoing && it.packageName !in excluded && it.packageName !in IGNORED_PACKAGES
                 && it.notification.flags and Notification.FLAG_GROUP_SUMMARY == 0 }
             .forEach { sbn ->
-                val ex = sbn.notification.extras
-                val title = ex.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim().orEmpty()
-                val text = (ex.getCharSequence(Notification.EXTRA_BIG_TEXT) ?: ex.getCharSequence(Notification.EXTRA_TEXT))?.toString()?.trim().orEmpty()
-                val room = (ex.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)
-                    ?: if (sbn.packageName == "com.kakao.talk") ex.getCharSequence(Notification.EXTRA_SUB_TEXT) else null)?.toString()?.trim().orEmpty()
-                val burst = runCatching {
-                    androidx.core.app.NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(sbn.notification)?.let { messagesOf(it, sbn.postTime) }
-                }.getOrNull().orEmpty()
-                if (rules.allows(sbn.packageName, room, title, text) && !mustNeverHide(sbn, title, judgeText(text, burst))) runCatching { cancelNotification(sbn.key) }
+                runCatching {
+                    val ex = sbn.notification.extras
+                    val title = ex.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim().orEmpty()
+                    val text = (ex.getCharSequence(Notification.EXTRA_BIG_TEXT) ?: ex.getCharSequence(Notification.EXTRA_TEXT))?.toString()?.trim().orEmpty()
+                    val style = runCatching { androidx.core.app.NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(sbn.notification) }.getOrNull()
+                    val burst = runCatching { style?.let { messagesOf(it, sbn.postTime) } }.getOrNull().orEmpty()
+                    val room = roomOf(sbn, style, burst, title)
+                    // 새로 온 메시지(목록이 있으면 가장 늦은 것) 기준으로: 모으는 방이고, 실제로 모아 둔 것만 지움.
+                    // 알림 접근을 켜기 전·서비스가 쉬는 동안 온 알림, 광고·인증번호처럼 저장하지 않은 알림은 지우면 어디에도 안 남음
+                    val newest = burst.maxByOrNull { it.key }
+                    val who = (newest?.who?.ifEmpty { title } ?: title).take(200)
+                    val body = (newest?.text ?: text).take(1000)
+                    if (rules.allows(sbn.packageName, room, who, body) && db.has(sbn.packageName, who, body, 0L) &&
+                        !mustNeverHide(sbn, title, judgeText(text, burst))) cancelNotification(sbn.key)
+                }
             }
         active.map { it.packageName to it.groupKey }.distinct().forEach { (p, g) -> if (p !in excluded) cleanGroup(p, g) }
     }
@@ -151,7 +183,8 @@ class NotificationCollectorService : NotificationListenerService() {
         val cat = sbn.notification.category
         if (cat in NEVER_HIDE_CATEGORIES) return true
         if (NEVER_HIDE_PACKAGES.any { sbn.packageName.startsWith(it) }) return true
-        return urgentWords("$title $text")
+        // 인증번호·임시 비밀번호는 저장하지 않으므로(isSecretCode) 숨기면 어디에도 안 남음 — 예전엔 '보안코드'·'비밀번호' 알림이 모이지도 않고 숨겨졌다
+        return urgentWords("$title $text") || isSecretCode("$title $text")
     }
 
     private fun appLabel(pkg: String): String = try {
@@ -231,9 +264,27 @@ class NotificationCollectorService : NotificationListenerService() {
             "com.sec.android.app.clockpackage", "com.google.android.deskclock",
         )
         private val NEVER_HIDE_WORDS = listOf("인증번호", "인증 번호", "인증코드", "승인번호", "OTP", "재난", "긴급", "경보", "부재중")
-        private val SECRET_WORDS = listOf("인증번호", "인증 번호", "인증코드", "승인번호", "OTP", "보안코드", "비밀번호")
+        private val SECRET_WORDS = listOf("인증번호", "인증 번호", "인증코드", "승인번호", "OTP")
+        /**
+         * '비밀번호'·'보안코드'는 그 뒤에 실제 값(숫자가 든 4자 이상)이 있을 때만 — 예전엔 낱말만 있어도 버려서
+         * "와이파이 비밀번호 뭐였죠?", "나이스 비밀번호 변경 안내" 같은 연락·공지가 통째로 모이지 않았다.
+         */
+        private val SECRET_VALUE = Regex("""(보안\s?코드|비밀\s?번호)[^\n]{0,15}?(?=[A-Za-z0-9!@#$%^&*]*\d)[A-Za-z0-9!@#$%^&*]{4,}""")
         /** 인증번호·일회용 비밀번호처럼 남기면 안 되는 알림인지 */
-        fun isSecretCode(t: String): Boolean = SECRET_WORDS.any { it in t } || OTP.containsMatchIn(t)
+        fun isSecretCode(t: String): Boolean = SECRET_WORDS.any { it in t } || OTP.containsMatchIn(t) || SECRET_VALUE.containsMatchIn(t)
+
+        /**
+         * 같은 알림을 두 번 넣지 않는 열쇠(순수 — 시험).
+         * - 메시지 목록의 메시지: 보낸 시각([msgKey])까지 같아야 같은 메시지
+         * - 그 밖의 알림: 같은 날 같은 글이면 같은 알림(고쳐져 다시 온 것). 예전엔 날짜가 없어 보관 기간 내내 한 번만 모였다 —
+         *   매일 같은 글로 오는 알림("새 알림장이 등록되었습니다", 날마다 같은 일정 알림)이 첫날만 모이고 그 뒤로는 숨겨지기만 했다.
+         */
+        fun dedupeKey(pkg: String, room: String, title: String, text: String, time: Long, msgKey: Long?): String =
+            if (msgKey != null) "$pkg|$room|$title|$text|$msgKey" else "$pkg|$room|$title|$text|d${localDay(time)}"
+
+        /** 이 폰 시간대의 날짜 번호(자정에 바뀜) */
+        fun localDay(time: Long, zone: java.util.TimeZone = java.util.TimeZone.getDefault()): Long =
+            Math.floorDiv(time + zone.getOffset(time), 24L * 3600 * 1000)
 
         /**
          * "[Web발신] 인증번호 [123456]" 같은 4~8자리 인증번호.

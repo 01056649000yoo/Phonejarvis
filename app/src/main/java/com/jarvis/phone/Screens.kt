@@ -1163,9 +1163,10 @@ private fun AppCleanupCard(vm: JarvisViewModel) {
         Column(Modifier.animateContentSize(Motion.size).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("🌱 알림 앱 정리", style = MaterialTheme.typography.titleMedium)
             val kept = recs.count { it.stat.pkg !in vm.excludedApps }
+            val off = recs.size - kept   // 목록에 보이는 앱만 셈(지운 앱이 '뺀 앱' 수에 남아 목록과 안 맞던 것)
             Text(when {
                     recs.isEmpty() -> "아직 모은 알림이 없어요. 알림이 쌓이면 앱을 정리해 추천해 드려요."
-                    else -> "모으는 앱 ${kept}개 · 뺀 앱 ${vm.excludedApps.size}개" +
+                    else -> "모으는 앱 ${kept}개 · 뺀 앱 ${off}개" +
                         (if (vm.adFilterOn) " · 오늘 광고 ${vm.adCount}건 거름" else "") +
                         (if (vm.aiBusy) " · AI가 살펴보는 중…" else if (recs.any { it.byAi }) " · AI 추천" else "")
                 }, style = MaterialTheme.typography.bodyMedium)
@@ -1173,14 +1174,15 @@ private fun AppCleanupCard(vm: JarvisViewModel) {
             if (!vm.listenerEnabled) Text("⚠️ 쌤톡스의 '알림 접근' 권한이 꺼져 있어요. 설정 → AI 모델·권한에서 켜 주세요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
 
-            // 추천 적용(처음, 또는 새로 알림을 보낸 앱이 생겼을 때만)
-            val pending = if (vm.appsApplied) vm.newAppRecs else recs
-            if (recs.isNotEmpty() && pending.isNotEmpty()) {
-                val drop = pending.count { !it.keep }
-                if (vm.appsApplied) Text("🆕 새로 알림을 보낸 앱 ${pending.size}개: " + pending.take(3).joinToString(", ") { it.stat.app },
+            // 추천 적용(처음, 또는 아직 살펴보지 않은 앱이 생겼을 때만). 직접 켜고 끈 앱은 추천으로 바꾸지 않음
+            val pending = vm.newAppRecs
+            if (recs.isNotEmpty() && (pending.isNotEmpty() || !vm.appsApplied)) {
+                // 빼기 수는 실제로 바뀌는 것만(이미 꺼 둔 앱은 빼고)
+                val drop = pending.count { !it.keep && it.stat.pkg !in vm.excludedApps }
+                if (vm.appsApplied) Text("🆕 아직 살펴보지 않은 앱 ${pending.size}개: " + pending.take(3).joinToString(", ") { it.stat.app },
                     style = MaterialTheme.typography.labelLarge)
                 Button(onClick = { vm.applyAppRecs() }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
-                    Text(if (drop > 0) "추천대로 적용 (앱 ${drop}개 빼기)" else "추천대로 적용")
+                    Text(if (drop > 0) "추천대로 적용 (앱 ${drop}개 빼기)" else if (pending.isEmpty()) "이대로 정리 끝내기" else "추천대로 적용")
                 }
             }
 
@@ -1352,7 +1354,7 @@ private fun AddAppDialog(vm: JarvisViewModel, apps: List<JarvisViewModel.Addable
                 Column(Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())) {
                     // 찾는 중이면 전부에서, 아니면 추천(메시지·SNS → 알림 보내는 앱) 먼저, 그 밖의 앱은 접어 둠
                     val searching = q.isNotBlank()
-                    val shown = apps.filter { !searching || q.trim() in it.name }
+                    val shown = apps.filter { !searching || it.name.contains(q.trim(), ignoreCase = true) }   // 'gmail' 로 Gmail 이 안 찾아지던 것
                     if (apps.isEmpty()) Text("앱 목록을 불러오는 중이에요…", Modifier.padding(vertical = 12.dp))
                     else if (shown.isEmpty()) Text("찾는 앱이 없어요.", Modifier.padding(vertical = 12.dp))
                     val titles = listOf("⭐ 추천 · 💬 메시지·SNS", "⭐ 추천 · 💼 업무·일정", "🔔 알림을 보내는 앱", "📱 그 밖의 앱")
@@ -1493,7 +1495,7 @@ private fun BackupCard(vm: JarvisViewModel) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("💾 백업·복원", style = MaterialTheme.typography.titleMedium)
-            Text("앱을 지웠다 다시 깔아도 명부·학부모 연결·키워드·방·모아서 알림 시각이 그대로 돌아와요. " +
+            Text("앱을 지웠다 다시 깔아도 명부·학부모 연결·키워드·방·모아서 알림 시각·직접 넣은 할 일이 그대로 돌아와요. " +
                  "메시지 내용과 학생별 기록은 넣지 않아요. 백업 파일도 폰 밖으로 나가지 않아요.",
                 style = MaterialTheme.typography.bodySmall)
             Text(

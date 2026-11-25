@@ -153,7 +153,7 @@ class BriefingReceiver : BroadcastReceiver() {
             // 💾 하루 한 번 설정 백업(가벼운 일 — 서비스 없이 잠깐)
             BriefingScheduler.ACTION_BACKUP -> {
                 val pending = goAsync()
-                AppScope.io.launch { try { runCatching { Backup.autoBackup(ctx) } } finally { pending.finish() } }
+                AppScope.io.launch { try { runCatching { Backup.autoBackup(ctx, minGapHours = 6) } } finally { pending.finish() } }
             }
             BriefingScheduler.ACTION_PREPARE -> {
                 if (kind != null) BriefingScheduler.startNow(ctx, BriefingScheduler.labelOf(kind, minute), prepare = true, auto = true)

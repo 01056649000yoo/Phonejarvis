@@ -71,4 +71,26 @@ class CollectorRulesTest {
         // 메시지 목록이 없는 알림은 글 전체로
         assertTrue(c.urgentWords(c.judgeText("부재중 전화 1통", emptyList())))
     }
+
+    // 2026-11-25 점검: 낱말만 있는 '비밀번호' 연락은 모으고, 실제 값이 든 것만 거름
+    @Test fun 비밀번호는_값이_있을_때만_거름() {
+        listOf("임시 비밀번호는 aB3x9Kq 입니다", "보안코드 482913", "비밀번호: 1234").forEach { assertTrue(it, secret(it)) }
+        listOf("와이파이 비밀번호 뭐였죠?", "나이스 비밀번호 변경 안내드립니다", "비밀번호를 잊으셨다면 행정실로 오세요").forEach { assertFalse(it, secret(it)) }
+    }
+
+    // 같은 글 알림은 하루에 한 번(예전엔 보관 기간 내내 한 번), 메시지 목록은 보낸 시각으로
+    @Test fun 같은_글_알림은_날이_바뀌면_다시_모음() {
+        val c = NotificationCollectorService
+        val kst = java.util.TimeZone.getTimeZone("Asia/Seoul")
+        val day = 24L * 3600 * 1000
+        val noon = 1_795_000_000_000L.let { it - Math.floorMod(it + kst.getOffset(it), day) + day / 2 }   // 어느 날 한국 시각 낮 12시
+        org.junit.Assert.assertEquals(c.localDay(noon, kst), c.localDay(noon + 11 * 3600_000L, kst))        // 같은 날 23시
+        org.junit.Assert.assertEquals(c.localDay(noon, kst) + 1, c.localDay(noon + 13 * 3600_000L, kst))    // 다음 날 01시
+        val a = c.dedupeKey("app", "", "알림장", "새 알림장이 등록되었습니다", noon, null)
+        org.junit.Assert.assertEquals(a, c.dedupeKey("app", "", "알림장", "새 알림장이 등록되었습니다", noon + 60_000, null))
+        org.junit.Assert.assertNotEquals(a, c.dedupeKey("app", "", "알림장", "새 알림장이 등록되었습니다", noon + day, null))
+        // 메시지 목록: 같은 말이라도 보낸 시각이 다르면 다른 메시지, 같으면(다시 딸려 온 것) 같은 메시지
+        org.junit.Assert.assertNotEquals(c.dedupeKey("k", "방", "민수", "네", noon, 1000L), c.dedupeKey("k", "방", "민수", "네", noon, 2000L))
+        org.junit.Assert.assertEquals(c.dedupeKey("k", "방", "민수", "네", noon, 1000L), c.dedupeKey("k", "방", "민수", "네", noon + day, 1000L))
+    }
 }

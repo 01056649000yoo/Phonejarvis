@@ -11,7 +11,7 @@ import java.io.File
 /**
  * 💾 백업·복원: 앱을 지웠다 다시 깔아도 내 설정이 그대로.
  *
- * - 넣는 것: 학생·학부모 명부, 학부모 방, 앱·방 끄기, 키워드, 광고 거르기, 요약 시간·쉬는 날, 수업·퇴근 시간표
+ * - 넣는 것: 학생·학부모 명부, 학부모 방, 앱·방 끄기, 키워드, 광고 거르기, 요약 시간·쉬는 날, 수업·퇴근 시간표, 직접 넣은 할 일
  * - 넣지 않는 것: 메시지 내용, 학생별 기록, AI 모델 (개인정보·용량)
  * - 자동 백업: 하루 한 번(매일 새벽 알람 + 앱 열 때·요약 끝날 때) 다운로드/쌤톡스/쌤톡스_백업.json, 비밀번호로 암호화. 앱을 지워도 남음
  * - 수동: 원하는 곳으로 내보내기 / 파일에서 불러오기 (권한 없이도 됨)
@@ -41,8 +41,7 @@ object Backup {
         FILES.forEach { name ->
             val obj = JSONObject()
             ctx.getSharedPreferences(name, Context.MODE_PRIVATE).all.forEach { (k, v) ->
-                if (k in SKIP[name].orEmpty()) return@forEach
-                if (name == "app" && k !in APP_ONLY) return@forEach
+                if (!isBackedUp(name, k)) return@forEach
                 val e = when (v) {
                     is Boolean -> JSONObject().put("t", "b").put("v", v)
                     is Int -> JSONObject().put("t", "i").put("v", v)
@@ -61,7 +60,16 @@ object Backup {
             .put("created", System.currentTimeMillis())
             .put("summary", summary(ctx))
             .put("prefs", prefs)
+            .put("tasks", tasksJson(ctx))
             .toString(2)
+    }
+
+    /** 📌 직접 넣은 할 일 — 설정 묶음이 아니라 DB 에 있어 예전 백업에서 빠져 있었다(다시 설치하면 할 일이 모두 사라짐) */
+    private fun tasksJson(ctx: Context): JSONArray = JSONArray().apply {
+        runCatching { NotificationDb.get(ctx).manualTasks() }.getOrDefault(emptyList()).forEach { t ->
+            put(JSONObject().put("title", t.title).put("room", t.room).put("due", t.due).put("hasTime", t.hasTime)
+                .put("sourceTime", t.sourceTime).put("done", t.done).put("dedupe", t.dedupe))
+        }
     }
 
     /** "학생 25명 · 학부모 연결 12 · 키워드 6" 같은 한 줄 */
@@ -89,7 +97,9 @@ object Backup {
                 put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/쌤톡스/")
             })!!
             cr.openOutputStream(uri, "wt")!!.use { it.write(text.toByteArray()) }
-            meta(ctx).edit().putString("ms_uri", uri.toString()).putLong("last", System.currentTimeMillis()).apply()
+            // auto_last: 다운로드 폴더에 저장한 시각 — '파일로 내보내기'(last 만 고침)가 자동 백업을 하루 미루지 않게 따로 둠
+            val now = System.currentTimeMillis()
+            meta(ctx).edit().putString("ms_uri", uri.toString()).putLong("last", now).putLong("auto_last", now).apply()
         }.isSuccess
     }
 
@@ -100,9 +110,12 @@ object Backup {
         runCatching { ctx.contentResolver.query(u, arrayOf(MediaStore.MediaColumns._ID), null, null, null)?.use { it.moveToFirst() } == true }.getOrDefault(false)
     }
 
-    /** 하루 한 번 자동 백업 (매일 새벽 알람 · 앱 열 때 · 요약이 끝날 때 — 20시간 안에 했으면 건너뜀). 비밀번호가 없으면 안 함 */
-    fun autoBackup(ctx: Context) {
-        if (System.currentTimeMillis() - lastBackupTime(ctx) < 20 * 3600 * 1000L) return
+    /**
+     * 하루 한 번 자동 백업 (매일 새벽 알람 · 앱 열 때 · 요약이 끝날 때 — [minGapHours] 안에 했으면 건너뜀). 비밀번호가 없으면 안 함.
+     * 새벽 알람은 간격을 짧게(6시간) 부름 — 20시간이면 전날 아침에 한 백업 때문에 새벽 알람이 건너뛰어, 앱을 안 여는 날에는 이틀에 한 번만 됐다.
+     */
+    fun autoBackup(ctx: Context, minGapHours: Int = 20) {
+        if (System.currentTimeMillis() - meta(ctx).getLong("auto_last", lastBackupTime(ctx)) < minGapHours * 3600 * 1000L) return
         saveToDownloads(ctx)
     }
 
@@ -157,32 +170,67 @@ object Backup {
 
     private fun restore(ctx: Context, text: String, pin: String?): String {
         val plain = if (BackupCrypto.isEncrypted(text)) BackupCrypto.decrypt(text, pin ?: throw NeedPin()) else text
-        // 새 폰에서 처음 불러올 때 쓴 비밀번호를 이 폰의 백업 비밀번호로도 씀
-        if (pin != null && !BackupCrypto.hasPin(ctx)) BackupCrypto.setPin(ctx, pin)
         val j = JSONObject(plain)
         require(j.optString("format") == FORMAT) { "쌤톡스 백업 파일이 아니에요." }
+        // ① 먼저 모두 읽어 봄 — 예전엔 읽으면서 바로 써서, 중간에 깨진 값이 있으면 앞의 묶음만 바뀐 채 '불러오지 못했어요'가 됐다
         val prefs = j.getJSONObject("prefs")
-        prefs.keys().forEach { name ->
-            if (name !in FILES) return@forEach
-            val obj = prefs.getJSONObject(name)
-            val ed = ctx.getSharedPreferences(name, Context.MODE_PRIVATE).edit()
-            obj.keys().forEach { k ->
-                val e = obj.getJSONObject(k)
-                when (e.optString("t")) {
-                    "b" -> ed.putBoolean(k, e.getBoolean("v"))
-                    "i" -> ed.putInt(k, e.getInt("v"))
-                    "l" -> ed.putLong(k, e.getLong("v"))
-                    "f" -> ed.putFloat(k, e.getDouble("v").toFloat())
-                    "s" -> ed.putString(k, e.getString("v"))
-                    "set" -> e.getJSONArray("v").let { a -> ed.putStringSet(k, (0 until a.length()).map { a.getString(it) }.toSet()) }
+        val plan = prefs.keys().asSequence().filter { it in FILES }.associateWith { name -> readEntries(prefs.getJSONObject(name)) }
+        // 새 폰에서 처음 불러올 때 쓴 비밀번호를 이 폰의 백업 비밀번호로도 씀
+        if (pin != null && !BackupCrypto.hasPin(ctx)) BackupCrypto.setPin(ctx, pin)
+        // ② 그다음 한 번에 씀. 백업에 든 묶음은 백업 그대로 — 백업 뒤에 생긴 값(백업 때는 없던 설정)은 지움.
+        //    예전엔 덮어쓰기만 해서, 백업 때 '저절로'(값 없음)였던 업무·일정 앱 지정·방 거리·사람 묶음 구성원 등이 지금 값으로 남았다.
+        plan.forEach { (name, entries) ->
+            val sp = ctx.getSharedPreferences(name, Context.MODE_PRIVATE)
+            val ed = sp.edit()
+            sp.all.keys.forEach { k -> if (isBackedUp(name, k) && k !in entries) ed.remove(k) }
+            entries.forEach { (k, v) ->
+                if (!isBackedUp(name, k)) return@forEach
+                when (v) {
+                    is Boolean -> ed.putBoolean(k, v)
+                    is Int -> ed.putInt(k, v)
+                    is Long -> ed.putLong(k, v)
+                    is Float -> ed.putFloat(k, v)
+                    is String -> ed.putString(k, v)
+                    is Set<*> -> ed.putStringSet(k, v.map { it.toString() }.toSet())
                 }
             }
-            ed.apply()
+            ed.commit()
+        }
+        // 📌 직접 넣은 할 일(이미 있는 것은 그대로 — dedupe 로 한 번만)
+        j.optJSONArray("tasks")?.let { a ->
+            runCatching {
+                val db = NotificationDb.get(ctx)
+                for (i in 0 until a.length()) {
+                    val o = a.getJSONObject(i)
+                    val dedupe = o.optString("dedupe")
+                    if (!dedupe.startsWith("manual|") || o.optString("title").isBlank()) continue
+                    db.insertTask(Task(title = o.getString("title").take(60), room = o.optString("room", "직접 추가"), due = o.getLong("due"),
+                        hasTime = o.optBoolean("hasTime"), sourceTime = o.optLong("sourceTime"), done = o.optBoolean("done"), dedupe = dedupe))
+                }
+            }
         }
         // 브리핑·수업 알람 다시 예약
         BriefingScheduler.scheduleAll(ctx)
         QuietMode.tick(ctx)
         return j.optString("summary").ifEmpty { summary(ctx) }
+    }
+
+    /** 이 묶음의 이 값이 백업 대상인가(만들 때·불러올 때 같은 기준) */
+    private fun isBackedUp(name: String, key: String) = key !in SKIP[name].orEmpty() && (name != "app" || key in APP_ONLY)
+
+    /** 백업의 설정 묶음 하나를 (이름 → 값)으로. 형식이 틀리면 예외(아무것도 쓰기 전) */
+    private fun readEntries(obj: JSONObject): Map<String, Any> = buildMap {
+        obj.keys().forEach { k ->
+            val e = obj.getJSONObject(k)
+            when (e.optString("t")) {
+                "b" -> put(k, e.getBoolean("v"))
+                "i" -> put(k, e.getInt("v"))
+                "l" -> put(k, e.getLong("v"))
+                "f" -> put(k, e.getDouble("v").toFloat())
+                "s" -> put(k, e.getString("v"))
+                "set" -> e.getJSONArray("v").let { a -> put(k, (0 until a.length()).map { a.getString(it) }.toSet()) }
+            }
+        }
     }
 }
 

@@ -183,12 +183,23 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
                 recent + older + added + installed
             }
             val pkgs = stats.map { it.pkg }.toSet()
-            if (pkgs == aiDoneFor && appRecs.isNotEmpty()) return@launch
-            silentApps = withContext(Dispatchers.IO) { AppAdvisor.silentMessagingApps(ctx, stats) }
+            // AI 가 이미 본 목록 그대로면 AI 추천(모으기·빼기·이유)은 지키고, 건수·경고·묶음은 새로 읽은 것으로.
+            // 예전엔 여기서 그냥 돌아가서, AI 추천을 한 번 받은 뒤로는 앱을 다시 켤 때까지 건수와 '알림이 안 와요' 경고가 옛것 그대로였다
+            val aiKept = if (pkgs == aiDoneFor) appRecs.filter { it.byAi }.associateBy { it.stat.pkg } else emptyMap()
+            silentApps = withContext(Dispatchers.IO) {
+                // 최근 7일에 알림이 온 적 있는 앱(뺀 방·광고라 모으지 않은 것 포함)은 '알림이 안 와요'가 아님
+                val weekAgo = System.currentTimeMillis() - 7 * 24L * 3600 * 1000
+                val arrived = db.knownApps().filter { it.third >= weekAgo }.map { it.first }.toSet()
+                AppAdvisor.silentMessagingApps(ctx, stats, arrived)
+            }
             workApps = AppFilter.workApps(ctx, stats)
-            val rules = AppAdvisor.sortForDisplay(AppAdvisor.byRules(stats), workApps)
+            val rules = AppAdvisor.sortForDisplay(AppAdvisor.byRules(stats).map { r ->
+                aiKept[r.stat.pkg]?.let { r.copy(keep = it.keep, reason = it.reason, byAi = true) } ?: r
+            }, workApps)
             appRecs = rules
             excludedApps = AppFilter.excluded(ctx)
+            reviewedApps = AppFilter.reviewed(ctx)
+            if (pkgs == aiDoneFor && rules.isNotEmpty()) return@launch
             // 키워드 추천: 최근 7일 모은 알림(뺀 앱·방 제외)에서 규칙으로 바로
             val recent = withContext(Dispatchers.IO) {
                 val r = AppFilter.rules(ctx)
@@ -279,8 +290,9 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
 
     fun applyAppRecs() {
         val ctx = getApplication<Application>()
-        // 처음엔 전체, 그다음부터는 새로 생긴 앱만 (직접 바꾼 앱은 건드리지 않음)
-        val target = if (appsApplied) newAppRecs else appRecs
+        // 아직 살펴보지 않은 앱만 — 처음 적용할 때도 직접 켜고 끈 앱·직접 추가한 앱은 건드리지 않음
+        // (예전엔 처음엔 전체에 적용해서, 미리 꺼 둔 앱이 '모으기' 추천으로 다시 켜지고 켜 둔 앱이 꺼졌다)
+        val target = newAppRecs
         AppFilter.apply(ctx, target)
         excludedApps = AppFilter.excluded(ctx)
         reviewedApps = AppFilter.reviewed(ctx)
@@ -312,8 +324,12 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             rooms = withContext(Dispatchers.IO) {
                 val known = db.knownRooms(pkg)
-                val names = known.map { it.name }.toSet()
-                known + AppFilter.manualRooms(ctx, pkg).filter { it !in names }.map { KnownRoom(it, 0, 0L) }
+                val names = known.map { it.name }.toMutableSet()
+                // 설정에만 남은 방(백업을 불러온 새 폰, 180일 넘게 조용했던 방): 뺀 방·학부모 방·보일 모양을 정한 방.
+                // 예전엔 '뺀 방 3개'라고 나오는데 목록에는 없어 다시 켤 수가 없었다
+                val fromSettings = (AppFilter.excludedRooms(ctx) + ParentAdvisor.parentRooms(ctx) + RoomTier.all(ctx).keys)
+                    .filter { it.startsWith("$pkg|") }.map { it.substringAfter('|') }
+                known + (AppFilter.manualRooms(ctx, pkg) + fromSettings).filter { it.isNotBlank() && names.add(it) }.map { KnownRoom(it, 0, 0L) }
             }
         }
     }
@@ -530,8 +546,15 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         private set
     fun setBackupPin(pin: String) {
         if (pin.length !in BackupCrypto.MIN_LEN..20) { status = "백업 비밀번호는 ${BackupCrypto.MIN_LEN}~20자로 정해 주세요."; return }
-        BackupCrypto.setPin(getApplication<Application>(), pin); hasBackupPin = true; weakPin = false
+        val ctx = getApplication<Application>()
+        BackupCrypto.setPin(ctx, pin); hasBackupPin = true; weakPin = false
         status = "💾 백업 비밀번호를 정했어요. 새 폰에서 불러올 때 이 비밀번호가 필요해요."
+        // 바로 새 비밀번호로 백업 — 예전엔 다음 자동 백업(길면 20시간 뒤)까지 백업이 없거나, 바꾸기 전 비밀번호로 잠긴 파일이 남아
+        // 그 사이에 다시 설치하면 새 비밀번호로는 열리지 않았다
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { Backup.saveToDownloads(ctx) }
+            lastBackup = Backup.lastBackupTime(ctx)
+        }
     }
     /** 복원 뒤 화면 상태를 저장된 설정으로 다시 읽기 */
     private fun reloadAll() {
@@ -540,6 +563,15 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         excludedApps = AppFilter.excluded(ctx); excludedRooms = AppFilter.excludedRooms(ctx)
         parentRooms = ParentAdvisor.parentRooms(ctx); parentLinks = ParentBook.links(ctx)
         adFilterOn = AdFilter.enabled(ctx)
+        // 예전엔 아래 값들을 다시 읽지 않아, 불러온 뒤에도 화면은 불러오기 전 상태였다. 특히 '추천 적용 여부'가 옛값이면
+        // 알림 앱 정리의 "추천대로 적용"이 방금 불러온 뺀 앱 목록을 추천으로 덮어썼다
+        appsApplied = prefs.getBoolean("apps_setup_done", false)
+        reviewedApps = AppFilter.reviewed(ctx)
+        aiDoneFor = emptySet()
+        myNames = MyNames.all(ctx); roomTiers = RoomTier.all(ctx)
+        focusTalk = Briefings.focusOn(ctx)
+        notiDays = Storage.notiDays(ctx); briefDays = Storage.briefDays(ctx); logDays = Storage.logDays(ctx)
+        reloadGroups(); reloadTasks(); refreshMuted()
         reloadSchedule()
         foundBackup = null
         refresh()

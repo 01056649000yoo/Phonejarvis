@@ -191,6 +191,9 @@ class NotificationDb private constructor(ctx: Context) :
         if (room.isNotBlank()) writableDatabase.execSQL(sql, arrayOf<Any>(pkg, room.take(100), app, time))
     }
 
+    /** 마지막으로 알림을 본 시각(한 번도 없으면 0) — 수집 서비스가 다시 연결될 때 그 뒤에 온 알림을 모으려고 */
+    fun lastSeenTime(): Long = readableDatabase.rawQuery("SELECT IFNULL(MAX(last),0) FROM seen", null).use { c -> if (c.moveToFirst()) c.getLong(0) else 0L }
+
     /** 지금까지 알림을 보낸 적 있는 앱 (패키지, 이름, 마지막 시각) */
     fun knownApps(): List<Triple<String, String, Long>> =
         readableDatabase.rawQuery("SELECT pkg, app, last FROM seen WHERE room='' ORDER BY last DESC", null)
@@ -274,6 +277,11 @@ class NotificationDb private constructor(ctx: Context) :
         ).use { c -> buildList { while (c.moveToNext()) add(Task(c.getLong(0), c.getString(1), c.getString(2), c.getLong(3),
             c.getInt(4) == 1, c.getLong(5), c.getInt(6) == 1, c.getString(7))) } }
     }
+    /** 💾 백업에 넣을 할 일: 직접 넣은 것 모두(끝낸 것 포함, 보관 기간 안) */
+    fun manualTasks(): List<Task> = readableDatabase.rawQuery(
+        "SELECT id,title,room,due,has_time,source_time,done,dedupe FROM task WHERE dedupe LIKE 'manual|%' ORDER BY due ASC LIMIT 500", null
+    ).use { c -> buildList { while (c.moveToNext()) add(Task(c.getLong(0), c.getString(1), c.getString(2), c.getLong(3),
+        c.getInt(4) == 1, c.getLong(5), c.getInt(6) == 1, c.getString(7))) } }
     fun setTaskDone(id: Long, done: Boolean) {
         writableDatabase.update("task", ContentValues().apply { put("done", if (done) 1 else 0) }, "id=?", arrayOf(id.toString()))
     }
