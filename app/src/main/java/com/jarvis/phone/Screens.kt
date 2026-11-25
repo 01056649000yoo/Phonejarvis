@@ -343,7 +343,7 @@ private fun BriefingTab(vm: JarvisViewModel) {
             vm.summarizeToday()
             // 🔔 안내 후 앱을 뒤로 보내기 (알림이 꺼져 있으면 결과를 못 받으니 화면에 남음)
             if (androidx.core.app.NotificationManagerCompat.from(ctx).areNotificationsEnabled()) {
-                android.widget.Toast.makeText(ctx, "정리를 시작했어요. 완료되면 알림으로 알려드릴게요 🔔", android.widget.Toast.LENGTH_LONG).show()
+                android.widget.Toast.makeText(ctx, "정리를 시작했어요. 완료되면 알림으로 알려드릴게요", android.widget.Toast.LENGTH_LONG).show()
                 (ctx as? android.app.Activity)?.moveTaskToBack(true)
             } else {
                 android.widget.Toast.makeText(ctx, "알림이 꺼져 있어서 완료 알림을 못 보내요. 이 화면에서 기다려 주세요.", android.widget.Toast.LENGTH_LONG).show()
@@ -581,7 +581,7 @@ private fun ReplyDraftsCard(vm: JarvisViewModel) {
                                     return@Button
                                 }
                                 val msg = vm.sendReply(d, text)
-                                android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_LONG).show()
+                                android.widget.Toast.makeText(ctx, Emoji.strip(msg), android.widget.Toast.LENGTH_LONG).show()
                             }, enabled = text.isNotBlank()) { Text(if (vm.canReplyDirectly(d)) "💬 보내기" else "📋 복사·문자 앱") }
                             OutlinedButton(onClick = { vm.makeDraft(d) }, enabled = vm.hasModel && vm.draftingFor == null && !vm.bgRunning) { Text("다시 쓰기") }
                             TextButton(onClick = { vm.doneReply(d) }) { Text("✓ 끝") }
@@ -860,9 +860,6 @@ private fun GroupNameDialog(title: String, initEmoji: String, initName: String, 
                 }
                 OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                     placeholder = { Text("묶음 이름 (예: 교직원)") })
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    People.EMOJIS.forEach { e -> FilterChip(selected = emoji == e, onClick = { emoji = e }, label = { Text(e) }) }
-                }
             }
         },
         confirmButton = { Button(onClick = { onDone(emoji, name) }, enabled = name.isNotBlank()) { Text("확인") } },
