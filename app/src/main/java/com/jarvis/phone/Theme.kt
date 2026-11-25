@@ -19,10 +19,10 @@ import androidx.compose.ui.unit.sp
 /**
  * 쌤톡스 색 (2026-11-25 Oura 디자인 반영 — DESIGN.md).
  * 따뜻한 종이 크림 바탕 + 회갈색(Stone) 주색 + 흙빛 보조색(금·흙·올리브).
- * 초록(Action)은 화면마다 가장 중요한 단추 하나에만 쓴다(2026-11-25 파랑 → 숲 초록).
+ * 초록(Action, 로고와 같은 칠판 그린)은 화면마다 가장 중요한 단추 하나에만 쓴다(2026-11-25 파랑 → 칠판 그린).
  */
 object Ssam {
-    val Action = Color(0xFF3B7556)   // 숲 초록: 가장 중요한 단추 하나 (화면마다 하나만), 흰 글자 대비 5.4:1
+    val Action = Color(0xFF2E4A3D)   // 로고(LogoBoard·colors.xml ssam_board)와 같은 칠판 그린: 가장 중요한 단추 하나 (화면마다 하나만), 흰 글자 대비 9.7:1
     val Stone = Color(0xFF4A4741)    // 주색: 단추·고른 칸·진한 요약 카드
     val Canvas = Color(0xFFF7F1E8)   // 종이 크림 바탕
     val Ink = Color(0xFF1C1B1A)      // 본문 글
