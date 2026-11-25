@@ -299,7 +299,7 @@ object DailyDigest {
     const val MAX_SEGS = 3             // 방별 하루 한 줄에 넣는 조각
     const val MAX_PICK_ROOMS = 12      // 조각이 많은 방 중 AI 로 고르는 방(건수 많은 순) — 나머지는 규칙으로
     const val PICK_DEADLINE_MS = 4 * 60_000L
-    const val MAX_OTHER_NAMES = 30
+    const val MAX_OTHER_NAMES = 12     // 하루 정리의 '그 밖의 방' 이름(건수 많은 순) — 30곳이면 그 줄만 500자
     private const val CORE_TOKENS = 2000   // 핵심 질문에 넣는 줄의 토큰 어림 상한(폰 작업 공간 4096)
 
     /** 그날 요약들의 ⭐ 키워드 줄(같은 줄은 한 번, 최근 것부터 10개) */
@@ -357,6 +357,22 @@ object DailyDigest {
     fun lineParts(e: RoomDay.Entry, replied: Map<String, Long>): List<RoomDay.Part> =
         if (openAsks(e, replied).isEmpty()) e.parts else e.parts.filterNot { it.asked }
 
+    /**
+     * 하루 정리에서 이 방을 어느 칸에 놓을지와 그 줄의 재료(순수 — 시험).
+     * 방의 거리는 하루 중 가장 가까웠던 때를 따르는데(RoomDay.merge), 예전엔 그 방의 하루치 구간을 모두 '나에게 온 대화'에 넣었다 —
+     * 큰 단톡방에서 내가 한마디 했거나 한 번 불렸을 뿐인데 그 방의 하루 잡담 전체가 구간별 요약까지 달고 맨 위 칸을 차지했다.
+     * 이제 구간마다 적어 둔 거리로: 나에게 온 구간이 남아 있으면 그 구간만 '나에게 온 대화'에, 없으면(이미 🙋 로 올라갔거나) 나머지를 '내가 속한 방' 한 줄로.
+     * '그 밖'이었던 구간은 줄을 쓰지 않음. 거리를 모르는 예전 기록은 방의 거리 그대로
+     */
+    fun place(e: RoomDay.Entry, replied: Map<String, Long>): Pair<Int, List<RoomDay.Part>> {
+        val parts = lineParts(e, replied)
+        if (e.kind != RoomDay.TALK || parts.none { it.level != 0 }) return e.level to parts
+        fun lv(p: RoomDay.Part) = if (p.level == 0) e.level else p.level
+        val shown = parts.filter { lv(it) != Relevance.OTHER }
+        val best = shown.minOfOrNull(::lv) ?: return (if (e.level == Relevance.OTHER) Relevance.OTHER else Relevance.JOINED) to emptyList()
+        return best to shown.filter { lv(it) == best }
+    }
+
     /** 재료 → 총정리 글. [ask] 가 null 이면 AI 없이(핵심 칸 없이 방별로만) */
     suspend fun total(d: Day, replied: Map<String, Long>, now: Long, ask: (suspend (String) -> String)?): Total {
         val fmt = SimpleDateFormat("HH:mm", Locale.KOREA)
@@ -364,10 +380,12 @@ object DailyDigest {
         val apps = d.entries.filter { it.kind == RoomDay.APP }
         val rooms = d.entries.filter { it.kind != RoomDay.APP }
         // 방마다 하루 한 줄: 조각이 많은 방은 AI 가 고르고(건수 많은 순, 시간 안에서), 나머지는 규칙
-        val segsOf = rooms.associate { it.key to segments(lineParts(it, replied)) }
+        val placed = rooms.associate { it.key to place(it, replied) }
+        fun lvOf(e: RoomDay.Entry) = placed[e.key]?.first ?: e.level
+        val segsOf = rooms.associate { it.key to segments(placed[it.key]!!.second) }
         // AI 로 고르는 방은 가까운 방(나에게 → 내가 속한 방)부터, 같으면 건수 많은 순. 그 밖의 방은 줄을 쓰지 않음
-        val needPick = rooms.filter { it.level != Relevance.OTHER && (segsOf[it.key]?.size ?: 0) > MAX_SEGS }
-            .sortedWith(compareBy<RoomDay.Entry> { it.level }.thenByDescending { it.count })
+        val needPick = rooms.filter { lvOf(it) != Relevance.OTHER && (segsOf[it.key]?.size ?: 0) > MAX_SEGS }
+            .sortedWith(compareBy<RoomDay.Entry> { lvOf(it) }.thenByDescending { it.count })
         val picks = mutableMapOf<String, List<Int>>()
         var usedAi = false
         if (ask != null) {
@@ -379,7 +397,7 @@ object DailyDigest {
             }
         }
         fun line(e: RoomDay.Entry): String? {
-            if (e.level == Relevance.OTHER) return null   // 🎯 그 밖의 방은 이름과 건수만
+            if (lvOf(e) == Relevance.OTHER) return null   // 🎯 그 밖의 방은 이름과 건수만
             val segs = segsOf[e.key].orEmpty()
             if (segs.isEmpty()) return null
             val idx = picks[e.key] ?: rulePick(segs)
@@ -387,7 +405,7 @@ object DailyDigest {
             return joinSegs(idx.map { segs[it] }) + done
         }
         /** 3층: 구간이 둘 넘는 방은 구간별 요약을 접어 둠 */
-        fun details(e: RoomDay.Entry): List<String> = lineParts(e, replied).takeIf { it.size >= 2 }.orEmpty()
+        fun details(e: RoomDay.Entry): List<String> = placed[e.key]!!.second.takeIf { it.size >= 2 }.orEmpty()
             .map { p -> "$DETAIL${span.format(p.from)}~${span.format(p.to)} · ${p.count}건: ${BriefingComposer.clip(p.point, 160)}" }
 
         // 🙋 답할 것 — 상한 없이 모두(최근 것부터)
@@ -397,9 +415,9 @@ object DailyDigest {
         // 🎯 나와의 거리(2026-11-25 선생님: 나와 관련된 것만): 나에게 온 대화(내용 + 구간별 요약) · 내가 속한 방(한 줄) · 그 밖의 방(이름·건수)
         val talk = rooms.filter { it.kind == RoomDay.TALK }
         val talkLines = talk.mapNotNull { e -> line(e)?.let { e to it } }
-            .sortedWith(compareBy<Pair<RoomDay.Entry, String>> { it.first.level }.thenByDescending { it.first.count })
-        val meLines = talkLines.filter { it.first.level == Relevance.ME }
-        val joinedLines = talkLines.filter { it.first.level != Relevance.ME }
+            .sortedWith(compareBy<Pair<RoomDay.Entry, String>> { lvOf(it.first) }.thenByDescending { it.first.count })
+        val meLines = talkLines.filter { lvOf(it.first) == Relevance.ME }
+        val joinedLines = talkLines.filter { lvOf(it.first) != Relevance.ME }
         val shownKeys = talkLines.map { it.first.key }.toSet() + asks.map { it.first.key }
         val others = talk.filter { it.key !in shownKeys }.sortedByDescending { it.count }
 

@@ -98,7 +98,7 @@ class TotalDigestTest {
         // 나에게 온 대화·내가 속한 방은 한 줄씩, 맞장구뿐인 방·그 밖의 방(오픈채팅 등)은 이름과 건수만
         (1..5).forEach { assertTrue(t.full, "- 큰방$it (60건): " in t.full) }
         (1..15).forEach { assertTrue(t.full, "- 보통방$it (10건): 보통방$it 내용" in t.full) }
-        assertTrue(t.full, "💬 그 밖의 방 (25곳" in t.full && "잡담방15 3건" in t.full && "오픈방1 8건" in t.full)
+        assertTrue(t.full, "💬 그 밖의 방 (25곳" in t.full && "오픈방1 8건" in t.full && "외 ${25 - DailyDigest.MAX_OTHER_NAMES}곳" in t.full)   // 이름은 건수 많은 순으로 12곳까지
         assertFalse(t.full, "- 잡담방1 (3건)" in t.full)
         assertFalse(t.full, "오픈방1 잡담" in t.full)
         // 부탁방 내용은 🙋 에 있으므로 방별 하루에 다시 쓰지 않음
@@ -145,5 +145,50 @@ class TotalDigestTest {
         val t = DailyDigest.total(DailyDigest.Day(listOf(e), emptyList(), "", 1, 4), mapOf("학부모방" to at(16)), at(22), null)
         assertFalse(t.full, "🙋 답할 것" in t.full)
         assertTrue(t.full, "- 학부모방 (4건): 준비물 물음 · ✔ 답함" in t.full)
+    }
+
+    // 2026-11-26 점검: 하루 중 한 번 나에게 온 방이라고 그 방의 하루 잡담 전체를 '나에게 온 대화'에 넣지 않음
+    @Test fun 나에게_온_구간만_나에게_온_대화에() {
+        val chat1 = RoomDay.Part(at(8), at(9), 30, "김: 급식 이야기", level = Relevance.JOINED)
+        val mine = RoomDay.Part(at(10), at(11), 27, "박: 유쌤 자료 좋았어요", level = Relevance.ME)
+        val chat2 = RoomDay.Part(at(14), at(15), 40, "이: 연수 이야기", level = Relevance.JOINED)
+        val open = RoomDay.Part(at(16), at(17), 50, "", level = Relevance.OTHER)
+        val e = entry("큰 단톡방", 147, listOf(chat1, mine, chat2, open))
+        assertEquals(Relevance.ME to listOf(mine), DailyDigest.place(e, emptyMap()))
+        // 나에게 온 구간이 🙋 로 올라가 있으면(아직 답 안 함) 나머지는 '내가 속한 방' 한 줄로
+        val asked = entry("큰 단톡방", 147, listOf(chat1, mine.copy(asked = true), chat2), listOf(RoomDay.Ask(at(11), "박: 자료 보내 달라고 함")))
+        assertEquals(Relevance.JOINED to listOf(chat1, chat2), DailyDigest.place(asked, emptyMap()))
+        // 거리를 적지 않은 예전 기록은 방의 거리 그대로
+        val old = entry("예전방", 10, listOf(RoomDay.Part(at(9), at(10), 10, "내용")))
+        assertEquals(Relevance.ME to old.parts, DailyDigest.place(old, emptyMap()))
+    }
+
+    @Test fun 총정리에서_한마디_한_큰_방은_그_구간만() = runBlocking {
+        val big = entry("끄적끄적아지트", 190, listOf(
+            RoomDay.Part(at(8), at(9), 60, "김: 급식 이야기", level = Relevance.JOINED),
+            RoomDay.Part(at(10), at(11), 70, "박: 유쌤 자료 좋았어요", level = Relevance.ME),
+            RoomDay.Part(at(14), at(15), 60, "이: 연수 이야기", level = Relevance.JOINED)))
+        val t = DailyDigest.total(DailyDigest.Day(listOf(big), emptyList(), "", 3, 190), emptyMap(), at(22), ask = null)
+        assertTrue(t.full, "- 끄적끄적아지트 (190건): 박: 유쌤 자료 좋았어요" in t.full)
+        assertFalse(t.full, "급식 이야기" in t.full || "연수 이야기" in t.full)
+        assertEquals(0, t.full.lines().count { it.startsWith(DailyDigest.DETAIL) })
+    }
+
+    @Test fun 멘션_방의_답할_것은_나에게_한_말만() {
+        val conv = BriefingComposer.Conversation("카카오톡", "오픈채팅", listOf(
+            NotiItem(1, "com.kakao.talk", "카카오톡", "닉네임", "유쌤 내일까지 자료 보내 주실 수 있나요?", at(15), "오픈채팅")))
+        val r = BriefingComposer.RoomSummary(conv, "닉네임: 유쌤 내일까지 자료 보내 주실 수 있나요? / 다른이: 상관없는 말 (이 방 다른 말 15마디)",
+            "닉네임: 유쌤 내일까지 자료 보내 주실 수 있나요?", true, byModel = false, mention = true)
+        val ask = RoomDay.of(r, RoomDay.TALK, Relevance.ME, at(14)).asks.single().text
+        assertFalse(ask, "상관없는 말" in ask || "다른 말" in ask)
+        assertTrue(ask, ask.startsWith("닉네임: 유쌤 내일까지 자료"))
+    }
+
+    @Test fun 평소_요약의_그_밖의_방은_열_곳까지만_이름() {
+        val others = (1..25).map { i -> BriefingComposer.Conversation("카카오톡", "오픈방$i", List(i) { NotiItem(it.toLong(), "com.kakao.talk", "카카오톡", "닉", "ㅋㅋ", at(9), "오픈방$i") }) }
+        val line = BriefingComposer.render(emptyList(), others, emptyList()).lines().single { it.startsWith("- 그 밖의 방") }
+        assertTrue(line, line.startsWith("- 그 밖의 방: 오픈방25 25건, 오픈방24 24건"))
+        assertTrue(line, line.endsWith("외 15곳 120건"))
+        assertFalse(line, "오픈방15 " in line)
     }
 }

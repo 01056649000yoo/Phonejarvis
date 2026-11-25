@@ -20,7 +20,8 @@ object RoomDay {
     const val APP = "app"        // 📦 앱 알림(건수만)
 
     /** 요약 한 번이 덮은 이 방의 한 구간: 시각, 건수, 요약 줄. asked = 그 줄이 🙋 답할 것으로 올라간 내용 */
-    data class Part(val from: Long, val to: Long, val count: Int, val point: String, val asked: Boolean = false)
+    data class Part(val from: Long, val to: Long, val count: Int, val point: String, val asked: Boolean = false,
+                    /** 그 구간에서 이 방의 거리(Relevance). 0 = 모름(예전 기록) — 방의 거리를 따름 */ val level: Int = 0)
     /** 🙋 답할 것 하나: 그 구간의 마지막 시각과 내용 */
     data class Ask(val time: Long, val text: String)
 
@@ -55,7 +56,9 @@ object RoomDay {
 
     /** 🙋 줄에 넣는 말 — 요약 화면의 답장할 연락 줄과 같게 */
     fun replyDetail(r: BriefingComposer.RoomSummary): String = when {
-        r.mention -> r.point   // 나에게 한 말과 앞뒤 원문
+        // 나에게 한 말만('보낸 사람: 물음') — 예전엔 앞뒤 말과 '(이 방 다른 말 N마디)'까지 통째로 넣어, 하루 정리와 알림창의 🙋 한 줄이
+        // 서너 줄이 되고 큰 방에서는 옆 사람의 상관없는 말이 답할 것에 섞였다. 앞뒤 말은 그 구간의 평소 요약에 있음
+        r.mention -> r.ask.ifEmpty { r.point }
         r.ask.isNotEmpty() && r.byModel && !r.point.contains(r.ask) -> "${r.ask} (${BriefingComposer.dropName(r.point, r.conv.room)})"
         !r.byModel && r.ask.isNotEmpty() && r.point.contains(r.ask) -> BriefingComposer.dropName(r.point, r.conv.room)
         else -> r.ask.ifEmpty { BriefingComposer.dropName(r.point, r.conv.room) }
@@ -71,7 +74,8 @@ object RoomDay {
         val point = BriefingComposer.dropName(r.point.removePrefix("${conv.room}: ").trim(), conv.room, group)
         // 🙋 으로 올라가지 않은 부탁은 요약 줄 뒤에 '→ 부탁'(요약 화면과 같게)
         val body = if (!r.needReply && r.ask.isNotEmpty() && !r.point.contains(r.ask)) "$point → ${r.ask}" else point
-        val part = Part(maxOf(from, conv.items.first().time), conv.last, conv.items.size, BriefingComposer.soften(body), asked = r.needReply)
+        val part = Part(maxOf(from, conv.items.first().time), conv.last, conv.items.size, BriefingComposer.soften(body), asked = r.needReply,
+            level = if (kind != TALK) Relevance.ME else level)
         return Entry(
             key = BriefingComposer.keyOf(conv), app = conv.app, room = conv.room, kind = kind,
             count = conv.items.size, first = conv.items.first().time, last = conv.last,
@@ -94,7 +98,7 @@ object RoomDay {
     fun toJson(e: Entry): String = JSONObject().apply {
         put("k", e.key); put("a", e.app); put("r", e.room); put("t", e.kind); put("n", e.count)
         put("f", e.first); put("l", e.last); put("v", e.level)
-        put("p", JSONArray().apply { e.parts.forEach { p -> put(JSONObject().put("f", p.from).put("t", p.to).put("n", p.count).put("s", p.point).put("q", p.asked)) } })
+        put("p", JSONArray().apply { e.parts.forEach { p -> put(JSONObject().put("f", p.from).put("t", p.to).put("n", p.count).put("s", p.point).put("q", p.asked).put("v", p.level)) } })
         put("q", JSONArray().apply { e.asks.forEach { a -> put(JSONObject().put("t", a.time).put("s", a.text)) } })
     }.toString()
 
@@ -105,7 +109,7 @@ object RoomDay {
         Entry(
             o.getString("k"), o.optString("a"), o.optString("r"), o.optString("t", TALK), o.optInt("n"),
             o.optLong("f"), o.optLong("l"),
-            (0 until p.length()).map { i -> p.getJSONObject(i).let { Part(it.optLong("f"), it.optLong("t"), it.optInt("n"), it.optString("s"), it.optBoolean("q")) } },
+            (0 until p.length()).map { i -> p.getJSONObject(i).let { Part(it.optLong("f"), it.optLong("t"), it.optInt("n"), it.optString("s"), it.optBoolean("q"), it.optInt("v", 0)) } },
             (0 until q.length()).map { i -> q.getJSONObject(i).let { Ask(it.optLong("t"), it.optString("s")) } },
             // 예전 기록(거리 없음)은 '중요'였으면 1, 아니면 2
             if (o.has("v")) o.optInt("v", Relevance.ME) else if (o.optBoolean("i")) Relevance.ME else Relevance.JOINED,

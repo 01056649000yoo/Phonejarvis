@@ -1000,6 +1000,7 @@ object BriefingComposer {
     fun usesMention(conv: Conversation, m: Mentions): Boolean =
         multiSpeaker(conv) && m.base(conv) != Relevance.ME && conv.items.any { m.toMe(conv, it) }
 
+    const val MAX_OTHER_ROOMS = 10   // 평소 요약의 '그 밖의 방' 줄에 이름을 적는 방 수
     const val MENTION_TURNS = 8      // 뽑아 보여 주는 말 차례(나에게 한 말 + 앞뒤)
     const val MENTION_LINE = 70
 
@@ -1141,7 +1142,10 @@ object BriefingComposer {
                 append(more(r) + "\n")
             }
             if (others.isNotEmpty()) {
-                append("- 그 밖의 방: " + others.joinToString(", ") { "${it.room} ${it.items.size}건" } + "\n")
+                // 건수 많은 순으로 [MAX_OTHER_ROOMS]곳까지 — 예전엔 수십 곳 이름을 모두 적어 요약의 절반이 방 이름이었다(오픈채팅 40곳이면 600자)
+                val top = others.sortedByDescending { it.items.size }
+                append("- 그 밖의 방: " + top.take(MAX_OTHER_ROOMS).joinToString(", ") { "${it.room} ${it.items.size}건" } +
+                    (if (top.size > MAX_OTHER_ROOMS) " 외 ${top.size - MAX_OTHER_ROOMS}곳 ${top.drop(MAX_OTHER_ROOMS).sumOf { it.items.size }}건" else "") + "\n")
             }
             append("\n")
         }
