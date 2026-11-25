@@ -8,7 +8,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
+import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.foundation.clickable
@@ -82,6 +84,59 @@ internal fun isSectionHead(line: String): Boolean {
     return !Character.isLetterOrDigit(t.codePointAt(0))
 }
 
+
+/**
+ * 🖋 이모지 → 선 아이콘 (2026-11-25 디자인): 저장된 요약 글은 그대로 두고 화면에서만 바꿔 그린다.
+ * 앱이 정한 칸 이모지만 바꾸고, 사람이 고른 묶음 이모지(👔 등)는 그대로.
+ */
+internal val LINE_ICONS = listOf(
+    "👥" to R.drawable.ic_line_people, "👪" to R.drawable.ic_line_people, "💬" to R.drawable.ic_line_chat,
+    "🙋" to R.drawable.ic_line_reply, "⭐" to R.drawable.ic_line_star, "💼" to R.drawable.ic_line_work,
+    "📦" to R.drawable.ic_line_box, "📌" to R.drawable.ic_line_flag, "🗓" to R.drawable.ic_line_calendar,
+)
+private val INNER_MARKS = listOf("🚫", "🔁") + LINE_ICONS.map { it.first }
+
+/** 설정 목록·설정 화면 제목의 이모지 → 선 아이콘 */
+internal val MENU_ICONS = listOf(
+    "🌱" to R.drawable.ic_line_filter, "🔕" to R.drawable.ic_line_quiet, "🏠" to R.drawable.ic_line_widget,
+    "🤖" to R.drawable.ic_line_chip, "💾" to R.drawable.ic_line_restore, "🧹" to R.drawable.ic_line_storage,
+    "👥" to R.drawable.ic_line_people, "⭐" to R.drawable.ic_line_star,
+)
+
+/** 메뉴 이름 앞 이모지를 아이콘으로(순수 — 시험): (아이콘, 이모지 뗀 이름). 모르는 이모지(사람이 고른 묶음 등)면 (null, 그대로) */
+internal fun menuIcon(title: String): Pair<Int?, String> {
+    val t = title.replace("\uFE0F", "")
+    val hit = MENU_ICONS.firstOrNull { t.startsWith(it.first) } ?: return null to title
+    return hit.second to t.removePrefix(hit.first).trimStart()
+}
+
+/** 메뉴 이름: 아는 이모지는 선 아이콘으로, 나머지는 글 그대로 */
+@Composable
+fun MenuTitle(title: String, modifier: Modifier = Modifier, style: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.labelLarge,
+              iconSize: androidx.compose.ui.unit.Dp = 20.dp, tint: Color = MaterialTheme.colorScheme.onSurfaceVariant) {
+    val (icon, name) = menuIcon(title)
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        if (icon != null) Icon(painterResource(icon), contentDescription = null, tint = tint,
+            modifier = Modifier.padding(end = Space.m).size(iconSize))
+        Text(name, style = style, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+    }
+}
+
+/** 칸 제목 앞 이모지를 떼어 낸다(순수 — 시험): (앞 이모지, 나머지 글). 글 사이 칸 표시 이모지도 지움. 모르는 이모지면 (null, 그대로) */
+internal fun splitIcon(line: String): Pair<String?, String> {
+    val t = line.trimStart().replace("\uFE0F", "")
+    val key = LINE_ICONS.firstOrNull { t.startsWith(it.first) }?.first ?: return null to line
+    var rest = t.removePrefix(key).trimStart()
+    INNER_MARKS.forEach { rest = rest.replace("$it ", "").replace(it, "") }
+    return key to rest
+}
+
+/** 줄에 🙋(답할 것) 표시가 있으면 떼어 내고 true(순수 — 시험) */
+internal fun splitAsk(line: String): Pair<Boolean, String> =
+    if ("🙋" in line) true to line.replace("🙋 ", "").replace("🙋", "") else false to line
+
+private fun iconRes(key: String): Int = LINE_ICONS.first { it.first == key }.second
+
 @Composable
 fun SummaryText(text: String, modifier: Modifier = Modifier, accent: Color = MaterialTheme.colorScheme.primary) {
     val base = LocalContentColor.current
@@ -95,18 +150,27 @@ fun SummaryText(text: String, modifier: Modifier = Modifier, accent: Color = Mat
                 attachDetails(lines).forEach { (line, details) ->
                     when {
                         isSectionHead(line) -> {
-                            val count = Regex("""\s*\(([^)]*)\)\s*$""").find(line)
-                            val title = count?.let { line.removeRange(it.range) } ?: line
+                            val (icon, plain) = splitIcon(line)
+                            val count = Regex("""\s*\(([^)]*)\)\s*$""").find(plain)
+                            val title = count?.let { plain.removeRange(it.range) } ?: plain
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (icon != null) Icon(painterResource(iconRes(icon)), contentDescription = null, tint = accent,
+                                modifier = Modifier.padding(end = Space.s).size(18.dp))
                             Text(buildAnnotatedString {
                                 withStyle(SpanStyle(color = accent, fontWeight = FontWeight.Bold)) { append(title.substringBefore(" — ")) }
                                 count?.let { withStyle(SpanStyle(color = muted, fontWeight = FontWeight.Normal)) { append("  ${it.groupValues[1]}") } }
                                 if (" — " in title) withStyle(SpanStyle(color = muted, fontWeight = FontWeight.Normal)) { append(" — " + title.substringAfter(" — ")) }
                             }, style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
+                            }
                         }
                         line.startsWith("-") -> {
-                            val l = splitLine(line)
+                            val (ask, clean) = splitAsk(line)
+                            val l = splitLine(clean)
                             Row(verticalAlignment = Alignment.Top) {
-                                Box(Modifier.padding(top = 9.dp, end = Space.m).size(5.dp).background(accent.copy(alpha = 0.7f), CircleShape))
+                                // 🙋 답할 것은 점 대신 답장 화살표
+                                if (ask) Icon(painterResource(R.drawable.ic_line_reply), contentDescription = "답할 것", tint = accent,
+                                    modifier = Modifier.padding(top = 2.dp, end = Space.s).size(16.dp))
+                                else Box(Modifier.padding(top = 9.dp, end = Space.m).size(5.dp).background(accent.copy(alpha = 0.7f), CircleShape))
                                 Column {
                                     if (l.who.isNotEmpty() || l.meta.isNotEmpty()) Text(buildAnnotatedString {
                                         withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { append(l.who) }

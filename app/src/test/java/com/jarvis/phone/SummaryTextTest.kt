@@ -23,4 +23,19 @@ class SummaryTextTest {
         assertFalse(isSectionHead("(⏱ 6초)"))
         assertFalse(isSectionHead("요약 7번 · 알림 422건"))
     }
+
+    @Test fun 칸_이모지를_아이콘으로() {
+        assertEquals("💬" to "대화 요약 (2개 방)", splitIcon("💬 대화 요약 (2개 방)"))
+        assertEquals("🗓" to "하루 정리", splitIcon("🗓️ 하루 정리"))
+        assertEquals("📦" to "앱 알림 21건 · 광고 9건 · 정기 알림 4건", splitIcon("📦 앱 알림 21건 · 🚫 광고 9건 · 🔁 정기 알림 4건"))
+        assertEquals(null to "👔 교직원 연락 (1명)", splitIcon("👔 교직원 연락 (1명)"))
+        assertEquals(true to "- 민준 어머님 · 14:20: 물음", splitAsk("- 🙋 민준 어머님 · 14:20: 물음"))
+        assertEquals(false to "- 엄마: 꽃", splitAsk("- 엄마: 꽃"))
+    }
+
+    @Test fun 메뉴_이모지를_아이콘으로() {
+        assertEquals(R.drawable.ic_line_filter to "알림 앱 정리", menuIcon("🌱 알림 앱 정리"))
+        assertEquals(R.drawable.ic_line_restore to "백업·복원", menuIcon("💾 백업·복원"))
+        assertEquals(null to "👔 교직원", menuIcon("👔 교직원"))
+    }
 }

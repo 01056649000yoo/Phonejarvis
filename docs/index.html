@@ -28,9 +28,9 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>
   /* 2026-11-25 Oura 디자인 반영 (앱 Theme.kt·DESIGN.md 와 같은 색):
-     종이 크림 바탕 · 흰 종이 카드 + 옅은 선 · 회갈색 주색 · 흙빛 보조색 · 파란색은 '앱 받기' 단추에만 */
+     종이 크림 바탕 · 흰 종이 카드 + 옅은 선 · 회갈색 주색 · 흙빛 보조색 · 숲 초록은 '앱 받기' 단추에만 */
   :root {
-    --canvas: #F7F1E8; --stone: #4A4741; --ink: #1C1B1A; --action: #2A72DE; --night: #19191C;
+    --canvas: #F7F1E8; --stone: #4A4741; --ink: #1C1B1A; --action: #3B7556; --night: #19191C;
     --clay: #6B443D; --gold: #AF751B; --gold-pale: #DDBE78; --olive: #5C6F5D; --sage-pale: #CED4B8;
     --bg: var(--canvas); --fg: var(--ink); --muted: #5F5C56; --card: #FFFFFF; --line: #E1DCD3; --soft: #EFE8DC;
     --accent: var(--stone); --on-accent: #FFFFFF; --em: var(--clay); --hl: #E6E9D9; --warn: #F0E2D6;
@@ -76,8 +76,8 @@
   .btn { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 54px; padding: 0 28px;
          border-radius: 999px; font-weight: 600; font-size: 16.5px; text-decoration: none; border: 0; cursor: pointer;
          transition: background-color .15s, transform .1s; }
-  .btn.primary { background: var(--action); color: #fff; }               /* 🔵 파란색은 '앱 받기'에만 */
-  .btn.primary:hover { background: #1F62C8; }
+  .btn.primary { background: var(--action); color: #fff; }               /* 🟢 숲 초록은 '앱 받기'에만 */
+  .btn.primary:hover { background: #326649; }
   .btn.ghost { background: none; border: 1px solid var(--accent); color: var(--accent); }
   .btn.ghost:hover { background: var(--soft); }
   .btn:active { transform: scale(.98); }

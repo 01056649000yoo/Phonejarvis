@@ -148,22 +148,26 @@ fun JarvisScreen(vm: JarvisViewModel) {
     androidx.activity.compose.BackHandler(enabled = vm.page != null || vm.tab != JarvisViewModel.Tab.BRIEFING) { vm.back() }
     Scaffold(
         bottomBar = {
-            // 하단 메뉴: 흰 바탕 + 위 옅은 줄, 고른 칸은 새싹 연두 알약·굵은 글자
+            // 하단 메뉴: 흰 바탕 + 위 옅은 줄, 선 아이콘, 고른 칸은 세이지 알약·굵은 글자
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest, tonalElevation = 0.dp) {
                 listOf(
-                    Triple(JarvisViewModel.Tab.BRIEFING, "📋", "요약"),
-                    Triple(JarvisViewModel.Tab.ALERTS, "🔔", "알림"),
-                    Triple(JarvisViewModel.Tab.HISTORY, "📚", "지난 요약"),
-                    Triple(JarvisViewModel.Tab.SETTINGS, "⚙️", "설정"),
+                    Triple(JarvisViewModel.Tab.BRIEFING, R.drawable.ic_line_summary, "요약"),
+                    Triple(JarvisViewModel.Tab.ALERTS, R.drawable.ic_line_bell, "알림"),
+                    Triple(JarvisViewModel.Tab.HISTORY, R.drawable.ic_line_history, "지난 요약"),
+                    Triple(JarvisViewModel.Tab.SETTINGS, R.drawable.ic_line_settings, "설정"),
                 ).forEach { (t, icon, label) ->
                     val sel = vm.tab == t
                     NavigationBarItem(
                         selected = sel,
                         onClick = { if (!sel || vm.page != null) vm.selectTab(t) },   // 같은 탭을 또 누르면 아무것도 안 함
-                        icon = { Text(icon, fontSize = 22.sp) },
+                        // 이모지 대신 선 아이콘(2026-11-25 디자인)
+                        icon = { androidx.compose.material3.Icon(androidx.compose.ui.res.painterResource(icon), contentDescription = null,
+                            modifier = Modifier.size(24.dp)) },
                         label = { Text(label, fontWeight = if (sel) FontWeight.ExtraBold else FontWeight.Medium) },
                         colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
                             selectedTextColor = MaterialTheme.colorScheme.primary,
                             unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
                             indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
@@ -239,14 +243,14 @@ private fun Header(vm: JarvisViewModel, tab: JarvisViewModel.Tab) {
 private fun PageHeader(vm: JarvisViewModel, page: JarvisViewModel.Page) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         TextButton(onClick = { vm.back() }, contentPadding = PaddingValues(start = 0.dp, end = 8.dp)) {
-            Text("‹ " + (page.parent?.title ?: when (page.tab) {
+            Text("‹ " + (page.parent?.title?.let { menuIcon(it).second } ?: when (page.tab) {
                 JarvisViewModel.Tab.BRIEFING -> "요약"; JarvisViewModel.Tab.ALERTS -> "알림"
                 JarvisViewModel.Tab.HISTORY -> "지난 요약"; else -> "설정" }),
                 style = MaterialTheme.typography.titleMedium)
         }
     }
-    Text(if (page == JarvisViewModel.Page.GROUP) vm.currentGroup?.title ?: page.title else page.title,
-        style = MaterialTheme.typography.headlineSmall)
+    MenuTitle(if (page == JarvisViewModel.Page.GROUP) vm.currentGroup?.title ?: page.title else page.title,
+        style = MaterialTheme.typography.headlineSmall, iconSize = 26.dp, tint = MaterialTheme.colorScheme.primary)
 }
 
 /** 세부 화면 내용: 예전 설정 칸들을 그대로 씀 */
@@ -274,7 +278,7 @@ private fun MenuGroup(rows: List<Triple<String, String, () -> Unit>>) {
                 if (i > 0) HorizontalDivider(Modifier.padding(start = 16.dp))
                 Row(Modifier.fillMaxWidth().clickable(onClick = onClick).heightIn(min = 60.dp).padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically) {
-                    Text(title, Modifier.weight(1f), style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                    MenuTitle(title, Modifier.weight(1f))
                     Text(status, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1, modifier = Modifier.padding(start = 8.dp).widthIn(max = 140.dp),
                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
@@ -347,7 +351,7 @@ private fun BriefingTab(vm: JarvisViewModel) {
         },
         enabled = vm.hasModel && !vm.busy && !vm.bgRunning && vm.pendingCount > 0,
         modifier = Modifier.fillMaxWidth().height(56.dp),
-        colors = actionButtonColors(),  // 🔵 이 화면의 파란 단추는 이것 하나
+        colors = actionButtonColors(),  // 🟢 이 화면의 초록 단추는 이것 하나
     ) {
         Text(when {
             vm.bgRunning -> "백그라운드에서 정리 중… 다 되면 알림"

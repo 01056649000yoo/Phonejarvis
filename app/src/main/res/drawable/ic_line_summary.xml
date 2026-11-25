@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 쌤톡스 선 아이콘 (2026-11-25): 24 단위, 선 굵기 1.8, 둥근 끝. 색은 Icon 의 tint 로 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path android:pathData="M6.5,3.5h11a1.5,1.5 0 0 1 1.5,1.5v14a1.5,1.5 0 0 1 -1.5,1.5h-11A1.5,1.5 0 0 1 5,19V5a1.5,1.5 0 0 1 1.5,-1.5Z"
+        android:strokeColor="#FF1C1B1A" android:strokeWidth="1.8"
+        android:strokeLineCap="round" android:strokeLineJoin="round" />
+    <path android:pathData="M8.5,8.5h7M8.5,12h7M8.5,15.5h4"
+        android:strokeColor="#FF1C1B1A" android:strokeWidth="1.8"
+        android:strokeLineCap="round" android:strokeLineJoin="round" />
+</vector>

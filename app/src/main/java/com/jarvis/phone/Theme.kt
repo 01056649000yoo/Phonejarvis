@@ -19,10 +19,10 @@ import androidx.compose.ui.unit.sp
 /**
  * 쌤톡스 색 (2026-11-25 Oura 디자인 반영 — DESIGN.md).
  * 따뜻한 종이 크림 바탕 + 회갈색(Stone) 주색 + 흙빛 보조색(금·흙·올리브).
- * 파란색(Action)은 화면마다 가장 중요한 단추 하나에만 쓴다.
+ * 초록(Action)은 화면마다 가장 중요한 단추 하나에만 쓴다(2026-11-25 파랑 → 숲 초록).
  */
 object Ssam {
-    val Action = Color(0xFF2A72DE)   // 가장 중요한 단추 하나 (화면마다 하나만)
+    val Action = Color(0xFF3B7556)   // 숲 초록: 가장 중요한 단추 하나 (화면마다 하나만), 흰 글자 대비 5.4:1
     val Stone = Color(0xFF4A4741)    // 주색: 단추·고른 칸·진한 요약 카드
     val Canvas = Color(0xFFF7F1E8)   // 종이 크림 바탕
     val Ink = Color(0xFF1C1B1A)      // 본문 글
@@ -41,7 +41,7 @@ object Ssam {
     val LogoBoard = Color(0xFF2E4A3D)
 }
 
-/** 화면마다 가장 중요한 단추 하나(예: 📋 지금 정리하기, 처음 설치의 다음 단계)에만 쓰는 파란 단추 색 */
+/** 화면마다 가장 중요한 단추 하나(예: 📋 지금 정리하기, 처음 설치의 다음 단계)에만 쓰는 초록 단추 색 */
 @Composable
 fun actionButtonColors() = androidx.compose.material3.ButtonDefaults.buttonColors(
     containerColor = Ssam.Action, contentColor = Color.White)

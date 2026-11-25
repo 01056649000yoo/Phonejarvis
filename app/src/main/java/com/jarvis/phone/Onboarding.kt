@@ -162,7 +162,7 @@ private fun WelcomeStep(vm: JarvisViewModel) {
         val fmt = remember { java.text.SimpleDateFormat("M/d HH:mm", java.util.Locale.KOREA) }
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("💾 지난 설정을 찾았어요", style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading())
+                MenuTitle("💾 지난 설정을 찾았어요", Modifier.asHeading(), style = MaterialTheme.typography.titleSmall, tint = MaterialTheme.colorScheme.primary)
                 Text("${fmt.format(found.first)} 저장 · ${found.second}", style = MaterialTheme.typography.bodyMedium)
                 Button(onClick = { vm.restoreBackup(null) }) { Text("불러오기") }
             }
@@ -172,7 +172,9 @@ private fun WelcomeStep(vm: JarvisViewModel) {
         color = MaterialTheme.colorScheme.primary)
     PrimaryButton("시작하기") { vm.onboardingStep = 1 }
     TextButton(onClick = { restorePicker.launch(arrayOf("application/json", "*/*")) }, modifier = Modifier.fillMaxWidth()) {
-        Text("💾 예전에 쓰던 설정 불러오기 (다운로드/쌤톡스의 백업 파일 고르기)")
+        // 선 아이콘 + 두 줄(이름 / 어디서 고르는지)
+        Icon(painterResource(R.drawable.ic_line_restore), contentDescription = null, modifier = Modifier.padding(end = 8.dp).size(20.dp))
+        Text("예전에 쓰던 설정 불러오기\n다운로드/쌤톡스의 백업 파일 고르기", textAlign = androidx.compose.ui.text.style.TextAlign.Center)
     }
     // 모델 파일을 이미 다운로드 폴더에 받아 둔 경우: 진단·다운로드를 건너뛰고 바로 가져오기로
     TextButton(onClick = { vm.onboardingStep = 2 }, modifier = Modifier.fillMaxWidth()) {

@@ -5,14 +5,14 @@
 [android-ux](https://github.com/rcosteira79/android-skills/tree/main/plugins/android-skills/skills/android-ux)(MIT)의 Material 3 점검표.
 값은 모두 `Theme.kt` 한 곳에 있고, 화면에서는 이름으로만 쓴다.
 
-2026-11-25: 색·모서리·제목 굵기를 [Oura 디자인 분석](https://github.com/VoltAgent/awesome-design-md/tree/main/design-md/oura)에서 가져왔다(글꼴은 한글 고딕 유지). 따뜻한 종이 크림 바탕, 회갈색 주색, 흙빛 보조색, 파란 단추는 화면마다 하나.
+2026-11-25: 색·모서리·제목 굵기를 [Oura 디자인 분석](https://github.com/VoltAgent/awesome-design-md/tree/main/design-md/oura)에서 가져왔다(글꼴은 한글 고딕 유지). 따뜻한 종이 크림 바탕, 회갈색 주색, 흙빛 보조색, 초록 단추는 화면마다 하나(Oura 의 파랑 대신 숲 초록).
 
 ## 색
 - `MaterialTheme.colorScheme` 의 역할로만 쓴다(화면에 `Color(0x…)` 직접 쓰지 않기). 이름 붙은 색은 `Ssam`(Theme.kt).
 - 폰 배경화면 색을 따르는 동적 색은 쓰지 않는다 — 쌤톡스 색을 지킨다.
 - 바탕은 종이 크림(`Ssam.Canvas` #F7F1E8), 카드는 흰 종이 + 옅은 선(`Ssam.Hairline`). 바탕을 흰색으로 하지 않는다.
 - 주색은 회갈색(`Ssam.Stone` #4A4741): 보통 단추, 스위치, 진한 요약 카드(`primaryContainer`).
-- 🔵 파란색(`Ssam.Action` #2A72DE)은 **화면마다 가장 중요한 단추 하나**에만 — `colors = actionButtonColors()`. 지금은 📋 요약 탭의 '지금 정리하기', 처음 설치의 다음 단계 단추. 링크·아이콘·꾸밈에는 쓰지 않는다.
+- 🟢 숲 초록(`Ssam.Action` #3B7556)은 **화면마다 가장 중요한 단추 하나**에만 — `colors = actionButtonColors()`. 지금은 📋 요약 탭의 '지금 정리하기', 처음 설치의 다음 단계 단추. 링크·아이콘·꾸밈에는 쓰지 않는다.
 - 흙빛 보조색은 단추가 아니라 표시에만: 답장 필요·지난 마감 = `tertiaryContainer`(흙), D-1 = `Ssam.GoldPale`, 완료·고른 칸 = `secondaryContainer`(세이지).
 - 진한 요약 카드 위 강조 글은 `Ssam.GoldPale`, 흰 카드 위는 `primary`.
 - 로고(앱 아이콘)만 예전 칠판 그린(`Ssam.LogoBoard`)을 그대로 쓴다.
