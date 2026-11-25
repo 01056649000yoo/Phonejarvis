@@ -28,9 +28,11 @@ object RoomDay {
         val key: String, val app: String, val room: String, val kind: String,
         val count: Int, val first: Long, val last: Long,
         val parts: List<Part> = emptyList(), val asks: List<Ask> = emptyList(),
-        /** 중요한 대화(명부·키워드·선생님 부르기·1:1·👥·💼) — 방별 하루에서 앞에, 핵심 재료로 */
-        val important: Boolean = false,
+        /** 🎯 나와의 거리(Relevance: 1 나에게 · 2 내가 속한 방 · 3 그 밖) — 👥·💼 는 1 */
+        val level: Int = Relevance.ME,
     ) {
+        /** 나에게 온 대화(1단계) — 방별 하루에서 앞에, 핵심·🙋 재료 */
+        val important: Boolean get() = level == Relevance.ME
         /** 내용 있는 방인가 — 아니면 '그 밖의 방'에 이름과 건수만 */
         val hasContent: Boolean get() = parts.any { it.point.isNotBlank() }
     }
@@ -45,7 +47,7 @@ object RoomDay {
         return new.copy(
             app = new.app.ifEmpty { old.app }, room = new.room.ifEmpty { old.room },
             count = old.count + new.count, first = minOf(old.first, new.first), last = maxOf(old.last, new.last),
-            parts = parts, asks = asks, important = old.important || new.important,
+            parts = parts, asks = asks, level = minOf(old.level, new.level),   // 하루 중 한 번이라도 가까웠으면 가까운 쪽
         )
     }
 
@@ -62,7 +64,7 @@ object RoomDay {
     fun groupKind(conv: BriefingComposer.Conversation) = if (conv.app == BriefingComposer.WORK_TITLE) WORK else GROUP
 
     /** 요약한 방 하나 → 기록. [from] 은 이번 요약 구간의 시작 */
-    fun of(r: BriefingComposer.RoomSummary, kind: String, important: Boolean, from: Long): Entry {
+    fun of(r: BriefingComposer.RoomSummary, kind: String, level: Int, from: Long): Entry {
         val conv = r.conv
         val group = if (kind == TALK) "" else conv.app
         val point = BriefingComposer.dropName(r.point.removePrefix("${conv.room}: ").trim(), conv.room, group)
@@ -74,13 +76,13 @@ object RoomDay {
             count = conv.items.size, first = conv.items.first().time, last = conv.last,
             parts = if (part.point.isNotBlank()) listOf(part) else emptyList(),
             asks = if (r.needReply) listOf(Ask(conv.last, BriefingComposer.soften(replyDetail(r)))) else emptyList(),
-            important = important || kind != TALK,
+            level = if (kind != TALK) Relevance.ME else level,
         )
     }
 
     /** 시간이 모자라 AI 로 정리하지 못한 방: AI 없이 그 말을 짧게(내용이 빠지지 않게) */
-    fun ofCut(conv: BriefingComposer.Conversation, kind: String, important: Boolean, from: Long): Entry =
-        of(BriefingComposer.peek(conv), kind, important, from)
+    fun ofCut(conv: BriefingComposer.Conversation, kind: String, level: Int, from: Long): Entry =
+        of(BriefingComposer.peek(conv), kind, level, from)
 
     /** 📦 앱 알림: 앱별 건수만 */
     fun apps(items: List<NotiItem>): List<Entry> = items.groupBy { it.app }.map { (app, l) ->
@@ -90,7 +92,7 @@ object RoomDay {
     // ── 저장(JSON) ──
     fun toJson(e: Entry): String = JSONObject().apply {
         put("k", e.key); put("a", e.app); put("r", e.room); put("t", e.kind); put("n", e.count)
-        put("f", e.first); put("l", e.last); put("i", e.important)
+        put("f", e.first); put("l", e.last); put("v", e.level)
         put("p", JSONArray().apply { e.parts.forEach { p -> put(JSONObject().put("f", p.from).put("t", p.to).put("n", p.count).put("s", p.point).put("q", p.asked)) } })
         put("q", JSONArray().apply { e.asks.forEach { a -> put(JSONObject().put("t", a.time).put("s", a.text)) } })
     }.toString()
@@ -104,7 +106,8 @@ object RoomDay {
             o.optLong("f"), o.optLong("l"),
             (0 until p.length()).map { i -> p.getJSONObject(i).let { Part(it.optLong("f"), it.optLong("t"), it.optInt("n"), it.optString("s"), it.optBoolean("q")) } },
             (0 until q.length()).map { i -> q.getJSONObject(i).let { Ask(it.optLong("t"), it.optString("s")) } },
-            o.optBoolean("i"),
+            // 예전 기록(거리 없음)은 '중요'였으면 1, 아니면 2
+            if (o.has("v")) o.optInt("v", Relevance.ME) else if (o.optBoolean("i")) Relevance.ME else Relevance.JOINED,
         )
     }.getOrNull()
 }

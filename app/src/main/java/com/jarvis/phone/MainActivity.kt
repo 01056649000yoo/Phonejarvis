@@ -334,6 +334,15 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         AppFilter.setAllRooms(ctx, pkg, rooms.map { it.name }, keep)
         excludedRooms = AppFilter.excludedRooms(ctx)
     }
+    /** 🎯 방마다 직접 정한 거리(늘 중요 1 · 한 줄 2 · 건수만 3, 없으면 저절로) */
+    var roomTiers by mutableStateOf(RoomTier.all(app))
+        private set
+    fun roomTier(pkg: String, room: String) = roomTiers[RoomTier.key(pkg, room)] ?: Relevance.AUTO
+    fun setRoomTier(pkg: String, room: String, tier: Int) {
+        val ctx = getApplication<Application>()
+        RoomTier.set(ctx, pkg, room, tier)
+        roomTiers = RoomTier.all(ctx)
+    }
     /** 앱 목록에 보여 줄 "뺀 방 N개" */
     fun excludedRoomCount(pkg: String) = excludedRooms.count { it.startsWith("$pkg|") }
 

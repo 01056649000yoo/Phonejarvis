@@ -28,7 +28,8 @@ object BriefingComposer {
     data class RoomSummary(val conv: Conversation, val point: String, val ask: String, val needReply: Boolean, val byModel: Boolean, val fellBack: Boolean = false,
                            /** 요약 줄에 못 들어간 부탁 수(단톡방) — '외 부탁 N건' */ val extra: Int = 0,
                            /** 지난 요약 구간 끝에서 이어진 대화면 그 마지막 말('보낸 사람: 말') — 줄 끝에 '↪ 앞: …' */ val prevLine: String = "",
-                           /** 🧵 단톡방에서 고른 줄('보낸 사람: 말') — 뒤에 온 메시지를 이어 정리할 때 기한·날짜가 든 줄을 이어받음 */ val lines: List<String> = emptyList())
+                           /** 🧵 단톡방에서 고른 줄('보낸 사람: 말') — 뒤에 온 메시지를 이어 정리할 때 기한·날짜가 든 줄을 이어받음 */ val lines: List<String> = emptyList(),
+                           /** 🎯 나와의 거리(Relevance: 1 나에게 · 2 내가 속한 방 · 3 그 밖) */ val level: Int = Relevance.ME)
 
     const val CHUNK = 30              // 대화방 하나에서 모델에 한 번에 넣는 메시지 수 — 넘으면 30개씩 나눠 요약한 뒤 합침(2026-11-21 선생님)
     // 2026-11-22 빠르게(선생님: "2건인데 오래 걸림"): 넣는 글·받는 글을 줄이고, 짧은 1:1 은 모델 없이
@@ -781,8 +782,9 @@ object BriefingComposer {
     private fun freshOf(conv: Conversation, c: Cached?) = if (c == null) conv.items else conv.items.filter { it.time > c.upTo }
 
     /** 지금 요약하면 모델에 넣어야 할 사람 메시지 수(미리 요약해 둔 것·모델 없이 쓰는 한 마디는 뺌) — 미리 요약을 할지 정할 때 */
-    fun pendingForModel(items: List<NotiItem>, cache: Map<String, Cached>, since: Long, groups: List<Group> = emptyList()): Int =
-        (conversations(items.filter(::isPerson)) + groups.flatMap { groupConvs(it) }).sumOf { conv ->
+    fun pendingForModel(items: List<NotiItem>, cache: Map<String, Cached>, since: Long, groups: List<Group> = emptyList(),
+                        levels: ((Conversation) -> Int)? = null): Int =
+        (conversations(items.filter(::isPerson)).filter { levels?.invoke(it) != Relevance.OTHER } + groups.flatMap { groupConvs(it) }).sumOf { conv ->
             val c = validCache(conv, cache, since)
             if (c == null && direct(conv) != null) 0 else freshOf(conv, c).size
         }
@@ -791,8 +793,9 @@ object BriefingComposer {
      * 지금 요약하면 AI 에 새로 넣을 글자 수(메시지마다 [lineChars] 까지만 셈 — AI 가 실제로 읽는 만큼).
      * ⚡ 미리 요약은 이게 [PreSummary.MIN_CHARS] 를 넘으면 돈다(2026-11-23 선생님: 개수 말고 글자 수로 미리미리).
      */
-    fun pendingCharsForModel(items: List<NotiItem>, cache: Map<String, Cached>, since: Long, groups: List<Group> = emptyList()): Int =
-        (conversations(items.filter(::isPerson)) + groups.flatMap { groupConvs(it) }).sumOf { conv ->
+    fun pendingCharsForModel(items: List<NotiItem>, cache: Map<String, Cached>, since: Long, groups: List<Group> = emptyList(),
+                             levels: ((Conversation) -> Int)? = null): Int =
+        (conversations(items.filter(::isPerson)).filter { levels?.invoke(it) != Relevance.OTHER } + groups.flatMap { groupConvs(it) }).sumOf { conv ->
             val c = validCache(conv, cache, since)
             if (c == null && direct(conv) != null) 0 else freshOf(conv, c).sumOf { minOf(it.text.length, lineChars) }
         }
@@ -840,6 +843,8 @@ object BriefingComposer {
         focus: Boolean = false,
         /** 🧵 이 구간 바로 앞(지난 요약 구간 끝)의 같은 방 메시지 — AI 에 참고로만 주고, 이어진 대화면 줄 끝에 '↪ 앞: …' */
         before: (Conversation) -> List<NotiItem> = { emptyList() },
+        /** 🎯 나와의 거리(Relevance) — [focus] 일 때만. 3(그 밖)은 AI 없이 이름·건수만, 2(내가 속한 방)는 한 줄, 1(나에게)만 🙋 */
+        levels: ((Conversation) -> Int)? = null,
     ): Result {
         val (people, apps) = items.partition(::isPerson)
         val groupList = groups.map { it.title to groupConvs(it) }.filter { it.second.isNotEmpty() }
@@ -847,11 +852,15 @@ object BriefingComposer {
         val convs = conversations(people) + groupList.flatMap { it.second }
         val rooms = mutableListOf<RoomSummary>()
         val leftover = mutableListOf<Conversation>()
+        val levelOf = HashMap<String, Int>()
+        fun lv(cv: Conversation): Int = if (!focus || levels == null || keyOf(cv) in groupKeys) Relevance.ME else levelOf.getOrPut(keyOf(cv)) { levels?.invoke(cv) ?: Relevance.ME }
         var cut: String? = null
         // 방마다 아직 안 덮은 메시지
         data class Todo(val conv: Conversation, val prev: Cached?, val fresh: List<NotiItem>)
         // 중요한 방부터(2026-11-23): 시간이 모자라 잘려도 꼭 볼 것은 먼저 끝나게 — 👥 내 묶음·명부·키워드 방 → 1:1 → 단톡 → 큰 단톡(30건 넘음)
         fun rank(cv: Conversation) = when {
+            lv(cv) == Relevance.OTHER -> 5
+            lv(cv) == Relevance.JOINED -> 4
             keyOf(cv) in groupKeys || replyAllowed(cv) -> 0
             cv.items.all { it.room.isEmpty() } -> 1
             cv.items.size <= CHUNK -> 2
@@ -860,7 +869,7 @@ object BriefingComposer {
         val todos = convs.sortedWith(compareBy<Conversation> { rank(it) }.thenByDescending { it.last })
             .map { conv -> val c = validCache(conv, cache, since); Todo(conv, c, freshOf(conv, c)) }
         // 모델에 묻는 횟수(진행 표시용): 새 메시지를 30개씩 나눈 덩어리 수(30개 넘으면 앞 덩어리 정리에 이어서 고쳐 씀)
-        val total = todos.filter { it.fresh.isNotEmpty() && (it.prev != null || direct(it.conv) == null) }.sumOf { chunksOf(it.conv, it.fresh).size }
+        val total = todos.filter { it.fresh.isNotEmpty() && lv(it.conv) != Relevance.OTHER && (it.prev != null || direct(it.conv) == null) }.sumOf { chunksOf(it.conv, it.fresh).size }
         var asked = 0
         for ((conv, c, fresh) in todos) {
             var prev: RoomSummary? = c?.let { RoomSummary(conv, it.point, it.ask, it.needReply, byModel = true, lines = it.lines) }
@@ -870,13 +879,16 @@ object BriefingComposer {
             if (conv.app == WORK_TITLE && isMail(conv)) { rooms += mails(conv); continue }
             // 🙏 인사·맞장구뿐인 방은 요약 줄 없이 '그 밖의 방'에 이름만(2026-11-24: '감사합니다 선배님 !!')
             if (conv.items.all { isFiller(it.text) }) { rooms += RoomSummary(conv, "", "", false, byModel = false); continue }
+            // 🎯 그 밖의 방(오픈채팅·커뮤니티·내가 말한 적 없는 단톡방)은 AI 없이 이름과 건수만(2026-11-25)
+            if (lv(conv) == Relevance.OTHER) { rooms += RoomSummary(conv, "", "", false, byModel = false, level = Relevance.OTHER); continue }
             // 🧵 앞 대화(참고용) — 30분 안에 이어진 것, 더 오래됐어도 답·같은 일로 이어진 것(linked)
             val earlier = linked(conv, runCatching { before(conv) }.getOrDefault(emptyList()))
             val context = earlier.map { contextLine(conv, it, conv.items.first().time) }
             val contextSrc = earlier.joinToString(" ") { it.text }
             val prevLine = earlier.lastOrNull()?.let { n -> clip(conv.who(n).ifEmpty { n.title.trim() }.let { if (it.isNotEmpty()) "$it: " else "" } + n.text.replace('\n', ' ').trim(), 40) }.orEmpty()
             // 🎯 온 연락은 간단한 내용까지, 많으면 핵심 요약(2026-11-24 선생님) — 중요하지 않은 방이 몇 마디뿐이면 AI 없이 그 말을 짧게
-            if (focus && keyOf(conv) !in groupKeys && !important(conv, replyAllowed) && said(conv).size <= PEEK_MAX) { rooms += peek(conv).copy(prevLine = prevLine); continue }
+            val meRoom = if (levels != null && focus) lv(conv) == Relevance.ME else important(conv, replyAllowed)
+            if (focus && keyOf(conv) !in groupKeys && !meRoom && said(conv).size <= PEEK_MAX) { rooms += peek(conv).copy(prevLine = prevLine); continue }
             if (fresh.isEmpty() && prev != null) { rooms += prev.copy(prevLine = prevLine); continue }        // 미리 요약해 둔 그대로
             if (prev == null) direct(conv)?.let { rooms += it.copy(prevLine = prevLine); continue }
             var covered = c?.count ?: 0
@@ -958,8 +970,9 @@ object BriefingComposer {
         rooms.replaceAll { if (it.needReply && !replyAllowed(it.conv)) it.copy(needReply = false) else it }
         // 단톡방: 줄에 못 들어간 부탁 수(AI 없이 원문에서) — 전부는 세부 내역에서
         rooms.replaceAll { r -> if (r.byModel && r.conv.items.any { it.room.isNotEmpty() }) r.copy(extra = extraAsks(r.conv, r.point + " " + r.ask)) else r }
-        // 방 순서는 최근에 온 것부터
-        rooms.sortByDescending { it.conv.last }
+        // 🎯 나와의 거리를 적어 두고, 방 순서는 가까운 방(나에게 → 내가 속한 방)부터, 같으면 최근에 온 것부터
+        rooms.replaceAll { it.copy(level = lv(it.conv)) }
+        rooms.sortWith(compareBy<RoomSummary> { it.level }.thenByDescending { it.conv.last })
         val notes = buildList {
             if (cut != null && leftover.isNotEmpty()) add("$cut 대화방 ${leftover.size}곳은 이름만 적었어요.")
             else if (cut != null) add(cut!!)

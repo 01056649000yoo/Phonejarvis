@@ -1581,6 +1581,8 @@ private fun RoomPickerDialog(vm: JarvisViewModel, pkg: String, name: String) {
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("방을 누르거나 스위치로 켜고 꺼요. 끈 방은 모으지도, 요약하지도 않아요. 단, 중요 키워드·등록한 사람은 모아요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("켠 방은 요약에서 어떻게 보일지도 고를 수 있어요. 저절로: 나를 부르거나 1:1이면 내용까지, 내가 말한 방은 한 줄, 그 밖은 이름과 건수만.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 // ＋ 방 이름 직접 추가: 다른 앱은 카톡 방 목록을 읽을 수 없어서, 아직 알림이 안 온 방은 이름으로 미리 넣음
                 var newRoom by rememberSaveable { mutableStateOf("") }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1610,6 +1612,13 @@ private fun RoomPickerDialog(vm: JarvisViewModel, pkg: String, name: String) {
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Switch(checked = on, onCheckedChange = { vm.setRoom(pkg, room, it) })
+                    }
+                    // 🎯 요약에서 보일 모양(2026-11-25): 저절로 · 늘 중요 · 한 줄 · 건수만
+                    if (on) Row(Modifier.horizontalScroll(rememberScrollState()).padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        val cur = vm.roomTier(pkg, room)
+                        listOf(Relevance.AUTO to "저절로", Relevance.ME to "늘 중요", Relevance.JOINED to "한 줄", Relevance.OTHER to "건수만").forEach { (t, label) ->
+                            FilterChip(selected = cur == t, onClick = { vm.setRoomTier(pkg, room, t) }, label = { Text(label, style = MaterialTheme.typography.labelSmall) })
+                        }
                     }
                 }
             }
