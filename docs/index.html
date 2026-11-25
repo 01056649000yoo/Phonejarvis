@@ -82,6 +82,15 @@
   .btn.ghost:hover { background: var(--soft); }
   .btn:active { transform: scale(.98); }
   .cta { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  /* 지금 받는 버전·업데이트 일시(2026-11-25 선생님: 버전을 잘 보이게, 업데이트하면 일시도) — GitHub 최신 릴리스에서 읽음 */
+  .ver { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 16px 0 0; padding: 8px 14px;
+         border: 1px solid var(--line); border-radius: 16px; background: var(--card); font-size: 14px; color: var(--muted); }
+  .ver b { color: var(--fg); font-weight: 700; font-size: 15px; }
+  .ver .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--olive); flex: none; }
+  .ver[hidden] { display: none; }
+  .verbox { margin: 0 0 20px; padding: 14px 16px; border-radius: var(--r-sm); background: rgba(247,241,232,.08); font-size: 14px; color: var(--band-muted); }
+  .verbox b { display: block; color: var(--band-fg); font-size: 20px; font-weight: 700; margin-bottom: 2px; }
+  .verbox .note { display: block; margin-top: 8px; color: #DAD5CC; }
   .trust { display: grid; gap: 6px; margin: 24px 0 0; padding: 0; list-style: none; font-size: 14px; color: var(--muted); }
   .trust li::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--olive);
                       margin: 0 10px 2px 2px; vertical-align: middle; }
@@ -373,6 +382,7 @@
           </a>
           <a class="btn ghost" href="#who">나에게 맞을까?</a>
         </div>
+        <p class="ver" id="verHero" hidden><span class="dot" aria-hidden="true"></span><b id="verHeroNum"></b><span id="verHeroDate"></span></p>
         <ul class="trust">
           <li>쌓인 알림을 한 화면에 — 방마다 열어 볼 필요 없어요</li>
           <li>인터넷 권한 없는 앱 — 알림이 폰 밖으로 나가지 않아요</li>
@@ -570,6 +580,7 @@
         <div>
           <h2>설치하기</h2>
           <p class="sub">이 링크는 늘 최신 버전이에요. 업데이트할 때도 같은 링크로 받아 덮어 설치하면 설정과 알림은 그대로예요.</p>
+          <div class="verbox" id="verBox" aria-live="polite"><b id="verBoxNum">최신 버전</b><span id="verBoxDate">버전 정보를 불러오는 중이에요…</span><span class="note" id="verBoxNote" hidden></span></div>
           <a class="btn primary" href="https://github.com/01056649000yoo/Phonejarvis/releases/latest/download/SsamTox.apk">최신 APK 받기 · 무료</a>
           <ol>
             <li>다운로드가 끝나면 알림창에서 <b>SsamTox.apk</b>를 눌러요</li>
@@ -703,6 +714,35 @@
     });
     io.observe(document.getElementById("heroBtn"));
     io.observe(document.getElementById("download"));
+  })();
+  // 지금 받는 버전과 업데이트 일시: GitHub 최신 릴리스(이름 '쌤톡스 v1.14.0 (빌드 101)', 올린 시각)에서 읽음.
+  // 앱에서 설정 맨 위·업데이트 안내에 보이는 버전과 같아요. 못 읽으면 맨 위 표시는 숨기고 설치 칸에 안내만
+  (function () {
+    // 한국 시각으로 '2026년 11월 25일(수) 오후 10:53'
+    var fmtDate = function (iso) {
+      var k = new Date(new Date(iso).getTime() + 9 * 3600 * 1000), h = k.getUTCHours();
+      return k.getUTCFullYear() + "년 " + (k.getUTCMonth() + 1) + "월 " + k.getUTCDate() + "일(" + "일월화수목금토"[k.getUTCDay()] + ") " +
+        (h < 12 ? "오전 " : "오후 ") + (h % 12 || 12) + ":" + String(k.getUTCMinutes()).padStart(2, "0");
+    };
+    fetch("https://api.github.com/repos/01056649000yoo/Phonejarvis/releases/latest", { headers: { Accept: "application/vnd.github+json" } })
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (rel) {
+        var m = /v(\d+(?:\.\d+)+)/.exec(rel.name || "");
+        var b = /(\d+)$/.exec(rel.tag_name || "");
+        var num = m ? "v" + m[1] : (b ? "빌드 " + b[1] : (rel.name || "최신 버전"));
+        var when = rel.published_at ? fmtDate(rel.published_at) + " 업데이트" : "";
+        document.getElementById("verHeroNum").textContent = "최신 " + num;
+        document.getElementById("verHeroDate").textContent = when;
+        document.getElementById("verHero").hidden = false;
+        document.getElementById("verBoxNum").textContent = "지금 받는 버전 " + num;
+        document.getElementById("verBoxDate").textContent = when;
+        var note = (rel.body || "").split("\n").map(function (l) { return l.trim(); })
+          .filter(function (l) { return l.indexOf("바뀐 점:") === 0; })[0];
+        if (note) { var n = document.getElementById("verBoxNote"); n.textContent = note; n.hidden = false; }
+      })
+      .catch(function () {
+        document.getElementById("verBoxDate").textContent = "버전 정보를 불러오지 못했어요. 받기 링크는 늘 최신 버전이에요.";
+      });
   })();
   try {
     new QRCode(document.getElementById("qr"), {

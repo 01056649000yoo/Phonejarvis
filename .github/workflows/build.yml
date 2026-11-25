@@ -49,6 +49,20 @@ jobs:
           echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/ssamtox-release.p12"
           echo "SSAMTOX_KEYSTORE=$RUNNER_TEMP/ssamtox-release.p12" >> "$GITHUB_ENV"
 
+      # 🏷 버전·빌드 시각: 앱(설정 맨 위·업데이트 안내)과 안내 페이지가 같은 버전·일시를 보이게(2026-11-25 선생님)
+      - name: Version info
+        env:
+          HEAD_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          VERSION=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "BUILD_TIME=$(date +%s)000" >> "$GITHUB_ENV"
+          {
+            echo "쌤톡스 v$VERSION · $(TZ=Asia/Seoul date '+%Y-%m-%d %H:%M') (한국 시각) 업데이트"
+            echo
+            echo "바뀐 점: $(printf '%s\n' "$HEAD_MSG" | head -n1 | sed 's/ (#[0-9]*)$//')"
+          } > "$RUNNER_TEMP/release-notes.md"
+
       - name: Build APK (release)
         env:
           SSAMTOX_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
@@ -74,7 +88,8 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
-          name: 쌤톡스 빌드 ${{ github.run_number }}
+          name: 쌤톡스 v${{ env.APP_VERSION }} (빌드 ${{ github.run_number }})
+          body_path: ${{ runner.temp }}/release-notes.md
           make_latest: true
           files: |
             SsamTox-${{ github.run_number }}.apk

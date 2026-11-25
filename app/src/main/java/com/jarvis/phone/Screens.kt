@@ -37,10 +37,11 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** 이번 버전에서 바뀐 점 한 줄 (버전 올릴 때 같이 고치기). */
-private const val WHATS_NEW = "하루 정리는 하루 종일 온 알림을 총정리 · 빠지던 알림 없게 · 카톡 단톡방은 원문 줄로 · 이어진 대화 ↪ · 답한 물음 내리기 · 메일은 제목 그대로 · 짧으면 원문 그대로 · 오해 없는 요약 · 어제 메시지가 섞이지 않게 · 오픈채팅 한 방으로 · 내가 만든 묶음별 연락 · 모든 연락을 간단한 내용까지 · 중요한 대화만 요약해요 · 캘린더는 일정 그대로 · 요약 문장 다듬기"
+private const val WHATS_NEW = "버전·업데이트 일시 표시 · 하루 정리는 하루 종일 온 알림을 총정리 · 빠지던 알림 없게 · 카톡 단톡방은 원문 줄로 · 이어진 대화 ↪ · 답한 물음 내리기 · 메일은 제목 그대로 · 짧으면 원문 그대로 · 오해 없는 요약 · 어제 메시지가 섞이지 않게 · 오픈채팅 한 방으로 · 내가 만든 묶음별 연락 · 모든 연락을 간단한 내용까지 · 중요한 대화만 요약해요 · 캘린더는 일정 그대로 · 요약 문장 다듬기"
 
 /** 업데이트 내역 큰 창 (버전 올릴 때 같이 고치기) */
 private val WHATS_NEW_DETAIL = listOf(
+    "🏷 버전과 업데이트 일시" to "설정 맨 위와 이 업데이트 안내에 지금 버전과 그 버전이 나온 일시를 보여 줘요. 안내 페이지(받기 링크)에도 지금 받는 버전과 업데이트 일시가 보여서, 폰에 깔린 버전이 최신인지 바로 견줘 볼 수 있어요.",
     "🗓 하루 정리는 총정리로" to "하루에 알림이 수백 개 와도 하루 정리가 15줄로 줄어들지 않아요. 맨 위 ✨ 오늘의 핵심(AI 5줄)과 📅 내일, 그 아래 🙋 답할 것은 상한 없이 모두, 💼 업무·👥 묶음, 💬 방별 하루(내용 있는 방은 모두 한 줄씩, 인사·맞장구뿐인 방은 이름과 건수만), 📦 앱 알림 건수까지 이어져요. 방 줄 아래 '▸ 구간별 요약'을 누르면 그 방의 요약을 시각별로 펼쳐 볼 수 있어요. 알림창에는 핵심과 답할 것만 보이고, 누르면 전체가 열려요.",
     "🕳 빠지던 알림 없게" to "문자·카톡은 보낸 시각으로 저장되는데, 그 시각이 폰에 도착한 때보다 조금 이를 수 있어요. 정각 5분 전 미리 준비처럼 그 사이에 요약이 돌면 그 메시지가 어느 요약에도 안 들어갔어요(예: 9시 55분 문자). 이제 요약마다 어디까지 맡았는지를 알림 번호로 기억해, 늦게 저장된 알림도 다음 요약에 꼭 들어가요.",
     "🧵 카톡 단톡방은 원문 줄로" to "카톡은 짧은 말·물음·토막이 많아 AI가 바꿔 쓰면 뜻이 틀어졌어요. 이제 여러 사람이 말한 단톡방은 AI가 핵심 줄을 고르기만 하고, 화면에는 그 줄의 원래 말을 보여 줘요. 한 사람이 잇따라 보낸 토막 말은 '/'로 이어 한 줄로 봐요.",
@@ -228,7 +229,7 @@ private fun Header(vm: JarvisViewModel, tab: JarvisViewModel.Tab) {
         JarvisViewModel.Tab.BRIEFING -> "요약" to today
         JarvisViewModel.Tab.ALERTS -> "알림" to "오늘 ${vm.todayItems.size}건 · 아직 요약 안 한 알림 ${vm.pendingItems.size}건"
         JarvisViewModel.Tab.HISTORY -> "지난 요약" to "최근 요약 ${vm.briefings.size}개"
-        JarvisViewModel.Tab.SETTINGS -> "설정" to "쌤톡스 v${vm.appVersion} · 알림은 폰 밖으로 나가지 않아요"
+        JarvisViewModel.Tab.SETTINGS -> "설정" to "쌤톡스 ${vm.versionLine}"
     }
     Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         SsamLogo(36.dp)
@@ -303,7 +304,7 @@ private fun BriefingTab(vm: JarvisViewModel) {
         exit = shrinkVertically(Motion.size) + fadeOut(Motion.fadeFast)) {
         Card(Modifier.fillMaxWidth().clickable { whatsNewOpen = true }) {
             Row(Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("🆕 v${vm.appVersion} 업데이트 · $WHATS_NEW", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, maxLines = 2)
+                Text("🆕 ${vm.versionLine} · $WHATS_NEW", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, maxLines = 2)
                 Text("자세히 ›", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
             }
         }
@@ -322,7 +323,7 @@ private fun BriefingTab(vm: JarvisViewModel) {
     }
     if (whatsNewOpen) AlertDialog(
         onDismissRequest = { whatsNewOpen = false; vm.closeWhatsNew() },
-        title = { Text("🆕 v${vm.appVersion} 바뀐 점") },
+        title = { Column { Text("🆕 v${vm.appVersion} 바뀐 점"); Text(vm.versionLine.substringAfter(" · ", ""), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) } },
         text = {
             Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 WHATS_NEW_DETAIL.forEach { (title, body) ->

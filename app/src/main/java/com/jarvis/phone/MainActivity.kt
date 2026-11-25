@@ -111,6 +111,12 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     val appVersion: String = runCatching {
         app.packageManager.getPackageInfo(app.packageName, 0).versionName
     }.getOrNull() ?: "?"
+    /** 이 버전이 나온(빌드된) 시각 — 직접 빌드해 시각이 없으면 이 폰에 설치·업데이트한 시각 */
+    val appUpdatedAt: Long = BuildConfig.BUILD_TIME.takeIf { it > 0 }
+        ?: runCatching { app.packageManager.getPackageInfo(app.packageName, 0).lastUpdateTime }.getOrDefault(0L)
+    /** 'v1.14.0 · 11월 25일(수) 22:53 업데이트' (2026-11-25 선생님: 버전을 잘 보이게, 업데이트 일시도) */
+    val versionLine: String get() = "v$appVersion" + if (appUpdatedAt > 0)
+        " · " + java.text.SimpleDateFormat("M월 d일(E) HH:mm", java.util.Locale.KOREA).format(appUpdatedAt) + " 업데이트" else ""
     val device: DeviceReport by lazy { DeviceCheck.run(app) }
     /** 사용자가 고른 모델. 기본값은 진단 결과의 추천 모델. */
     var chosenModel by mutableStateOf<ModelOption?>(null)

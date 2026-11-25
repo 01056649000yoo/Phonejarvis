@@ -180,7 +180,7 @@ private fun WelcomeStep(vm: JarvisViewModel) {
     TextButton(onClick = { vm.onboardingStep = 2 }, modifier = Modifier.fillMaxWidth()) {
         Text("모델 파일을 이미 받아 뒀어요 → 바로 가져오기")
     }
-    Text("쌤톡스 v${vm.appVersion}", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall,
+    Text("쌤톡스 ${vm.versionLine}", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
 }
 
