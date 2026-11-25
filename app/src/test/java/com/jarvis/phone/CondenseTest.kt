@@ -29,7 +29,7 @@ class CondenseTest {
     }
 
     @Test fun 원문에_없는_숫자를_쓰면_한_번_더_묻는다() = runBlocking {
-        val items = listOf(kakao("", "지호 어머니", "수요일 상담 4시로 바꿔도 될까요?"), kakao("", "지호 어머니", "안 되면 목요일도 괜찮아요"))
+        val items = listOf(kakao("", "지호 어머니", "선생님 죄송한데 제가 그날 일이 생겨서요 수요일 상담 4시로 바꿔도 될까요?"), kakao("", "지호 어머니", "안 되면 목요일도 괜찮아요 편하신 시간 알려 주시면 맞출게요 번거롭게 해 드려서 정말 죄송합니다"))
         val prompts = mutableListOf<String>()
         val r = BriefingComposer.compose(items, ask = { p -> prompts += p
             if (prompts.size == 1) "요점: 수요일 상담을 3시로 바꾸고 싶다고 함\n요청: 상담 시간 확인해 달라고 함" else "요점: 수요일 상담을 4시로 바꾸고 싶다고 함\n요청: 바꿔도 되는지 알려 달라고 함" })

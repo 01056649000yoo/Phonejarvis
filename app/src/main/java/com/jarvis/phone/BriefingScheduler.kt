@@ -150,7 +150,7 @@ class BriefingReceiver : BroadcastReceiver() {
                         // 정각 요약에 카톡 일부가 빠져 보였다(2026-11-22 선생님)
                         val pending = runCatching {
                             val db = NotificationDb.get(ctx); val rules = AppFilter.rules(ctx)
-                            db.since(Briefings.pendingFrom(db)).count { rules.allows(it) }
+                            Briefings.pendingItems(db).count { rules.allows(it) }
                         }.getOrDefault(0)
                         if (ready.briefingTime == 0L && pending > 0) {
                             // 준비 때는 새 알림이 없었는데 그 뒤 왔음 → '없음' 대신 지금 요약

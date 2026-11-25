@@ -64,6 +64,16 @@ object People {
 
     /** 예전 판의 학생·학부모 묶음이 비어 있으면 없앤다(앱을 켤 때). 이름이 들어 있으면 그대로 둔다 */
     fun dropEmptyBuiltIns(ctx: Context) {
+        // 2026-11-24 선생님: '학부모'라는 고정 칸은 없앰 — 예전 판 👪 학부모 명부는 넣어 둔 이름 그대로 보통 묶음(🤝 지인)으로.
+        // 이름·이모지는 사람들 탭에서 바꿀 수 있음. 연결 정보(ParentBook)는 지우지 않아 중요한 연락 알아보기에 그대로 쓰임
+        groups(ctx).firstOrNull { it.kind == "parents" }?.let { old ->
+            val names = parentNames(ctx)
+            if (names.isNotEmpty()) p(ctx).edit().putStringSet("m_${old.id}", members(ctx, old.id).toSet() + names).apply()
+            save(ctx, groups(ctx).map { g ->
+                if (g.id != old.id) g else g.copy(kind = "custom",
+                    emoji = if (g.emoji == "👪") "🤝" else g.emoji, name = if (g.name == "학부모" || g.name == "학부모 명부") "지인" else g.name)
+            }.filterNot { it.id == old.id && names.isEmpty() && members(ctx, old.id).isEmpty() })
+        }
         val list = groups(ctx)
         val keep = list.filterNot { g ->
             (g.kind == "students" && Students.names(ctx).isEmpty()) || (g.kind == "parents" && ParentBook.links(ctx).isEmpty())

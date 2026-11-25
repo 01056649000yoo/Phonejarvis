@@ -11,7 +11,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.foundation.clickable
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -55,8 +60,23 @@ internal fun splitLine(raw: String): SummaryLine {
     return SummaryLine(who, meta.joinToString(" · "), line.substring(i + 2).trim())
 }
 
+/** 🗓 하루 정리의 구간별 요약 줄('  · 09:10~09:40 · 12건: …') — 위 줄 아래에 접어 둠 */
+internal fun isDetail(line: String): Boolean = line.startsWith(DailyDigest.DETAIL)
+
+/** 줄 묶기(순수 — 시험): 구간별 요약 줄은 바로 위 '- ' 줄에 딸림. 위에 '- ' 줄이 없으면 보통 줄로 */
+internal fun attachDetails(lines: List<String>): List<Pair<String, List<String>>> {
+    val out = mutableListOf<Pair<String, MutableList<String>>>()
+    for (l in lines) {
+        val last = out.lastOrNull()
+        if (isDetail(l) && last != null && last.first.startsWith("-")) last.second += l.removePrefix(DailyDigest.DETAIL)
+        else out += (if (isDetail(l)) "- " + l.removePrefix(DailyDigest.DETAIL) else l) to mutableListOf()
+    }
+    return out
+}
+
 /** 칸 제목인가: '-'·'('·빈칸으로 시작하지 않고, 첫 글자가 글자·숫자가 아닌 것(이모지) */
 internal fun isSectionHead(line: String): Boolean {
+    if (isDetail(line)) return false
     val t = line.trimStart()
     if (t.isEmpty() || t[0] == '-' || t[0] == '(' || t[0] == '[') return false
     return !Character.isLetterOrDigit(t.codePointAt(0))
@@ -72,7 +92,7 @@ fun SummaryText(text: String, modifier: Modifier = Modifier, accent: Color = Mat
     Column(modifier, verticalArrangement = Arrangement.spacedBy(Space.l)) {
         blocks.forEach { lines ->
             Column(verticalArrangement = Arrangement.spacedBy(Space.s)) {
-                lines.forEach { line ->
+                attachDetails(lines).forEach { (line, details) ->
                     when {
                         isSectionHead(line) -> {
                             val count = Regex("""\s*\(([^)]*)\)\s*$""").find(line)
@@ -93,6 +113,14 @@ fun SummaryText(text: String, modifier: Modifier = Modifier, accent: Color = Mat
                                         if (l.meta.isNotEmpty()) withStyle(SpanStyle(color = muted)) { append(if (l.who.isEmpty()) l.meta else "  ${l.meta}") }
                                     }, style = MaterialTheme.typography.labelLarge)
                                     Text(l.body, style = MaterialTheme.typography.bodyMedium)
+                                    // 🗓 구간별 요약(3층): 눌러서 펼침
+                                    if (details.isNotEmpty()) {
+                                        var open by rememberSaveable(line) { mutableStateOf(false) }
+                                        Text(if (open) "▾ 구간별 요약 접기" else "▸ 구간별 요약 ${details.size}개",
+                                            style = MaterialTheme.typography.labelMedium, color = accent,
+                                            modifier = Modifier.clickable { open = !open }.padding(vertical = 2.dp))
+                                        if (open) details.forEach { d -> Text(d, style = MaterialTheme.typography.bodySmall, color = muted) }
+                                    }
                                 }
                             }
                         }

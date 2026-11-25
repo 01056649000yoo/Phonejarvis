@@ -37,10 +37,30 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** 이번 버전에서 바뀐 점 한 줄 (버전 올릴 때 같이 고치기). */
-private const val WHATS_NEW = "요약 칸을 줄였어요 · 업무·일정은 고른 앱만 · 미리 요약은 글자 수로 · 위젯을 누르면 바로 요약"
+private const val WHATS_NEW = "하루 정리는 하루 종일 온 알림을 총정리 · 빠지던 알림 없게 · 카톡 단톡방은 원문 줄로 · 이어진 대화 ↪ · 답한 물음 내리기 · 메일은 제목 그대로 · 짧으면 원문 그대로 · 오해 없는 요약 · 어제 메시지가 섞이지 않게 · 오픈채팅 한 방으로 · 내가 만든 묶음별 연락 · 모든 연락을 간단한 내용까지 · 중요한 대화만 요약해요 · 캘린더는 일정 그대로 · 요약 문장 다듬기"
 
 /** 업데이트 내역 큰 창 (버전 올릴 때 같이 고치기) */
 private val WHATS_NEW_DETAIL = listOf(
+    "🗓 하루 정리는 총정리로" to "하루에 알림이 수백 개 와도 하루 정리가 15줄로 줄어들지 않아요. 맨 위 ✨ 오늘의 핵심(AI 5줄)과 📅 내일, 그 아래 🙋 답할 것은 상한 없이 모두, 💼 업무·👥 묶음, 💬 방별 하루(내용 있는 방은 모두 한 줄씩, 인사·맞장구뿐인 방은 이름과 건수만), 📦 앱 알림 건수까지 이어져요. 방 줄 아래 '▸ 구간별 요약'을 누르면 그 방의 요약을 시각별로 펼쳐 볼 수 있어요. 알림창에는 핵심과 답할 것만 보이고, 누르면 전체가 열려요.",
+    "🕳 빠지던 알림 없게" to "문자·카톡은 보낸 시각으로 저장되는데, 그 시각이 폰에 도착한 때보다 조금 이를 수 있어요. 정각 5분 전 미리 준비처럼 그 사이에 요약이 돌면 그 메시지가 어느 요약에도 안 들어갔어요(예: 9시 55분 문자). 이제 요약마다 어디까지 맡았는지를 알림 번호로 기억해, 늦게 저장된 알림도 다음 요약에 꼭 들어가요.",
+    "🧵 카톡 단톡방은 원문 줄로" to "카톡은 짧은 말·물음·토막이 많아 AI가 바꿔 쓰면 뜻이 틀어졌어요. 이제 여러 사람이 말한 단톡방은 AI가 핵심 줄을 고르기만 하고, 화면에는 그 줄의 원래 말을 보여 줘요. 한 사람이 잇따라 보낸 토막 말은 '/'로 이어 한 줄로 봐요.",
+    "↪ 이어진 대화" to "지난 요약 끝(30분 안)에서 이어진 대화는 그 앞 말을 AI에게 참고로 주고, 줄 끝에 '↪ 앞: …'으로 앞의 마지막 말을 같이 보여 줘요.",
+    "✔ 답한 물음은 내려요" to "🙋 물음이 올라온 방에 내가 답하면(알림에 딸려 오는 내 답으로 알아봐요) 하루 정리에서 답할 연락으로 남기지 않고 '✔ 답함'으로 적어요. 답한 뒤 아무도 말하지 않으면 알아보지 못할 수 있어요.",
+    "🧵 단톡방 대화는 흐름 그대로" to "지인이 단톡방에서 한 말을 사람별로 떼어 모으니 대화 흐름이 사라져 요약이 엉뚱하게 이어졌어요. 이제 단톡방 말은 그 방 대화 요약에 그대로 두고, 👥 지인 칸에는 1:1로 온 연락만 모아요.",
+    "📧 메일은 제목 그대로" to "💼 메일은 AI가 여러 통을 한 문장으로 엮지 않고 '보낸 사람: 제목'을 최근 4통까지 그대로 보여 줘요. 요약 끝에 붙는 원래 물음은 따옴표로 묶어 '\"…\"라고 물음'처럼 원문임을 드러내요.",
+    "🔍 짧으면 원문 그대로" to "한 사람이 보낸 말이 맞장구를 빼고 합쳐 80자 이하면, AI가 바꿔 쓰지 않고 원래 메시지를 '/'로 이어서 그대로 보여 줘요. 짧은 말을 AI가 해석하다 뜻이 달라지던 것('해양교육 많네' → '불만이 많다')을 막아요. 여러 사람이 섞인 단톡방과 긴 대화는 지금처럼 AI가 요약해요.",
+    "🔍 오해 없는 요약" to "AI가 메시지에 없는 감정(짜증·걱정·부끄러움)을 붙이거나, 서로 다른 이야기를 '…하며 …했으나'로 엮어 뜻이 달라지던 것을 막았어요. 요약에 원문에 없는 감정이 들어가면 요약 대신 원래 메시지를 짧게 보여 줘요. '김진수 지인이 …'처럼 묶음 이름이 붙거나 '아녜요?.'처럼 문장부호가 겹치던 것도 고쳤어요.",
+    "📜 어제 메시지가 섞이지 않게" to "카톡 알림에는 그 방의 지난 메시지(어제 것까지)가 딸려 와요. 이미 모은 메시지인데 지금 온 것처럼 다시 들어가 요약에 어제 이야기가 섞이던 것을 고쳤어요. '급락..?' 같은 혼잣말은 요청으로 붙이지 않고, 긴 인터넷 주소는 (링크)로 줄여요. 설정 → 시스템에 🔧 카톡 알림 구조(문제 찾기용)를 넣었어요.",
+    "💬 오픈채팅은 한 방으로" to "오픈채팅 메시지가 보낸 사람마다 따로 1:1 대화처럼 나뉘어 방이 13개씩 나오던 것을 고쳤어요. 이제 방 이름으로 한데 모아 한 줄로 정리해요(요약도 빨라져요). '말씀하심'처럼 높임말로 줄이던 것은 '말함'으로 맞추고, '아 그래요?' 같은 맞장구는 요청으로 붙이지 않아요. 묶음 사람이 나에게 부탁한 말은 🙋 표시와 함께 짧게 적어요.",
+    "👥 내가 만든 묶음별 연락" to "요약 탭의 '학부모 연락' 고정 칸을 없앴어요. 사람들 탭에서 만든 묶음(교직원·가족·지인…)마다 카드가 하나씩 생겨, 오늘 그 사람들이 보낸 연락을 사람별로 보여 줘요. 예전에 학부모 명부에 넣어 둔 이름은 🤝 지인 묶음으로 옮겼어요. 이름·이모지는 사람들 탭에서 바꿀 수 있어요.",
+    "💬 모든 연락을 간단한 내용까지" to "이름만 보고는 결국 폰을 열게 되니까, 온 연락은 내용을 짧게라도 보여 줘요. 몇 마디뿐인 방은 AI 없이 그 말을 그대로 짧게, 많으면 AI가 핵심 한 줄로 정리해요. 나에게 직접 온 1:1 메시지는 물음이 없어도 요약해요. 인사·맞장구(ㅋㅋ, 네 감사합니다)뿐인 방만 '그 밖의 방'에 이름을 적어요.",
+    "🎯 중요한 대화만 요약해요" to "쌤톡스는 '폰을 안 봐도 놓치는 연락이 없게' 하는 선생님의 연락 비서예요. 그래서 명부·키워드·사람 묶음·업무 앱, '선생님'을 부르는 대화, 1:1 연락, 기한이 있는 단톡방 부탁은 AI가 꼼꼼히 요약하고, 몇 마디뿐인 잡담 방은 AI 없이 그 말을 짧게 보여 줘요. 설정 → 모아서 알림의 '🎯 중요한 대화만 요약'을 끄면 예전처럼 모든 방을 요약해요.",
+    "📅 캘린더는 일정 그대로" to "캘린더 알림은 AI가 대화처럼 요약하지 않고 '모두모임 (내일 오전 9:00), …'처럼 일정 이름과 시각을 그대로 보여 줘요.",
+    "✏️ 요약 문장 다듬기" to "줄 앞에 이름이 있으니 내용에서 그 이름을 다시 말하지 않아요. '언급함' 대신 '말함'으로, '??'처럼 글자 없는 물음은 요청으로 붙이지 않아요. '감사합니다 선배님'처럼 인사만 있는 방은 맨 아래 '그 밖의 방'에 이름만 적어요.",
+    "📥 빠지던 메시지를 모아요" to "카톡·문자가 한꺼번에 여러 개 오면 마지막 것만 남던 것을 고쳐 모두 모아요. 같은 사람이 같은 말을 다시 보내도 모아요. '확인 부탁드려요 15000원'처럼 금액·전화번호가 든 메시지를 인증번호로 잘못 보고 버리던 것도 고쳤어요.",
+    "🧒 학생 이름을 더 정확히" to "성을 뺀 이름은 이름으로 쓰였을 때만 찾아요('지우가'·'지우 어머니'는 맞고 '지우개'는 아님). '하나'·'보람'처럼 흔한 낱말과 같은 이름은 성까지 쓴 이름으로만 찾아요.",
+    "🗓 하루 정리를 더 깔끔하게" to "한 사람은 한 칸에만, 지난 일정은 '있었던 일'에 시각 순으로, 은행·카드·Google 같은 업체 알림은 빼요. 사람 묶음의 같은 사람이 여러 번 쌓이지 않고, 월요일처럼 주말부터 모았으면 언제부터인지 알려 줘요. 그 시각에 다른 요약이 실패해도 하루 정리는 와요.",
+    "💼 업무 메일은 정기 알림으로 빼지 않아요" to "매일 비슷한 시각에 오는 업무 앱 알림(동료의 메일 등)을 정기 알림으로 짐작해 건수로만 남기던 것을 고쳤어요. 직접 '요약에서 빼기'한 것은 그대로 빠져요.",
     "🏠 위젯을 누르면 바로 요약" to "위젯의 요약 글을 누르면 앱에서 마지막에 보던 화면 대신 📋 요약 탭 맨 위의 최신 요약이 펼쳐진 채로 열려요.",
     "🧹 요약 칸을 줄였어요" to "요약은 이제 다섯 칸이에요: 👥 내가 만든 사람 묶음(가족·학부모·교직원 등, 묶음마다) → ⭐ 중요 키워드 → 💼 업무·일정 → 💬 대화 요약 → 앱·정기 알림 건수. 한 사람은 한 묶음에만 들어가고, 묶음에 들어간 연락은 대화 요약에 다시 나오지 않아요. 👪 학부모 전용 칸은 없애고 학부모 명부도 다른 묶음과 똑같이 보여요.",
     "🙋 답장할 연락은 대화 요약 안에" to "답장할 연락을 따로 칸으로 두지 않고, 💬 대화 요약 맨 위 줄에 🙋 표시로 보여 줘요.",
@@ -58,7 +78,7 @@ private val WHATS_NEW_DETAIL = listOf(
     "🚫 광고·정기 알림 거르기" to "이름(키워드)이 들어 있어도 광고는 걸러요. 대표번호(15xx·080·02 등) 문자는 📦 앱 알림으로, 'OO님'처럼 이름을 부르기만 한 알림은 ⭐ 키워드에서 빼요. 날씨·서버 알림처럼 매일 비슷한 시각에 오는 알림과 봇 알림은 끝에 🔁 건수 한 줄로만. 알림 탭에서 길게 누르면 '요약에서 빼기'도 돼요.",
     "🏠 위젯 바로 놓기" to "요약 탭·설정에서 '위젯 놓기'를 누르면 홈 화면에 바로 놓여요. 위젯에는 모인 알림 수 없이 요약(👥 내 묶음·💼 업무·일정·💬 대화 요약)만 보이고, 📋 요약을 누르면 그 자리에서 새로 정리해요.",
     "🔐 권한을 줄였어요" to "Play 스토어에 올릴 준비로 '모든 파일 접근' 권한을 뺐어요. 모델 파일과 백업 파일은 파일 고르기 창에서 한 번 골라요(다운로드 폴더가 바로 열려요). 하루 한 번 자동 백업은 권한 없이 그대로 다운로드/쌤톡스 폴더에 쌓여요. 정한 시각 알림은 '알람 및 리마인더'를 켜 두면 딱 맞춰 와요(설정 → 🔕 모아서 알림).",
-    "🗓 하루 정리" to "매일 밤 10시(설정 → 🔕 모아서 알림에서 시각 바꾸기·끄기)에 그날 요약들을 AI가 다시 훑어 한 화면으로 정리해 드려요. ⭐ 중요 키워드·업무·일정을 1순위로, 학생·학부모·마감·답장할 연락을 그다음으로 올리고, 광고·배송 같은 앱 알림은 건수만 남겨요. ✅ 오늘 꼭 챙길 일 · 🙋 답장할 연락 · 📝 오늘 있었던 일 · 📅 내일 챙길 것, 모두 15줄 안쪽이에요. 폰이 뜨겁거나 배터리가 적으면 AI 없이 중요한 순서대로 20줄만 보내요.",
+    "🗓 하루 정리" to "매일 밤 10시(설정 → 🔕 모아서 알림에서 시각 바꾸기·끄기)에 그날 요약하며 쌓아 둔 방별 기록을 모아 하루 종일 온 알림을 총정리해 드려요. ✨ 오늘의 핵심 · 📅 내일 · 🙋 답할 것(모두) · 💼 업무 · 👥 묶음 · 💬 방별 하루 · 📦 앱 알림 건수 순서예요. 폰이 뜨겁거나 배터리가 적으면 핵심 줄 없이 방별로만 보내요.",
     "🔎 검색이 빨라졌어요" to "알림을 넣을 때 두 글자 조각 찾아보기(색인)를 같이 만들어, 3개월 치가 쌓여도 낱말 가운데 글자까지 금방 찾아요. 한 글자 낱말은 예전처럼 찾아요.",
     "📨 알림 원문 3개월까지" to "설정 → 🧹 저장 공간에서 받은 알림 원문을 3개월까지 남길 수 있어요(기본 7일). 오래된 메시지도 알림 탭 🔎 검색으로 찾을 수 있어요. 하루 1,000건이면 3개월에 25MB쯤 써요.",
     "🔎 알림 검색" to "알림 탭 맨 위 검색 칸에 낱말을 치면 모아 둔 알림 전체(오늘 것만이 아니라 저장 기간 안의 것 모두)에서 내용·보낸 사람·대화방 이름으로 찾아 최근 것부터 보여 줘요. 띄어 쓰면 낱말이 모두 든 것만. 찾은 낱말은 노랗게 표시돼요.",
@@ -361,8 +381,8 @@ private fun BriefingTab(vm: JarvisViewModel) {
     }
 
     TasksCard(vm)
-    if (vm.groups.any { it.id == "parents" && !it.hidden }) ParentCard(vm)
-    PeopleCard(vm)
+    // 2026-11-24 선생님: 학부모 고정 칸 대신 내가 만든 👥 사람 묶음마다 그 이름으로 연락 정리
+    PeopleCards(vm)
 
 }
 
@@ -658,7 +678,8 @@ private fun BriefingDetailDialog(vm: JarvisViewModel, b: Briefing, items: List<N
         title = {
             Column {
                 Text("${briefingIcon(b)} ${b.label}", style = MaterialTheme.typography.titleMedium)
-                Text("${fmt.format(b.fromTime)} ~ ${timeFmt.format(b.time)} · 알림 ${b.count}건",
+                // 🗓 하루 정리는 건수를 저장하지 않음(지난 요약 합계에 두 번 세지 않게) — 세부 창에도 '알림 0건'이 뜨던 것(2026-11-24)
+                Text("${fmt.format(b.fromTime)} ~ ${timeFmt.format(b.time)}" + if (DailyDigest.isDaily(b)) "" else " · 알림 ${b.count}건",
                     style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
@@ -695,6 +716,7 @@ private fun BriefingDetailDialog(vm: JarvisViewModel, b: Briefing, items: List<N
  * 브리핑 카드: 제목 줄(언제·몇 건)만 보이게 접을 수 있고, 숨기면 맨 위에서 빠짐.
  * 한 번 접으면 다시 열어도 접힌 채로 (보고 나면 접어 두기).
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun BriefingCard(vm: JarvisViewModel, b: Briefing, primary: Boolean, onHide: () -> Unit) {
     val fmt = remember { SimpleDateFormat("M/d(E) HH:mm", Locale.KOREA) }
@@ -706,7 +728,8 @@ private fun BriefingCard(vm: JarvisViewModel, b: Briefing, primary: Boolean, onH
             Row(Modifier.fillMaxWidth().clickable { vm.toggleBriefing(b) }.semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(b.label, style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
-                    Text("${fmt.format(b.time)} · 알림 ${b.count}건", style = MaterialTheme.typography.labelMedium,
+                    // 🗓 하루 정리는 건수를 저장하지 않음(지난 요약 합계에 두 번 세지 않게) — '알림 0건'이 뜨던 것(2026-11-23)
+                    Text(fmt.format(b.time) + if (DailyDigest.isDaily(b)) "" else " · 알림 ${b.count}건", style = MaterialTheme.typography.labelMedium,
                         color = LocalContentColor.current.copy(alpha = 0.7f))
                 }
                 Text(if (collapsed) "펼치기 ▾" else "접기 ▴", style = MaterialTheme.typography.labelLarge,
@@ -720,14 +743,17 @@ private fun BriefingCard(vm: JarvisViewModel, b: Briefing, primary: Boolean, onH
                     // 🧾 줄의 꼴을 보고 칸 제목·사람·시각·내용을 나눠 그림(SummaryText)
                     SummaryText(b.text, accent = if (primary) Ssam.GoldPale else MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.height(Space.s))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    // 좁은 화면·큰 글자에서 '숨기기'가 한 글자씩 세로로 깨지던 것(2026-11-23): 모자라면 다음 줄로, 단추 글은 한 줄로
+                    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         TextButton(onClick = { vm.openBriefingDetail(b) }) {
-                            Text("📄 세부 내역", color = MaterialTheme.colorScheme.onPrimaryContainer)
+                            Text("📄 세부 내역", color = MaterialTheme.colorScheme.onPrimaryContainer, maxLines = 1, softWrap = false)
                         }
                         TextButton(onClick = { vm.toggleBriefing(b) }) {
-                            Text("다 봤어요 · 접기", color = MaterialTheme.colorScheme.onPrimaryContainer)
+                            Text("다 봤어요 · 접기", color = MaterialTheme.colorScheme.onPrimaryContainer, maxLines = 1, softWrap = false)
                         }
-                        TextButton(onClick = onHide) { Text("숨기기", color = MaterialTheme.colorScheme.onPrimaryContainer) }
+                        TextButton(onClick = onHide) {
+                            Text("숨기기", color = MaterialTheme.colorScheme.onPrimaryContainer, maxLines = 1, softWrap = false)
+                        }
                     }
                 }
             }
@@ -783,7 +809,7 @@ private fun PeoplePage(vm: JarvisViewModel) {
     vm.studentView?.let { (name, entries) -> StudentDialog(vm, name, entries) }
     var making by rememberSaveable { mutableStateOf(false) }
     val shown = vm.groups.filterNot { it.hidden }
-    Text("교직원·가족·학부모처럼 내 맘대로 목록을 만들고 이모지·이름으로 꾸미세요. 이름만 쭉 넣으면 그 사람이 보낸 알림이나 이름이 나온 알림을 목록별로 모아요. 안 만들어도 요약은 그대로 돼요.",
+    Text("교직원·가족·지인처럼 내 맘대로 목록을 만들고 이모지·이름으로 꾸미세요. 이름만 쭉 넣으면 그 사람이 보낸 알림이나 이름이 나온 알림을 목록별로 모아요. 안 만들어도 요약은 그대로 돼요.",
         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     if (shown.isNotEmpty()) MenuGroup(shown.map { g ->
         val n = when (g.kind) {
@@ -907,22 +933,40 @@ private fun CustomGroupCard(vm: JarvisViewModel, g: PeopleGroup) {
     }
 }
 
-/** 요약 탭: 👥 묶음별 오늘 연락 (직접 만든 묶음). 없으면 안 보임 */
+/**
+ * 요약 탭: 내가 만든 👥 사람 묶음마다 카드 하나. 제목은 묶음의 이모지·이름 그대로(예: "👔 교직원 연락").
+ * 오늘 그 묶음 사람이 보낸 연락을 사람별로 모아 최근 연락 먼저 보여 줌. 카드를 누르면 묶음 화면으로.
+ */
 @Composable
-private fun PeopleCard(vm: JarvisViewModel) {
-    if (vm.peopleToday.isEmpty()) return
+private fun PeopleCards(vm: JarvisViewModel) {
     val timeFmt = remember { SimpleDateFormat("HH:mm", Locale.KOREA) }
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.animateContentSize(Motion.size).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            vm.peopleToday.forEachIndexed { i, (g, list) ->
-                if (i > 0) HorizontalDivider()
-                Row(Modifier.fillMaxWidth().clickable { vm.openGroup(g.id) }, verticalAlignment = Alignment.CenterVertically) {
-                    Text("${g.title} 연락 ${list.size}건", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                    Text("›", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                list.sortedByDescending { it.second.time }.take(3).forEach { (name, n) ->
-                    Text("${timeFmt.format(n.time)} $name · ${n.text.replace('\n', ' ').take(50)}",
-                        style = MaterialTheme.typography.bodyMedium, maxLines = 2)
+    val today = vm.peopleToday.associate { (g, l) -> g.id to l }
+    vm.groups.filter { !it.hidden && (it.kind == "custom" || it.kind == "parents") }.forEach { g ->
+        val list = today[g.id].orEmpty()
+        val byPerson = list.groupBy { it.first }.toList()
+            .sortedByDescending { (_, l) -> l.maxOf { it.second.time } }
+        val noOne = (if (g.kind == "parents") vm.parentLinks.size else vm.groupMembers[g.id]?.size ?: 0) == 0
+        Card(Modifier.fillMaxWidth().clickable { vm.openGroup(g.id) }) {
+            Column(Modifier.animateContentSize(Motion.size).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(when {
+                    list.isNotEmpty() -> "${g.title} 연락 ${list.size}건 · ${byPerson.size}명"
+                    noOne -> "${g.title} 연락 · 아직 넣은 사람이 없어요"
+                    else -> "${g.title} 연락 · 오늘 처리할 연락이 없어요"
+                }, style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading())
+                if (noOne) Text("눌러서 이름을 넣으면 어떤 앱으로 와도 이 묶음 연락으로 모아요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                byPerson.forEach { (name, l) ->
+                    val recent = l.sortedByDescending { it.second.time }
+                    HorizontalDivider()
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(name + if (l.size > 1) " · ${l.size}건" else "", style = MaterialTheme.typography.titleSmall,
+                            modifier = Modifier.weight(1f), maxLines = 1)
+                        Text(timeFmt.format(recent.first().second.time), style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    recent.take(2).reversed().forEach { (_, n) ->
+                        Text(n.text.replace('\n', ' '), style = MaterialTheme.typography.bodyMedium, maxLines = 2)
+                    }
                 }
             }
         }
@@ -1030,6 +1074,24 @@ private fun SystemSettings(vm: JarvisViewModel) {
         else ctx.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
             .putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName))
     }
+    // 🔧 문제 찾기용: 카톡 알림이 방 이름을 어디에 넣는지(메시지 내용은 없음)
+    var probe by remember { mutableStateOf<List<String>?>(null) }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("🔧 카톡 알림 구조 (문제 찾기용)", style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading())
+            Text("최근 카톡 알림 5개가 방 이름을 어느 칸에 넣는지 보여 줘요. 메시지 내용은 적지 않아요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton(onClick = { probe = NotiProbe.all(ctx) }) { Text(if (probe == null) "보기" else "새로 보기") }
+            probe?.let { list ->
+                if (list.isEmpty()) Text("아직 기록이 없어요. 카톡이 한 번 오면 생겨요.", style = MaterialTheme.typography.bodySmall)
+                androidx.compose.foundation.text.selection.SelectionContainer {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        list.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /** 알림 앱 정리: AI(또는 규칙)가 모으기/빼기를 추천 → "추천대로 적용" 한 번 또는 스위치로. */
@@ -1073,7 +1135,7 @@ private fun AppCleanupCard(vm: JarvisViewModel) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("🚫 광고 자동 거르기", style = MaterialTheme.typography.titleMedium)
-                    Text(if (vm.adFilterOn) "오늘 광고 ${vm.adCount}건을 걸렀어요 · (광고)·수신거부·할인·쿠폰 등. 등록한 학부모·키워드는 거르지 않아요"
+                    Text(if (vm.adFilterOn) "오늘 광고 ${vm.adCount}건을 걸렀어요 · (광고)·수신거부·할인·쿠폰 등. 등록한 사람·키워드는 거르지 않아요"
                          else "꺼짐 · 광고성 문자·카톡도 모아요", style = MaterialTheme.typography.bodySmall)
                 }
                 Switch(checked = vm.adFilterOn, onCheckedChange = { vm.setAdFilter(it) },
@@ -1208,7 +1270,7 @@ private fun StoragePage(vm: JarvisViewModel) {
             Text("⏳ 보관 기간", style = MaterialTheme.typography.titleMedium)
             RetentionRow("📨 받은 알림 원문", "브리핑 세부 내역의 '원래 알림'도 이 기간만큼 볼 수 있어요", Storage.NOTI_CHOICES, vm.notiDays) {
                 vm.setRetention("noti_days", it) }
-            RetentionRow("📚 브리핑 모음", "요약 결과라 작아요", Storage.BRIEF_CHOICES, vm.briefDays) { vm.setRetention("brief_days", it) }
+            RetentionRow("📚 지난 요약", "요약 결과라 작아요", Storage.BRIEF_CHOICES, vm.briefDays) { vm.setRetention("brief_days", it) }
             RetentionRow("🧒 학생별 기록", "상담·생활기록에 쓰려면 길게 두세요", Storage.LOG_CHOICES, vm.logDays) { vm.setRetention("log_days", it) }
             Text("📌 끝낸 할 일은 30일, 마감이 60일 지난 할 일은 저절로 지워요. 앱·방 이름 목록은 180일 동안 안 오면 지워요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1224,7 +1286,7 @@ private fun StoragePage(vm: JarvisViewModel) {
     if (confirmClear) AlertDialog(
         onDismissRequest = { confirmClear = false },
         title = { Text("받은 알림 원문을 모두 지울까요?") },
-        text = { Text("모은 알림 ${vm.storageUsage?.noti ?: 0}건이 지워지고 되돌릴 수 없어요. 브리핑 모음·학생 기록·할 일·설정은 그대로 남아요. 아직 정리 안 한 알림도 지워져요.") },
+        text = { Text("모은 알림 ${vm.storageUsage?.noti ?: 0}건이 지워지고 되돌릴 수 없어요. 지난 요약·학생 기록·할 일·설정은 그대로 남아요. 아직 정리 안 한 알림도 지워져요.") },
         confirmButton = { Button(onClick = { confirmClear = false; vm.clearNotis() }) { Text("모두 지우기") } },
         dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("취소") } },
     )
@@ -1291,76 +1353,6 @@ private fun AddAppDialog(vm: JarvisViewModel, apps: List<JarvisViewModel.Addable
         },
         confirmButton = { TextButton(onClick = { vm.closeAddApps() }) { Text("닫기") } },
     )
-}
-
-/**
- * 👪 학부모 연락: 지정한 학부모 방의 오늘 연락을 분류해 보여 주고, 답장 추천·복사·카톡 열기·답장함 표시.
- * 학부모 방을 아직 지정하지 않았으면 설정으로 안내.
- */
-@Composable
-private fun ParentCard(vm: JarvisViewModel) {
-    val ctx = LocalContext.current
-    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
-    val timeFmt = remember { SimpleDateFormat("HH:mm", Locale.KOREA) }
-
-    if (vm.parentLinks.isEmpty() && vm.parentContacts.isEmpty()) {
-        Card(Modifier.fillMaxWidth()) {
-            Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("👪 학부모 이름을 넣어 두면 어떤 앱으로 와도 학부모 연락만 따로 모아 답장까지 추천해 드려요.",
-                    Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                TextButton(onClick = { vm.openGroup("parents") }) { Text("등록하기") }
-            }
-        }
-        return
-    }
-    val open = vm.parentContacts.filter { it.key !in vm.handledKeys }
-    val needReply = open.count { it.category.needsReply }
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.animateContentSize(Motion.size).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(if (open.isEmpty()) "👪 학부모 연락 · 오늘 처리할 연락이 없어요"
-                 else "👪 학부모 연락 ${open.size}건 · 답장 필요 $needReply",
-                style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading())
-            open.forEach { c ->
-                HorizontalDivider()
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(c.displayName + if (c.link == null && c.students.isNotEmpty()) " · 🧒 " + c.students.joinToString(", ") else "",
-                        style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading().weight(1f), maxLines = 1)
-                    Surface(shape = MaterialTheme.shapes.small,
-                        color = if (c.category.needsReply) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.secondaryContainer) {
-                        Text(c.category.label + if (c.category.needsReply) " · 답장 필요" else "",
-                            Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall)
-                    }
-                    Text(timeFmt.format(c.last.time), style = MaterialTheme.typography.bodySmall)
-                }
-                c.messages.takeLast(2).forEach {
-                    Text(it.text, style = MaterialTheme.typography.bodyMedium, maxLines = 3)
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { vm.draftReply(c) }, enabled = vm.draftingKey == null) {
-                        Text(if (vm.draftingKey == c.key) "만드는 중…" else "💬 답장 추천")
-                    }
-                    TextButton(onClick = { vm.markHandled(c) }) { Text("답장함 ✓") }
-                }
-                vm.drafts[c.key]?.forEach { d ->
-                    Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceVariant) {
-                        Column(Modifier.fillMaxWidth().padding(12.dp)) {
-                            Text(d, style = MaterialTheme.typography.bodyMedium)
-                            Row {
-                                TextButton(onClick = {
-                                    clipboard.setText(androidx.compose.ui.text.AnnotatedString(d))
-                                    android.widget.Toast.makeText(ctx, "복사했어요. 카톡에 붙여 넣으세요.", android.widget.Toast.LENGTH_SHORT).show()
-                                }) { Text("복사") }
-                                TextButton(onClick = {
-                                    clipboard.setText(androidx.compose.ui.text.AnnotatedString(d))
-                                    ctx.packageManager.getLaunchIntentForPackage(c.pkg)?.let { ctx.startActivity(it) }
-                                }) { Text("복사하고 ${c.app} 열기") }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
 }
 
 // ───────────────────────── 📌 할 일·마감 (브리핑 탭) ─────────────────────────
@@ -1585,7 +1577,7 @@ private fun RoomPickerDialog(vm: JarvisViewModel, pkg: String, name: String) {
         text = {
             Column(Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("방을 누르거나 스위치로 켜고 꺼요. 끈 방은 모으지도, 요약하지도 않아요. 단, 중요 키워드·등록한 학부모는 모아요.",
+                Text("방을 누르거나 스위치로 켜고 꺼요. 끈 방은 모으지도, 요약하지도 않아요. 단, 중요 키워드·등록한 사람은 모아요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 // ＋ 방 이름 직접 추가: 다른 앱은 카톡 방 목록을 읽을 수 없어서, 아직 알림이 안 온 방은 이름으로 미리 넣음
                 var newRoom by rememberSaveable { mutableStateOf("") }
@@ -1772,6 +1764,17 @@ private fun SchedulePage(vm: JarvisViewModel) {
             Text("'알람 및 리마인더'를 허용해 주세요. 허용하지 않으면 요약·하루 정리가 몇 분 늦게 올 수 있어요.",
                 style = MaterialTheme.typography.bodySmall)
             Button(onClick = { ctx.startActivity(exactAlarmSettings(ctx)) }) { Text("허용하러 가기") }
+        }
+    }
+    // 🎯 중요한 대화만 요약 (IDENTITY.md 원칙 2 — 온 연락은 간단한 내용까지, 많으면 핵심 요약)
+    Card(Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("🎯 중요한 대화만 요약", style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading())
+                Text(if (vm.focusTalk) "명부·키워드·사람 묶음·업무 앱, '선생님'을 부르는 대화, 1:1 연락은 AI가 꼼꼼히 요약해요. 몇 마디뿐인 잡담 방은 AI 없이 그 말을 짧게 보여 줘요."
+                    else "몇 마디뿐인 잡담 방까지 모든 대화방을 AI가 요약해요.", style = MaterialTheme.typography.bodySmall)
+            }
+            Switch(checked = vm.focusTalk, onCheckedChange = { vm.changeFocusTalk(it) })
         }
     }
     // 🗓 하루 정리 (모아서 알림을 꺼도 따로)

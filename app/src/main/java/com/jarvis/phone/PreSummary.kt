@@ -28,6 +28,11 @@ object PreSummary {
     const val BIG_CHARS = 4500             // 이만큼 쌓이면 화면이 꺼지는 틈을 더 자주 살핌(100건 넘으면 요약이 끊기던 것)
     const val BIG_RETRY_MIN = 5
     const val ACTION = "com.jarvis.phone.ACTION_PRESUMMARY"
+    // 🤫 조용해진 방만(2026-11-24): 말이 오가는 중에 정리하면 물음과 답 사이에서 끊김 — 마지막 말 뒤 3분(말 차례 묶는 간격)은 기다림.
+    // 많이 쌓였으면([BIG_CHARS]) 기다리지 않음(끝없이 이어지는 방 때문에 미뤄지지 않게)
+    const val QUIET_MS = BriefingComposer.TURN_GAP_MS
+    const val QUIET_RETRY_MIN = 3
+    const val TALKING = "대화가 이어지는 중"
     private const val CHECK_GAP_MS = 60_000L   // 알림마다 DB 를 세지 않게 1분에 한 번만 살핌
 
     /** 지금 미리 요약이 도는 중(진짜 요약이 오면 멈추고 넘겨줌) */
@@ -41,14 +46,15 @@ object PreSummary {
         val arr = JSONArray(prefs(ctx).getString("rooms", "[]"))
         (0 until arr.length()).map { i ->
             val o = arr.getJSONObject(i)
-            BriefingComposer.Cached(o.getString("k"), o.getLong("s"), o.getLong("u"), o.getInt("c"), o.getString("p"), o.getString("a"), o.getBoolean("r"))
+            BriefingComposer.Cached(o.getString("k"), o.getLong("s"), o.getLong("u"), o.getInt("c"), o.getString("p"), o.getString("a"), o.getBoolean("r"),
+                o.optJSONArray("l")?.let { l -> (0 until l.length()).map { j -> l.getString(j) } }.orEmpty())
         }.filter { it.since == since }.associateBy { it.key }
     }.getOrDefault(emptyMap())
 
     @Synchronized fun save(ctx: Context, c: BriefingComposer.Cached) {
         val all = load(ctx, c.since) + (c.key to c)
         val arr = JSONArray()
-        all.values.forEach { arr.put(JSONObject().put("k", it.key).put("s", it.since).put("u", it.upTo).put("c", it.count).put("p", it.point).put("a", it.ask).put("r", it.needReply)) }
+        all.values.forEach { arr.put(JSONObject().put("k", it.key).put("s", it.since).put("u", it.upTo).put("c", it.count).put("p", it.point).put("a", it.ask).put("r", it.needReply).put("l", JSONArray(it.lines))) }
         prefs(ctx).edit().putString("rooms", arr.toString()).apply()
     }
 
@@ -56,7 +62,8 @@ object PreSummary {
 
     // ── 할지 말지 ──
     /** [chars]: AI 에 새로 넣을 글자 수 */
-    data class Check(val chars: Int, val load: PhoneLoad.State, val screenOn: Boolean, val busy: Boolean, val hasModel: Boolean)
+    data class Check(val chars: Int, val load: PhoneLoad.State, val screenOn: Boolean, val busy: Boolean, val hasModel: Boolean,
+                     /** 쌓인 글이 아직 말이 오가는 방의 것뿐(조용해진 방의 글만으로는 [MIN_CHARS] 가 안 됨) */ val talking: Boolean = false)
 
     /** 지금 미리 요약을 해도 되나: 아니면 까닭, 되면 null (순수 규칙 — 시험) */
     fun blockReason(c: Check): String? = when {
@@ -67,12 +74,13 @@ object PreSummary {
         !c.load.charging && c.load.powerSave -> "절전 모드"
         !c.load.charging && c.load.battery < MIN_BATTERY -> "배터리 ${c.load.battery}%"
         c.chars < MIN_CHARS -> "쌓인 글자 ${c.chars}자"
+        c.talking -> TALKING
         c.screenOn -> "화면 켜짐"
         else -> null
     }
 
     /** 다음에 언제 살펴볼까(분): 글자 수를 넘었으면 조금 있다가. 화면만 걸리면 그래도 예약(울릴 때 다시 봄) */
-    fun delayMin(c: Check): Int? = if (blockReason(c.copy(screenOn = false)) == null) READY_DELAY_MIN else null
+    fun delayMin(c: Check): Int? = if (blockReason(c.copy(screenOn = false, talking = false)) == null) READY_DELAY_MIN else null
 
     /** 하는 중에 멈춰야 하나: 화면이 켜짐·따뜻해짐·(충전 중이 아니면) 절전·배터리 30% 아래 */
     fun keepGoingBlock(l: PhoneLoad.State, screenOn: Boolean): String? = when {
@@ -87,10 +95,20 @@ object PreSummary {
         val db = NotificationDb.get(ctx)
         val from = Briefings.pendingFrom(db)
         val rules = AppFilter.rules(ctx)
-        val items = db.since(from).filter { rules.allows(it) }
+        val items = Briefings.pendingItems(db).filter { rules.allows(it) }
         val split = Briefings.splitForAi(ctx, items)
-        val chars = BriefingComposer.pendingCharsForModel(split.rest, load(ctx, from), from, split.groups)
-        return Check(chars, PhoneLoad.state(ctx), screenOn(ctx), BriefingService.active, Summarizer.get(ctx).hasModel())
+        val cache = load(ctx, from)
+        val chars = BriefingComposer.pendingCharsForModel(split.rest, cache, from, split.groups)
+        val quiet = quietOnly(split, items, System.currentTimeMillis())
+        val talking = chars >= MIN_CHARS && chars < BIG_CHARS && BriefingComposer.pendingCharsForModel(quiet.rest, cache, from, quiet.groups) < MIN_CHARS
+        return Check(chars, PhoneLoad.state(ctx), screenOn(ctx), BriefingService.active, Summarizer.get(ctx).hasModel(), talking)
+    }
+
+    /** 지금도 말이 오가는 방(마지막 말이 [QUIET_MS] 안)을 뺀 나머지 */
+    private fun quietOnly(split: Briefings.Split, items: List<NotiItem>, now: Long): Briefings.Split {
+        val busy = BriefingComposer.talkingRooms(items, now, QUIET_MS)
+        fun ok(n: NotiItem) = (n.pkg to n.roomOrTitle) !in busy
+        return split.copy(rest = split.rest.filter { ok(it) }, groups = split.groups.map { g -> g.copy(hits = g.hits.filter { ok(it.second) }) })
     }
 
     // ── 알람 ──
@@ -123,6 +141,7 @@ object PreSummary {
             null -> BriefingScheduler.startService(ctx, Intent(ctx, BriefingService::class.java)
                 .putExtra(BriefingService.EXTRA_LABEL, LABEL).putExtra(BriefingService.EXTRA_PRE, true), LABEL)
             "화면 켜짐" -> schedule(ctx, if (c.chars >= BIG_CHARS) BIG_RETRY_MIN else SCREEN_ON_RETRY_MIN)   // 많이 쌓였으면 화면이 꺼지는 틈을 더 자주 봄
+            TALKING -> schedule(ctx, QUIET_RETRY_MIN)   // 조용해지면 다시
             else -> Unit   // 다음 알림이 올 때 다시 살핌
         }
     }
@@ -135,16 +154,20 @@ object PreSummary {
         val from = Briefings.pendingFrom(db)
         val rules = AppFilter.rules(ctx)
         val cutoff = System.currentTimeMillis()
-        val split = Briefings.splitForAi(ctx, db.since(from).filter { it.time <= cutoff && rules.allows(it) })
-        val rest = split.rest
+        val items = Briefings.pendingItems(db).filter { it.time <= cutoff && rules.allows(it) }
+        val all = Briefings.splitForAi(ctx, items)
         val cache = load(ctx, from)
+        // 🤫 말이 오가는 방은 조용해진 뒤에 — 많이 쌓였으면 기다리지 않고 모두
+        val split = if (BriefingComposer.pendingCharsForModel(all.rest, cache, from, all.groups) >= BIG_CHARS) all else quietOnly(all, items, cutoff)
+        val rest = split.rest
         val before = BriefingComposer.pendingForModel(rest, cache, from, split.groups)
         if (before == 0) return "쌓인 것 없음"
         val start = System.currentTimeMillis()
         var rooms = 0
         Summarizer.get(ctx).summarize(rest, onStatus, cache = cache, since = from,
             onCached = { save(ctx, it); rooms++ },
-            extraStop = { keepGoingBlock(PhoneLoad.state(ctx), screenOn(ctx)) }, groups = split.groups)
+            extraStop = { keepGoingBlock(PhoneLoad.state(ctx), screenOn(ctx)) }, groups = split.groups,
+            replyAllowed = Briefings.roster(ctx), focus = Briefings.focusOn(ctx), before = Briefings.beforeOf(NotificationDb.get(ctx), from, ThreadMemo.load(ctx)))
         val after = BriefingComposer.pendingForModel(rest, load(ctx, from), from, split.groups)
         return "메시지 ${before - after}개 정리 · ${(System.currentTimeMillis() - start) / 1000}초" + if (after > 0) " · 남음 $after" else ""
     }

@@ -8,6 +8,9 @@ import org.junit.Test
 
 /** 요약 규칙: 대화방마다 세 줄, 짧은 한 마디는 모델 없이, 앱 알림은 AI 없이 건수 */
 class BriefingComposerTest {
+    // 이 시험들은 단톡방 AI 요약(요점·요청) 길을 봄 — 고르기만(pickLines)은 ChatContextTest 에서
+    @org.junit.Before fun off() { BriefingComposer.pickLines = false }
+    @org.junit.After fun on() { BriefingComposer.pickLines = true }
     private var t = 1_700_000_000_000L
     private fun kakao(room: String, who: String, text: String) = NotiItem(0, "com.kakao.talk", "카카오톡", who, text, t++ * 1, room)
     private fun app(name: String, pkg: String, title: String, text: String = "") = NotiItem(0, pkg, name, title, text, t++)
@@ -93,7 +96,9 @@ class BriefingComposerTest {
         val more = old + kakao("동학년방", "김부장", "마감이 목요일로 당겨졌어요")
         var prompt = ""
         val r = BriefingComposer.compose(more, ask = { prompt = it; "요점: 명단 마감이 목요일로 당겨짐\n요청: 목요일까지 명단 올려 달라고 함" }, cache = saved, since = since)
-        assertTrue(prompt, "금요일까지 명단 제출" in prompt && "목요일로 당겨졌어요" in prompt && "양식은 어디" !in prompt)
+        // 바로 앞 말 차례는 참고로 겹쳐 줌(꼬리 겹치기) — 새 메시지 칸(--- 사이)에는 새 메시지만
+        assertTrue(prompt, "금요일까지 명단 제출" in prompt && "목요일로 당겨졌어요" in prompt && "[바로 앞 대화" in prompt)
+        assertTrue(prompt, "양식은 어디" in prompt.substringBefore("---") && "양식은 어디" !in prompt.substringAfter("---"))
         assertTrue(r.people, r.people.contains("목요일로 당겨짐"))
         // 구간이 바뀌었거나(다음 요약 뒤) 메시지 수가 다르면(뺀 방·지운 알림) 버리고 처음부터
         assertEquals(0, BriefingComposer.pendingForModel(old, saved, since))
@@ -180,8 +185,12 @@ class BriefingComposerTest {
 
     @Test fun 한_사람의_여러_마디는_모델이_종합하고_한_마디만_원문() = runBlocking {   // 2026-11-23 선생님: 나열 말고 종합
         val items = listOf(kakao("", "도윤 아버님", "선생님 안녕하세요"), kakao("", "도윤 아버님", "내일 체험학습"), kakao("", "도윤 아버님", "도시락 싸야 하나요?"))
+        // 2026-11-24 선생님: 짧으면(합쳐 80자 이하) 원문 그대로 — AI 가 뜻을 바꾸지 않게
+        val short = BriefingComposer.compose(items, ask = { error("부르면 안 됨") })
+        assertTrue(short.people, short.people.contains("- 🙋 도윤 아버님") && short.people.contains("내일 체험학습 / 도시락 싸야 하나요?"))
+        val long = items.map { it.copy(text = it.text + " 그리고 준비물이랑 차량 시간도 같이 알려 주시면 좋겠어요") }
         var calls = 0
-        val r = BriefingComposer.compose(items, ask = { calls++; "요점: 내일 체험학습 도시락을 싸야 하는지 물음\n요청: 도시락 필요 여부 알려 달라고 함\n답장: 필요" })
+        val r = BriefingComposer.compose(long, ask = { calls++; "요점: 내일 체험학습 도시락을 싸야 하는지 물음\n요청: 도시락 필요 여부 알려 달라고 함\n답장: 필요" })
         assertEquals(1, calls)
         assertTrue(r.people, r.people.contains("- 🙋 도윤 아버님") && r.people.contains("도시락 필요 여부") && !r.people.contains(" / "))
         val one = BriefingComposer.compose(listOf(kakao("", "서윤 어머니", "2교시 후에 등교해도 될까요?"), kakao("", "서윤 어머니", "ㅎㅎ")), ask = { error("부르면 안 됨") })
@@ -215,7 +224,7 @@ class BriefingComposerTest {
 
     @Test fun 시간이_모자라면_중요한_방부터_정리하고_남은_방_수를_알려_준다() = runBlocking {
         val big = (1..40).map { i -> kakao("잡담방", "사람${i % 4}", "오늘 점심 뭐 먹을까요 $i " + "가".repeat(10)) }   // 가장 최근
-        val parent = listOf(kakao("", "민준 어머님", "선생님 내일 도시락 싸야 하나요?"), kakao("", "민준 어머님", "준비물도 알려 주세요"))
+        val parent = listOf(kakao("", "민준 어머님", "선생님 내일 체험학습 가는데 도시락 싸야 하나요? 물이랑 간식도 따로 챙겨야 하는지 궁금해요"), kakao("", "민준 어머님", "준비물도 알려 주세요 미리 사 두려고요 그리고 버스는 몇 시에 학교 앞에서 출발하는지도 궁금합니다"))
         val all = parent + big
         var calls = 0
         val r = BriefingComposer.compose(all, ask = { calls++; "요점: 정리\n요청: 없음" },
@@ -250,7 +259,8 @@ class BriefingComposerTest {
         // 읽는 순서: 묶음 → 업무 → 대화 → 앱
         val order = r.text
         assertTrue(order, order.indexOf("🤝 지인") < order.indexOf("💼 업무·일정"))
-        assertEquals(2, calls)   // 지인 한 사람(두 마디) + Gmail(두 건) — 캘린더 한 건은 AI 없이
+        assertEquals(0, calls)   // 메일은 보낸 사람: 제목 그대로, 지인 짧은 두 마디는 원문, 캘린더는 일정 그대로 — AI 없음(2026-11-24)
+        assertTrue(r.groups, r.groups.contains("토요일 등산 갈래? / 7시 출발"))
     }
 
     @Test fun 미리_요약_글자_수는_AI_가_읽는_만큼만_센다() {

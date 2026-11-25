@@ -117,10 +117,11 @@ class Summarizer private constructor(private val ctx: Context) {
                           replyAllowed: (BriefingComposer.Conversation) -> Boolean = { true },
                           cache: Map<String, BriefingComposer.Cached> = emptyMap(), since: Long = 0L,
                           onCached: (BriefingComposer.Cached) -> Unit = {}, extraStop: () -> String? = { null },
-                          groups: List<BriefingComposer.Group> = emptyList(), maxMillis: Long = MAX_MILLIS): BriefingComposer.Result =
+                          groups: List<BriefingComposer.Group> = emptyList(), maxMillis: Long = MAX_MILLIS, focus: Boolean = false,
+                          before: (BriefingComposer.Conversation) -> List<NotiItem> = { emptyList() }): BriefingComposer.Result =
         runLock.withLock {
             stopRequested = false; cutByTime = false
-            try { summarizeLocked(items, onStatus, replyAllowed, cache, since, onCached, extraStop, groups, maxMillis) } finally { stopRequested = false }
+            try { summarizeLocked(items, onStatus, replyAllowed, cache, since, onCached, extraStop, groups, maxMillis, focus, before) } finally { stopRequested = false }
         }
 
     /**
@@ -131,7 +132,8 @@ class Summarizer private constructor(private val ctx: Context) {
                                         replyAllowed: (BriefingComposer.Conversation) -> Boolean,
                                         cache: Map<String, BriefingComposer.Cached>, since: Long,
                                         onCached: (BriefingComposer.Cached) -> Unit, extraStop: () -> String?,
-                                        groups: List<BriefingComposer.Group>, maxMillis: Long): BriefingComposer.Result {
+                                        groups: List<BriefingComposer.Group>, maxMillis: Long, focus: Boolean,
+                                        before: (BriefingComposer.Conversation) -> List<NotiItem>): BriefingComposer.Result {
         val deadline = System.currentTimeMillis() + maxMillis
         var called = 0
         val result = BriefingComposer.compose(
@@ -146,7 +148,7 @@ class Summarizer private constructor(private val ctx: Context) {
                 }
             },
             replyAllowed = replyAllowed,
-            cache = cache, since = since, onCached = onCached, groups = groups,
+            cache = cache, since = since, onCached = onCached, groups = groups, focus = focus, before = before,
         )
         if (stopRequested && called == 0) throw StoppedException("중지했어요.")
         return result

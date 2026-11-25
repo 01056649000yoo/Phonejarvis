@@ -147,7 +147,7 @@ private fun WelcomeStep(vm: JarvisViewModel) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("톡은 쌤톡스가 지켜볼게요.\n선생님은 잠시 쉬세요.",
                 style = MaterialTheme.typography.titleLarge)
-            Bullet("학부모 연락, 학급 단톡, 일정 알림을 모아 두고")
+            Bullet("아는 사람 연락, 단톡방, 일정 알림을 모아 두고")
             Bullet("정한 시각에 AI가 할 일 중심으로 한 번에 정리해요")
             Bullet("모든 처리는 폰 안에서. 알림 내용이 인터넷으로 나가지 않아요")
         }

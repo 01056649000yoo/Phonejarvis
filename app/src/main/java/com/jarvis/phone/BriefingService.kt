@@ -105,7 +105,11 @@ class BriefingService : Service() {
                 return@launch
             }
             if (draftOnly) {
-                try { runCatching { Briefings.draftPending(this@BriefingService) { } } }
+                try {
+                    runCatching { Briefings.draftPending(this@BriefingService) { } }
+                    // 🗓 초안을 쓰는 사이 하루 정리 시각이 왔으면 이어서(2026-11-24 점검: 이 길에서는 그날 하루 정리가 빠졌다)
+                    if (dailyAfter) { dailyAfter = false; runCatching { Briefings.runDaily(this@BriefingService) } }
+                }
                 finally {
                     runCatching { Summarizer.get(this@BriefingService).release() }
                     if (wake.isHeld) wake.release()
@@ -161,8 +165,6 @@ class BriefingService : Service() {
                 // ✉️ 문자 답장 초안: 결과 알림을 보낸 뒤에(미리 준비 중이면 정각 알림 뒤 BriefingReceiver 가 따로)
                 if (!(prepare && !showWhenDone)) runCatching { Briefings.draftPending(this@BriefingService) { s -> Notifications.notify(this@BriefingService,
                     Notifications.ID_PROGRESS, Notifications.progress(this@BriefingService, s, title = title, quiet = true)) } }
-                // 🗓 이 요약 중에 하루 정리 시각이 왔으면 이어서
-                if (dailyAfter) { dailyAfter = false; Briefings.runDaily(this@BriefingService) }
             } catch (s: Summarizer.StoppedException) {
                 if (auto) AutoLog.add(this@BriefingService, label, "중지됨")
                 Notifications.notify(this@BriefingService, Notifications.ID_RESULT,
@@ -172,6 +174,8 @@ class BriefingService : Service() {
                 Notifications.notify(this@BriefingService, Notifications.ID_RESULT,
                     Notifications.result(this@BriefingService, "$label 실패", "${t.javaClass.simpleName}: ${t.message}"))
             } finally {
+                // 🗓 이 요약 중에 하루 정리 시각이 왔으면 이어서 — 요약이 실패·중지돼도(2026-11-24 점검: 예전엔 성공했을 때만 해서 그날 하루 정리가 빠졌다)
+                if (dailyAfter) { dailyAfter = false; runCatching { Briefings.runDaily(this@BriefingService) } }
                 // 백그라운드에서 수 GB 모델을 계속 들고 있지 않도록 내림
                 runCatching { Summarizer.get(this@BriefingService).release() }
                 runCatching { Backup.autoBackup(this@BriefingService) }   // 💾 하루 한 번 자동 백업
@@ -236,6 +240,24 @@ object Briefings {
     fun pendingFrom(db: NotificationDb, now: Long = System.currentTimeMillis()): Long =
         maxOf((db.lastBriefing()?.time ?: -1L) + 1, now - MAX_BACK_MS)
 
+    /**
+     * 🕳 빠지는 알림 막기(2026-11-24 선생님: 9시 55분에 온 문자가 요약에서 빠짐).
+     * 예전엔 '지난 요약 시각 다음부터'를 알림의 시각으로 잘랐다. 그런데 문자·카톡은 보낸 시각(알림 속 시각)으로 저장되고,
+     * 그 시각은 폰에 도착한 때보다 몇 초~2분 이를 수 있다 — 요약(특히 정각 5분 전 미리 준비)이 그 사이에 돌면
+     * 그 메시지는 이번 요약엔 아직 없고, 다음 요약엔 '지난 요약 시각보다 앞'이라 빠졌다.
+     * 이제 요약마다 맡은 마지막 알림 번호(uptoId)를 남기고, 다음 요약은 그 번호 다음에 저장된 알림을 모두 맡는다(시각은 넉넉히 거슬러 봄).
+     */
+    const val LATE_MS = 30 * 60_000L
+    fun pendingItems(db: NotificationDb, now: Long = System.currentTimeMillis(), uptoId: Long = Long.MAX_VALUE): List<NotiItem> {
+        val last = db.lastBriefing()
+        val from = pendingFrom(db, now)
+        return uncovered(db.since(if ((last?.uptoId ?: 0L) > 0) from - LATE_MS else from), from, last?.uptoId ?: 0L, uptoId)
+    }
+
+    /** 아직 어느 요약도 맡지 않은 알림(순수 — 시험): 지난 요약이 번호를 남겼으면 번호로, 예전 요약이면 시각으로 */
+    fun uncovered(items: List<NotiItem>, from: Long, afterId: Long, uptoId: Long = Long.MAX_VALUE): List<NotiItem> =
+        items.filter { it.id <= uptoId && if (afterId > 0) it.id > afterId else it.time >= from }
+
     /** 자동 브리핑·"지금 정리하기" 공용: 지난 요약 이후 새로 온 오늘 알림만 요약해 저장. */
     /**
      * 🗓 하루 정리: 아직 요약 안 한 알림이 있으면 먼저 요약(알림은 따로 안 보냄)한 뒤, 오늘 요약들을 합쳐 한 번 알림.
@@ -244,7 +266,7 @@ object Briefings {
     suspend fun runDaily(ctx: Context) {
         val db = NotificationDb.get(ctx)
         val rules = AppFilter.rules(ctx)
-        val pending = db.since(pendingFrom(db)).count { rules.allows(it) }
+        val pending = pendingItems(db).count { rules.allows(it) }
         if (pending > 0 && Summarizer.get(ctx).hasModel()) runCatching {
             val hm = "%02d:%02d".format(java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY), java.util.Calendar.getInstance().get(java.util.Calendar.MINUTE))
             run(ctx, "🌙 $hm 요약", pendingFrom(db), { s -> Notifications.notify(ctx, Notifications.ID_PROGRESS,
@@ -278,10 +300,12 @@ object Briefings {
 
         // 이 시각까지 온 알림을 이번 요약이 맡음. 요약하는 몇 분 사이에 온 알림은 다음 요약으로 넘어감.
         val cutoff = System.currentTimeMillis()
+        val uptoId = db.maxNotiId()   // 이 번호까지 저장된 알림을 이번 요약이 맡음(시각 말고 번호로 — pendingItems)
         val prevBriefing = db.lastBriefing()   // 알림 맨 위 '언제부터' 표시용(이번 요약을 저장하기 전)
         // 설정에서 뺀 앱·방은 요약에서도 제외 (뺀 방이라도 중요 키워드가 있으면 포함)
         val rules = AppFilter.rules(ctx)
-        val items = db.since(from).filter { it.time <= cutoff && rules.allows(it) }
+        // [from] 은 늘 pendingFrom(지난 요약 다음) — 어떤 알림을 맡을지는 번호로(pendingItems)
+        val items = pendingItems(db, cutoff, uptoId).filter { rules.allows(it) }
         if (items.isEmpty()) return Outcome("$label · 새 알림 없음", db.lastBriefing()?.let { b ->
             "${java.text.SimpleDateFormat("M/d HH:mm", java.util.Locale.KOREA).format(b.time)} ${b.label} 이후 새로 온 알림이 없어요."
         } ?: "지난 요약 이후 새로 온 알림이 없어요.")
@@ -301,20 +325,22 @@ object Briefings {
         // 🌡️ 폰이 뜨겁거나 배터리가 바닥이면 모델을 올리지 않고 AI 없이(대화방마다 최근 말 그대로)
         val load = PhoneLoad.state(ctx)
         val skipAi = PhoneLoad.skipAiReason(load)
+        val focus = focusOn(ctx)   // 🎯 중요한 대화만 요약(IDENTITY.md 원칙 2)
+        val before = beforeOf(db, from, ThreadMemo.load(ctx))   // 🧵 지난 요약 끝에서 이어진 대화 + 📝 방별 이어가기 메모(참고용)
         val ai = when {
             rest.isEmpty() && split.groups.isEmpty() -> null
-            skipAi != null -> BriefingComposer.compose(rest, ask = { "" }, replyAllowed = { c -> c.items.any { rules.mentionsRoster(it) } }, cache = cache, since = from, groups = split.groups)
+            skipAi != null -> BriefingComposer.compose(rest, ask = { "" }, replyAllowed = { c -> c.items.any { rules.mentionsRoster(it) } }, cache = cache, since = from, groups = split.groups, focus = focus, before = before)
             else -> {
                 // 2026-11-23 선생님: 알림이 100건 넘으면 요약이 중간에 끊김 — 정리한 방은 기억해 두고(캐시), 6분 안에 못 끝내면
                 // 지금까지 정리한 것을 먼저 알리고 남은 방을 이어서 마무리(중요한 방부터 정리하므로 먼저 간 알림에도 꼭 볼 것은 들어 있음)
                 val mem = cache.toMutableMap()
                 val allowed = { c: BriefingComposer.Conversation -> c.items.any { rules.mentionsRoster(it) } }
-                val first = summarizer.summarize(rest, onStatus, allowed, mem, from, onCached = { mem[it.key] = it }, groups = split.groups, maxMillis = FIRST_PASS_MS)
+                val first = summarizer.summarize(rest, onStatus, allowed, mem, from, onCached = { mem[it.key] = it }, groups = split.groups, maxMillis = FIRST_PASS_MS, focus = focus, before = before)
                 if (first.cutRooms > 0 && summarizer.cutByTime) {
                     val partial = (order(first.groups, keywordPart, first.work, first.people, first.apps) +
                         "\n\n(⏳ 남은 대화방 ${first.cutRooms}곳은 이어서 정리하고 있어요. 다 되면 이 알림이 바뀌어요)")
                     runCatching { onPartial("$label · 알림 ${items.size}건 (정리 중)", partial, cutoff) }
-                    summarizer.summarize(rest, onStatus, allowed, mem, from, onCached = { mem[it.key] = it }, groups = split.groups, maxMillis = SECOND_PASS_MS)
+                    summarizer.summarize(rest, onStatus, allowed, mem, from, onCached = { mem[it.key] = it }, groups = split.groups, maxMillis = SECOND_PASS_MS, focus = focus, before = before)
                 } else first
             }
         }
@@ -326,14 +352,31 @@ object Briefings {
         val text = ((order(ai?.groups ?: "", keywordPart, ai?.work ?: "", ai?.people ?: "", ai?.apps ?: "") + "\n\n" + Routine.line(split.quiet)).trim()
             .ifEmpty { "요약할 알림이 없어요." }) + (if (skipAi != null && rest.isNotEmpty()) "\n\n$skipAi" else "") + "\n\n($timing)"
         // time = 이번 요약이 덮은 마지막 시각 (다음 요약은 이 다음부터)
-        db.insertBriefing(Briefing(time = cutoff, fromTime = from, label = label, count = items.size, text = text))
+        db.insertBriefing(Briefing(time = cutoff, fromTime = from, label = label, count = items.size, text = text, uptoId = uptoId))
+        // 🗓 방별 하루 기록 — 하루 정리가 그날 모든 방을 모으는 재료(요약 글을 다시 읽지 않음)
+        runCatching { db.addRoomDays(SummarySchedule.startOfDay(cutoff), roomDays(ai, split, from, rules)) }
         PreSummary.clear(ctx)   // 이번 구간은 끝 — 다음 구간은 새로 미리 요약
+        // 📝 이번 구간의 안 풀린 물음·정해진 것을 방마다 적어 둠 — 다음 요약이 이어 볼 수 있게(AI 없이)
+        runCatching { ThreadMemo.update(ctx, BriefingComposer.memoConvs(rest, split.groups), cutoff) }
         onStatus("완료 (${(now - start) / 1000}초)")
         // 알림 맨 위에 이번 요약이 맡은 구간 — 앞선 요약(위젯·지금 정리하기·이전 시각)에 이미 들어간 메시지는 다시 나오지 않으므로
         val hm = java.text.SimpleDateFormat("M/d HH:mm", java.util.Locale.KOREA)
         val range = "🕘 " + (prevBriefing?.let { "${hm.format(it.time)} ${it.label} 뒤" } ?: hm.format(items.minOf { it.time })) +
             " ~ ${hm.format(cutoff)}에 온 알림"
         return Outcome("$label · 알림 ${items.size}건", range + "\n\n" + text, cutoff, timing)
+    }
+
+    /** 이번 요약 → 방별 하루 기록들(💬 대화방·👥 묶음·💼 업무·📦 앱 건수) */
+    fun roomDays(ai: BriefingComposer.Result?, split: Split, from: Long, rules: AppFilter.Rules): List<RoomDay.Entry> {
+        val roster = { c: BriefingComposer.Conversation -> c.items.any { rules.mentionsRoster(it) } }
+        fun imp(c: BriefingComposer.Conversation) = BriefingComposer.important(c, roster)
+        val out = mutableListOf<RoomDay.Entry>()
+        ai?.rooms?.forEach { out += RoomDay.of(it, RoomDay.TALK, imp(it.conv), from) }
+        ai?.cut?.forEach { out += RoomDay.ofCut(it, RoomDay.TALK, imp(it), from) }
+        ai?.groupRooms?.forEach { out += RoomDay.of(it, RoomDay.groupKind(it.conv), true, from) }
+        ai?.groupCut?.forEach { out += RoomDay.ofCut(it, RoomDay.groupKind(it), true, from) }
+        out += RoomDay.apps(split.quiet + split.rest.filterNot(BriefingComposer::isPerson))
+        return out
     }
 
     /** 읽는 순서(2026-11-23 선생님): 👥 사람 묶음 → ⭐ 키워드 → 💼 업무·일정 → 💬 대화 요약 → 📦 앱 알림(건수) */
@@ -349,19 +392,47 @@ object Briefings {
     fun splitForAi(ctx: Context, items: List<NotiItem>): Split {
         val keywords = AppFilter.rules(ctx).keywords
         val routine = Routine.keys(ctx); val muted = Routine.muted(ctx)
-        val (quiet, loud) = items.partition { Routine.isQuiet(it, routine, muted, keywords) }
         // 💼 지정한 업무·일정 앱(2026-11-23: 그 앱 알림만 AI 가 앱마다 요약 — 묶음 하나처럼, 미리 요약에도 같이)
         val isWorkApp = AppFilter.isWorkApp(ctx)
+        // 💼 업무 앱은 '정기 알림' 짐작으로 빼지 않음(2026-11-24 점검: 메일은 제목이 보낸 사람이라 매일 비슷한 시각에 메일을 주는 동료가
+        // 🔁 건수로만 남았다). 선생님이 직접 뺀 꼴은 업무 앱도 뺌
+        val (quiet, loud) = items.partition { Routine.isQuiet(it, if (isWorkApp(it.app, it.pkg)) emptySet() else routine, muted, keywords) ||
+            // 메일로 온 업체 안내(Google·OO은행·카드사…)는 💼 업무 요약에 넣지 않고 건수만(2026-11-24 점검 — 하루 정리에 Google Gemini 안내)
+            (isMail(it) && AdFilter.isBusinessName(it.title) && !AppFilter.hasRealKeyword(keywords, it.title, it.text, it.room)) }
         val workItems = loud.filter { isWorkApp(it.app, it.pkg) }
         val book = People.customBook(ctx)
         // 한 사람은 한 묶음에만(묶음 순서대로 먼저 맞는 곳) — 그 연락은 아래 대화 요약에 다시 나오지 않음
         // 메시지 앱의 사람 연락만(2026-11-23 선생님: 카카오페이가 지인으로 — 송금 알림 제목의 이름이 묶음 이름과 맞음)
-        val hits = (loud - workItems.toSet()).filter(BriefingComposer::isPerson)
+        // 단톡방에서 한 말은 그 방 대화 요약에 그대로(2026-11-24 선생님: 사람별로 떼어 모으니 대화 흐름이 사라져 엉뚱하게 이어 붙임) — 묶음 칸은 1:1 연락만
+        val hits = (loud - workItems.toSet()).filter(BriefingComposer::isPerson).filter { it.room.isEmpty() }
             .mapNotNull { n -> People.find(book, n, bodyToo = false)?.let { (g, name) -> Triple(g, name, n) } }
         val groups = hits.groupBy { it.first.id }.map { (_, l) -> BriefingComposer.Group(l.first().first.title, l.map { it.second to it.third }) } +
             listOfNotNull(workItems.takeIf { it.isNotEmpty() }?.let { w -> BriefingComposer.Group(BriefingComposer.WORK_TITLE, w.map { it.app to it }) })
         return Split(quiet, loud, workItems, groups, loud - workItems.toSet() - hits.map { it.third }.toSet())
     }
+
+    // ── 🎯 중요한 대화만 요약(2026-11-24, IDENTITY.md 원칙 2 — 기본 켬). 끄면 예전처럼 모든 방을 AI 로 ──
+    private fun prefs(ctx: Context) = ctx.getSharedPreferences("briefing", Context.MODE_PRIVATE)
+    fun focusOn(ctx: Context) = prefs(ctx).getBoolean("focus_talk", true)
+    fun setFocus(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("focus_talk", on).apply()
+    /** 명부·학부모 방·키워드·학생 이름이 나오는 대화인가 */
+    fun roster(ctx: Context): (BriefingComposer.Conversation) -> Boolean {
+        val rules = AppFilter.rules(ctx)
+        return { c -> c.items.any { rules.mentionsRoster(it) } }
+    }
+
+    /** 🧵 대화방마다 이번 구간(from) 바로 앞 30분 안의 같은 방 메시지 — 업무 앱(💼)은 빼고 */
+    fun beforeOf(db: NotificationDb, from: Long, memo: Map<String, List<BriefingComposer.Memo>> = emptyMap()): (BriefingComposer.Conversation) -> List<NotiItem> = { c ->
+        val n = c.items.firstOrNull()
+        if (n == null || from <= 0L || c.app == BriefingComposer.WORK_TITLE) emptyList()
+        // 📝 방별 이어가기 메모(오래된 물음·정해진 것) + 지난 구간 끝의 원문 — 어느 것이 이번 대화와 이어지는지는 BriefingComposer.linked 가 고름
+        else memo[BriefingComposer.keyOf(c)].orEmpty().filter { it.time < from }.map { NotiItem(0, n.pkg, n.app, it.who, it.text, it.time, n.room) } +
+            db.lastBefore(n.pkg, n.room, n.title, from, from - BriefingComposer.LINK_MS)
+    }
+
+    /** 메일 앱 알림인가(제목이 보낸 사람) — 캘린더 같은 다른 업무 앱은 제목이 일정 이름이라 업체 이름 거르기를 하지 않음 */
+    private val MAIL = Regex("(?i)(mail|메일|outlook|아웃룩)")
+    fun isMail(n: NotiItem) = MAIL.containsMatchIn(n.app + " " + n.pkg)
 
     /** ⏱ 48초 · 모델 불러오기 21초(GPU) · AI 2번 27초 — 어디서 시간이 드는지 실제 폰에서 보려고 */
     fun timingLine(totalMs: Long, s: Summarizer.Stats, thermal: Int? = null): String {
@@ -421,11 +492,22 @@ object Briefings {
     }
 
     /** 중요 키워드가 들어간 알림 목록 (최근 것부터 최대 10개). 없으면 빈 문자열. */
+    /**
+     * 업체가 보낸 웹 문자(택배·카드…)인가 — '[Web발신] [CJ대한통운_배송완료] …' (2026-11-24: 택배 문자가 ⭐ 키워드 알림에 올라옴).
+     * 학교·학부모가 보낸 웹 문자는 대괄호 이름이 업체가 아니라 그대로 둠
+     */
+    private val BRACKET = Regex("\\[([^\\]]{2,30})\\]")
+    fun isBusinessMms(text: String): Boolean = text.contains("Web발신") &&
+        BRACKET.findAll(text).any { m -> AdFilter.isBusinessName(m.groupValues[1].split('_', ' ').first().trim()) }
+    /** 문자 앱의 '<제목: …>'·'[Web발신]' 머리를 떼고 한 줄로 */
+    fun cleanMms(text: String): String = text.replace('\n', ' ').replace(Regex("<제목:\\s*([^>]*)>"), "$1")
+        .replace("[Web발신]", "").replace(Regex("\\s{2,}"), " ").trim()
+
     fun keywordSection(items: List<NotiItem>, keywords: List<String>): String {
         if (keywords.isEmpty()) return ""
         val fmt = java.text.SimpleDateFormat("HH:mm", java.util.Locale.KOREA)
         // 광고·자동 알림은 빼고, 키워드가 부르는 말(OO님)로만 든 것도 뺌(2026-11-23)
-        val hits = items.filter { AppFilter.hasRealKeyword(keywords, it.title, it.text, it.room) && !AdFilter.isAd(it.title, it.text) }
+        val hits = items.filter { AppFilter.hasRealKeyword(keywords, it.title, it.text, it.room) && !AdFilter.isAd(it.title, it.text) && !isBusinessMms(it.text) }
             .distinctBy { it.roomOrTitle to it.text }
             .takeLast(10).reversed()
         if (hits.isEmpty()) return ""
@@ -433,7 +515,7 @@ object Briefings {
             append("⭐ 키워드 알림 (${hits.size}건)\n")
             hits.forEach { n ->
                 val who = if (n.room.isNotEmpty() && n.room != n.title) "[${n.room}] ${n.title}" else n.title
-                append("- ${fmt.format(n.time)} $who: ${n.text.replace('\n', ' ').take(80)}\n")
+                append("- ${fmt.format(n.time)} $who: ${cleanMms(n.text).take(80)}\n")
             }
             append("\n")
         }

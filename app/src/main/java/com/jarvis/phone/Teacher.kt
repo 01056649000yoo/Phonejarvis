@@ -29,14 +29,41 @@ object Students {
         prefs(ctx).edit().putStringSet("students", names(ctx).toSet() - name).apply()
     }
 
-    /** 메시지에서 찾을 말: 성까지 쓴 이름, 그리고 세 글자 이름이면 성 뺀 이름("민준이", "민준 어머니"). */
-    fun terms(name: String): List<String> = listOf(name) + if (name.length == 3) listOf(name.substring(1)) else emptyList()
+    /**
+     * 메시지에서 찾을 말: 성까지 쓴 이름, 그리고 세 글자 이름이면 성 뺀 이름("민준이", "민준 어머니").
+     * 성 뺀 이름은 앞에 [GIVEN] 표시 — 낱말 안에 든 것은 이름으로 보지 않음(2026-11-24 점검: '지우'가 '지우개'에, '하나'가 '하나도'에 걸려
+     * ⭐ 키워드·🙋 답장할 연락·학생 기록에 엉뚱한 알림이 들어감). 흔한 낱말과 같은 이름([COMMON])은 성까지 쓴 이름으로만 찾음.
+     */
+    const val GIVEN = '\u0001'
+    fun terms(name: String): List<String> = listOf(name) +
+        if (name.length == 3 && name.substring(1) !in COMMON) listOf(GIVEN + name.substring(1)) else emptyList()
     fun allTerms(names: List<String>): List<String> = names.flatMap(::terms)
+
+    /** 흔한 낱말과 같은 두 글자 이름 */
+    private val COMMON = setOf("하나", "나라", "보람", "슬기", "사랑", "가을", "바다", "하늘", "이슬", "한결", "다솜", "소망", "마루", "나래",
+        "지혜", "미소", "노을", "우리", "기쁨", "은혜", "봄이", "여름", "겨울", "새봄", "한별", "아름", "다운", "고운", "진주", "보배", "구슬")
+    /** 이름 뒤에 오는 말(민준이·민준이가·민준 어머니·민준맘·민준 학생…) — 이것도 아니고 한글이 이어지면 낱말의 일부 */
+    private val AFTER = listOf("이", "가", "는", "은", "을", "를", "도", "의", "와", "과", "하고", "랑","한테", "에게", "네", "맘", "엄마", "아빠", "어머니", "어머님", "아버지", "아버님", "학생", "군", "양", "님")
+    private fun hangul(c: Char) = c in '가'..'힣'
+
+    /** [term] 이 [text] 에 나오는가 — 성 뺀 이름([GIVEN])은 낱말 안에 든 것은 빼고 */
+    fun occurs(term: String, text: String): Boolean {
+        if (term.isEmpty()) return false
+        if (term[0] != GIVEN) return term in text
+        val g = term.substring(1)
+        var i = text.indexOf(g)
+        while (i >= 0) {
+            val before = text.getOrNull(i - 1); val rest = text.substring(i + g.length)
+            if ((before == null || !hangul(before)) && (rest.isEmpty() || !hangul(rest[0]) || AFTER.any { rest.startsWith(it) })) return true
+            i = text.indexOf(g, i + 1)
+        }
+        return false
+    }
 
     /** 알림 한 건에 나온 학생들 */
     fun find(names: List<String>, n: NotiItem): List<String> {
         val hay = n.text + " " + n.title + " " + n.room
-        return names.filter { name -> terms(name).any { it in hay } }
+        return names.filter { name -> terms(name).any { occurs(it, hay) } }
     }
 
     /** 알림을 학생별 기록에 남김 (수집할 때·이름 추가할 때) */
@@ -412,6 +439,22 @@ object AdFilter {
      * 보낸 사람이 번호인데 휴대폰 번호(01…)가 아님 — 15xx·16xx·080·02 같은 대표번호, 짧은 번호(업체·기관 문자).
      * 저장한 연락처 이름으로 온 문자는 해당 없음(2026-11-23 선생님: 광고 문자가 답장할 연락에 들어감).
      */
+    /**
+     * 보낸 사람 이름이 은행·카드·핀테크·큰 회사(2026-11-23 하루 정리: 토스·IBK기업은행·뱅크샐러드·Google Gemini 가
+     * 이름으로 와서 대표번호 거르기를 지나 '오늘 있었던 일'을 차지함). 사람 이름과 겹치지 않게 끝말·정확한 상호만 본다.
+     */
+    private val BUSINESS_SUFFIX = Regex("(은행|뱅크|카드|증권|보험|캐피탈|생명|화재|페이|저축|금고|신협|농협|우체국|택배|통운|로지스|로지스틱스|물류|공사)$")
+    private val BUSINESS_NAME = Regex("^(토스|toss|뱅크샐러드|카카오뱅크|케이뱅크|쿠팡|배달의민족|요기요|당근마켓|네이버|카카오페이|삼성카드|현대카드|" +
+        "Google|Gemini|YouTube|Apple|Samsung|Microsoft|Netflix|LG U\\+|KT|SKT|SK텔레콤|" +
+        // 2026-11-24: 서비스가 보내는 자동 메일(GitHub 빌드 실패 메일이 💼 업무 요약에)
+        "GitHub|GitLab|Notion|Slack|Zoom|Figma|Canva|Vercel|Netlify|Discord|Facebook|Instagram|LinkedIn|Amazon|Naver|Kakao|카카오계정|Dropbox|Adobe|OpenAI|Anthropic)(\\b|\\s|$)", RegexOption.IGNORE_CASE)
+
+    fun isBusinessName(sender: String): Boolean {
+        val s = sender.trim().removePrefix("(광고)").removePrefix("[광고]").trim()
+        if (s.isEmpty()) return false
+        return BUSINESS_NAME.containsMatchIn(s) || BUSINESS_SUFFIX.containsMatchIn(s)
+    }
+
     fun isBusinessNumber(sender: String): Boolean {
         val s = sender.trim()
         if (s.isEmpty() || !s.all { it.isDigit() || it in "+-() #" }) return false

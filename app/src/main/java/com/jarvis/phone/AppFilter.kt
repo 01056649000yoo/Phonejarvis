@@ -101,7 +101,7 @@ object AppFilter {
         prefs(ctx).edit().putStringSet("keywords", words.map { it.trim() }.filter { it.isNotEmpty() }.toSet()).apply()
     }
     fun hasKeyword(words: Collection<String>, vararg texts: String): Boolean =
-        words.isNotEmpty() && texts.any { t -> words.any { it in t } }
+        words.isNotEmpty() && texts.any { t -> words.any { Students.occurs(it, t) } }   // 학생 성 뺀 이름은 낱말 안에 든 것은 빼고
 
     /** 부르는 말(OO님·OO 고객님·OO 회원님) — 광고·안내문이 이름을 부르는 꼴 */
     private val CALLING = Regex("^\\s?(님|고객님|회원님|고객 님|회원 님)")
@@ -110,6 +110,7 @@ object AppFilter {
      * 키워드가 한 번이라도 부르는 말이 아닌 자리에 나오면 맞음.
      */
     fun hasRealKeyword(words: Collection<String>, vararg texts: String): Boolean = words.any { w ->
+        if (w.firstOrNull() == Students.GIVEN) return@any texts.any { Students.occurs(w, it) }   // 학생 성 뺀 이름
         w.isNotEmpty() && texts.any { t ->
             var i = t.indexOf(w); var real = false
             while (i >= 0 && !real) { if (!CALLING.containsMatchIn(t.substring(i + w.length))) real = true; i = t.indexOf(w, i + w.length) }
@@ -188,7 +189,7 @@ object AppAdvisor {
     /** 메시지·SNS 앱 (카톡, 문자, 메신저, 밴드, 학급 소통 앱, SNS 등). 추천 목록에서 맨 위에 모아 보여 줌. */
     private val MESSAGING = listOf(
         "카카오톡", "kakao.talk", "카카오워크", "문자", "메시지", "messag", "sms", "메신저", "messenger",
-        "밴드", "band", "라인", "jp.naver.line", "텔레그램", "telegram", "whatsapp", "왓츠앱", "디스코드", "discord",
+        "밴드", "com.nhn.android.band", "jp.naver.line", "텔레그램", "telegram", "whatsapp", "왓츠앱", "디스코드", "discord",
         "slack", "슬랙", "teams", "팀즈", "인스타", "instagram", "페이스북", "facebook", "스레드", "threads",
         "트위터", "twitter", "com.twitter", "하이클래스", "hiclass", "클래스팅", "classting", "알리미", "학교종이",
     )

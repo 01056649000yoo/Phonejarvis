@@ -71,6 +71,10 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     fun setRestSkip(on: Boolean) = editSchedule { putBoolean("rest_skip", on) }
     fun setDaily(on: Boolean) = editSchedule { putBoolean("daily_on", on) }
     fun setDailyTime(m: Int) = editSchedule { putInt("daily_min", m) }
+    /** 🎯 중요한 대화만 요약 (기본 켬) */
+    var focusTalk by mutableStateOf(Briefings.focusOn(getApplication<Application>()))
+        private set
+    fun changeFocusTalk(on: Boolean) { Briefings.setFocus(getApplication<Application>(), on); focusTalk = on }
     fun setDndAuto(on: Boolean) { Dnd.setAuto(getApplication<Application>(), on); quietRev++ }
     fun setHideWhen(h: QuietMode.Hide) {
         quiet { putString("hide_when", h.name) }
@@ -118,7 +122,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         // 예전 판의 학생·학부모 묶음이 비어 있으면 없앤다(2026-11-21 고정 묶음 없앰)
-        People.dropEmptyBuiltIns(app)
+        People.dropEmptyBuiltIns(app)   // 예전 👪 학부모 명부는 보통 묶음(🤝 지인)으로
         // 이미 모델이 설치된 폰(예전 버전에서 업데이트)은 설치 안내를 건너뛰고 바로 메인 화면으로.
         // 앱을 켤 때 한 번만 확인 — 메인의 "바꾸기"로 안내를 다시 연 경우에는 건너뛰지 않음.
         // 단, 마지막 권한 단계(3) 중이었다면 그 단계에서 이어서 보여줌.
@@ -972,8 +976,8 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
             val names = Students.names(ctx)
             val parents = if (People.isVisible(ctx, "parents")) ParentAdvisor.contacts(ctx, items) else emptyList()
             val book = People.customBook(ctx)
-            val people = items.filter(BriefingComposer::isPerson)   // 메시지 앱의 사람 연락만(카카오페이 송금 알림 등은 빼고)
-                .mapNotNull { n -> People.find(book, n)?.let { (g, name) -> Triple(g, name, n) } }
+            val people = items.filter(BriefingComposer::isPerson).filter { it.room.isEmpty() }   // 메시지 앱의 사람 연락만(카카오페이 송금 알림 등은 빼고), 단톡방 말은 그 방에(2026-11-24)
+                .mapNotNull { n -> People.find(book, n, bodyToo = false)?.let { (g, name) -> Triple(g, name, n) } }   // 그 사람이 보낸 것만(내용에 이름만 나온 건 빼고)
                 .groupBy { it.first.id }.map { (_, l) -> l.first().first to l.map { it.second to it.third } }
             // 학생별 기록 채우기 (📌 할 일 자동 등록은 2026-11-23 에 없앰 — 직접 넣은 할 일만)
             items.forEach { runCatching { Students.log(ctx, names, it) } }
@@ -982,7 +986,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
             val done = ParentAdvisor.handled(ctx)
             // 아직 요약하지 않은 새 알림 수 ("지금 정리하기" 버튼)
             val from = Briefings.pendingFrom(db)
-            val pendingList = db.since(from).filter { rules.allows(it) }   // 어제 저녁 요약 뒤에 온 것도(오늘 0시로 자르지 않음)
+            val pendingList = Briefings.pendingItems(db).filter { rules.allows(it) }   // 어제 저녁 요약 뒤에 온 것도(오늘 0시로 자르지 않음)
             val pending = pendingList.size
             withContext(Dispatchers.Main) {
                 parentContacts = parents; handledKeys = done; pendingCount = pending; pendingItems = pendingList
@@ -1091,7 +1095,9 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     private var watching = false
 
     private fun startBackgroundSummary() {
-        BriefingScheduler.startNow(getApplication<Application>(), "정리 완료")
+        // 이름은 '📋 00:25 지금 정리' — 예전 '정리 완료'는 지난 요약·알림 제목에서 무슨 요약인지 알 수 없었다(2026-11-24)
+        val hm = java.text.SimpleDateFormat("HH:mm", java.util.Locale.KOREA).format(System.currentTimeMillis())
+        BriefingScheduler.startNow(getApplication<Application>(), "📋 $hm 지금 정리")
         bgRunning = true; stopping = false
         status = "🔔 새 알림 ${pendingCount}건을 백그라운드에서 정리하고 있어요. 다 되면 알림으로 알려 드릴게요."
         watchBackground()
@@ -1105,7 +1111,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
             while (!BriefingService.active && waited < 8000) { delay(250); waited += 250 }   // 서비스가 뜰 때까지
             while (BriefingService.active) delay(2000)
             watching = false
-            if (bgRunning) status = "✅ 정리가 끝났어요. 알림창과 아래 📚 브리핑 모음에서 볼 수 있어요."
+            if (bgRunning) status = "✅ 정리가 끝났어요. 알림창과 📚 지난 요약에서 볼 수 있어요."
             bgRunning = false; stopping = false
             lastBriefing = withContext(Dispatchers.IO) { db.lastBriefing() }
             refresh()
