@@ -173,8 +173,11 @@ class SummaryWidget : GlanceAppWidget() {
                                     }
                                     Spacer(GlanceModifier.width(6.dp))
                                     Column(GlanceModifier.defaultWeight()) {
-                                        if (l.who.isNotEmpty() || l.meta.isNotEmpty()) Row {
-                                            if (l.who.isNotEmpty()) Text(l.who, style = TextStyle(color = cream, fontWeight = FontWeight.Bold, fontSize = 12.sp), maxLines = 1)
+                                        // 보낸 사람은 배지(앱 요약 화면과 같게)
+                                        if (l.who.isNotEmpty() || l.meta.isNotEmpty()) Row(GlanceModifier.padding(bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            if (l.who.isNotEmpty()) Text(l.who, modifier = GlanceModifier.background(ColorProvider(Ssam.Canvas.copy(alpha = 0.16f)))
+                                                    .cornerRadius(6.dp).padding(horizontal = 6.dp, vertical = 1.dp),
+                                                style = TextStyle(color = cream, fontWeight = FontWeight.Bold, fontSize = 12.sp), maxLines = 1)
                                             if (l.meta.isNotEmpty()) Text(l.meta, modifier = if (l.who.isEmpty()) GlanceModifier else GlanceModifier.padding(start = 6.dp),
                                                 style = TextStyle(color = creamSoft, fontSize = 11.sp), maxLines = 1)
                                         }
