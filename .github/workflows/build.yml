@@ -60,7 +60,11 @@ jobs:
           {
             echo "쌤톡스 v$VERSION · $(TZ=Asia/Seoul date '+%Y-%m-%d %H:%M') (한국 시각) 업데이트"
             echo
-            echo "바뀐 점: $(printf '%s\n' "$HEAD_MSG" | head -n1 | sed 's/ (#[0-9]*)$//')"
+            # 바뀐 점: 앱 안의 업데이트 한 줄 소개(Screens.kt WHATS_NEW)의 앞 세 가지 — 커밋 제목은 개발용 문구라 안 씀(2026-11-25 선생님)
+            WHATS=$(grep -oP 'private const val WHATS_NEW = "\K[^"]+' app/src/main/java/com/jarvis/phone/Screens.kt \
+              | awk -F' · ' '{n=(NF<3?NF:3); s=$1; for(i=2;i<=n;i++) s=s" · "$i; print s}')
+            [ -n "$WHATS" ] || WHATS=$(printf '%s\n' "$HEAD_MSG" | head -n1 | sed 's/ (#[0-9]*)$//')
+            echo "바뀐 점: $WHATS"
           } > "$RUNNER_TEMP/release-notes.md"
 
       - name: Build APK (release)
