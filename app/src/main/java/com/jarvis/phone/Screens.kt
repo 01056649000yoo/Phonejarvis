@@ -148,22 +148,26 @@ fun JarvisScreen(vm: JarvisViewModel) {
     androidx.activity.compose.BackHandler(enabled = vm.page != null || vm.tab != JarvisViewModel.Tab.BRIEFING) { vm.back() }
     Scaffold(
         bottomBar = {
-            // 하단 메뉴: 흰 바탕 + 위 옅은 줄, 고른 칸은 새싹 연두 알약·굵은 글자
+            // 하단 메뉴: 흰 바탕 + 위 옅은 줄, 선 아이콘, 고른 칸은 세이지 알약·굵은 글자
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest, tonalElevation = 0.dp) {
                 listOf(
-                    Triple(JarvisViewModel.Tab.BRIEFING, "📋", "요약"),
-                    Triple(JarvisViewModel.Tab.ALERTS, "🔔", "알림"),
-                    Triple(JarvisViewModel.Tab.HISTORY, "📚", "지난 요약"),
-                    Triple(JarvisViewModel.Tab.SETTINGS, "⚙️", "설정"),
+                    Triple(JarvisViewModel.Tab.BRIEFING, R.drawable.ic_line_summary, "요약"),
+                    Triple(JarvisViewModel.Tab.ALERTS, R.drawable.ic_line_bell, "알림"),
+                    Triple(JarvisViewModel.Tab.HISTORY, R.drawable.ic_line_history, "지난 요약"),
+                    Triple(JarvisViewModel.Tab.SETTINGS, R.drawable.ic_line_settings, "설정"),
                 ).forEach { (t, icon, label) ->
                     val sel = vm.tab == t
                     NavigationBarItem(
                         selected = sel,
                         onClick = { if (!sel || vm.page != null) vm.selectTab(t) },   // 같은 탭을 또 누르면 아무것도 안 함
-                        icon = { Text(icon, fontSize = 22.sp) },
+                        // 이모지 대신 선 아이콘(2026-11-25 디자인)
+                        icon = { androidx.compose.material3.Icon(androidx.compose.ui.res.painterResource(icon), contentDescription = null,
+                            modifier = Modifier.size(24.dp)) },
                         label = { Text(label, fontWeight = if (sel) FontWeight.ExtraBold else FontWeight.Medium) },
                         colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
                             selectedTextColor = MaterialTheme.colorScheme.primary,
                             unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
                             indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
@@ -239,14 +243,14 @@ private fun Header(vm: JarvisViewModel, tab: JarvisViewModel.Tab) {
 private fun PageHeader(vm: JarvisViewModel, page: JarvisViewModel.Page) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         TextButton(onClick = { vm.back() }, contentPadding = PaddingValues(start = 0.dp, end = 8.dp)) {
-            Text("‹ " + (page.parent?.title ?: when (page.tab) {
+            Text("‹ " + (page.parent?.title?.let { menuIcon(it).second } ?: when (page.tab) {
                 JarvisViewModel.Tab.BRIEFING -> "요약"; JarvisViewModel.Tab.ALERTS -> "알림"
                 JarvisViewModel.Tab.HISTORY -> "지난 요약"; else -> "설정" }),
                 style = MaterialTheme.typography.titleMedium)
         }
     }
-    Text(if (page == JarvisViewModel.Page.GROUP) vm.currentGroup?.title ?: page.title else page.title,
-        style = MaterialTheme.typography.headlineSmall)
+    MenuTitle(if (page == JarvisViewModel.Page.GROUP) vm.currentGroup?.title ?: page.title else page.title,
+        style = MaterialTheme.typography.headlineSmall, iconSize = 26.dp, tint = MaterialTheme.colorScheme.primary)
 }
 
 /** 세부 화면 내용: 예전 설정 칸들을 그대로 씀 */
@@ -274,7 +278,7 @@ private fun MenuGroup(rows: List<Triple<String, String, () -> Unit>>) {
                 if (i > 0) HorizontalDivider(Modifier.padding(start = 16.dp))
                 Row(Modifier.fillMaxWidth().clickable(onClick = onClick).heightIn(min = 60.dp).padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically) {
-                    Text(title, Modifier.weight(1f), style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                    MenuTitle(title, Modifier.weight(1f))
                     Text(status, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1, modifier = Modifier.padding(start = 8.dp).widthIn(max = 140.dp),
                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
@@ -347,6 +351,7 @@ private fun BriefingTab(vm: JarvisViewModel) {
         },
         enabled = vm.hasModel && !vm.busy && !vm.bgRunning && vm.pendingCount > 0,
         modifier = Modifier.fillMaxWidth().height(56.dp),
+        colors = actionButtonColors(),  // 🟢 이 화면의 초록 단추는 이것 하나
     ) {
         Text(when {
             vm.bgRunning -> "백그라운드에서 정리 중… 다 되면 알림"
@@ -740,7 +745,7 @@ private fun BriefingCard(vm: JarvisViewModel, b: Briefing, primary: Boolean, onH
                 Column {
                     HorizontalDivider(Modifier.padding(vertical = Space.l), color = LocalContentColor.current.copy(alpha = 0.15f))
                     // 🧾 줄의 꼴을 보고 칸 제목·사람·시각·내용을 나눠 그림(SummaryText)
-                    SummaryText(b.text, accent = if (primary) Ssam.Sprout else MaterialTheme.colorScheme.primary)
+                    SummaryText(b.text, accent = if (primary) Ssam.GoldPale else MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.height(Space.s))
                     // 좁은 화면·큰 글자에서 '숨기기'가 한 글자씩 세로로 깨지던 것(2026-11-23): 모자라면 다음 줄로, 단추 글은 한 줄로
                     FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -818,8 +823,7 @@ private fun PeoplePage(vm: JarvisViewModel) {
         }
         Triple(g.title, if (n == 0) "비어 있음" else "${n}명") { vm.openGroup(g.id) }
     })
-    Button(onClick = { making = true }, modifier = Modifier.fillMaxWidth().height(52.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = Ssam.Sprout, contentColor = Ssam.Ink)) {
+    Button(onClick = { making = true }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
         Text("＋ 묶음 만들기", style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading())
     }
     val hidden = vm.groups.filter { it.hidden }
@@ -1276,8 +1280,7 @@ private fun StoragePage(vm: JarvisViewModel) {
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
-    Button(onClick = { vm.cleanNow() }, enabled = !vm.cleaning, modifier = Modifier.fillMaxWidth().height(52.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = Ssam.Sprout, contentColor = Ssam.Ink)) {
+    Button(onClick = { vm.cleanNow() }, enabled = !vm.cleaning, modifier = Modifier.fillMaxWidth().height(52.dp)) {
         Text(if (vm.cleaning) "정리하는 중…" else "🧹 지금 정리하기")
     }
     OutlinedButton(onClick = { confirmClear = true }, enabled = !vm.cleaning, modifier = Modifier.fillMaxWidth()) {
@@ -1396,8 +1399,8 @@ private fun TasksCard(vm: JarvisViewModel) {
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                     }
                     Surface(shape = MaterialTheme.shapes.small, color = when (label) {
-                        "지남", "오늘" -> Ssam.Blush.copy(alpha = 0.3f)
-                        "D-1" -> Ssam.Sprout.copy(alpha = 0.35f)
+                        "지남", "오늘" -> MaterialTheme.colorScheme.tertiaryContainer
+                        "D-1" -> Ssam.GoldPale.copy(alpha = 0.45f)
                         else -> MaterialTheme.colorScheme.surfaceVariant
                     }) { Text(label, Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelMedium) }
                 }
@@ -1528,7 +1531,7 @@ private fun BackupCard(vm: JarvisViewModel) {
             var changing by rememberSaveable { mutableStateOf(false) }
             if (!vm.hasBackupPin || changing) {
                 Text(if (vm.hasBackupPin) "🔒 새 백업 비밀번호" else "🔒 먼저 백업 비밀번호를 정해 주세요 (6자 이상, 글자·숫자)",
-                    style = MaterialTheme.typography.labelLarge, color = Ssam.Blush)
+                    style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(value = pinInput, onValueChange = { pinInput = it.filterNot { c -> c.isWhitespace() }.take(20) },
                         singleLine = true, placeholder = { Text("6자 이상") }, modifier = Modifier.weight(1f),
@@ -1550,8 +1553,7 @@ private fun BackupCard(vm: JarvisViewModel) {
             // 📤 다른 폰으로 보내기: 카톡 나에게·드라이브·메일 등으로 백업 파일 보내기
             val ctx = LocalContext.current
             Button(onClick = { ctx.startActivity(BackupShare.shareIntent(ctx)) }, modifier = Modifier.fillMaxWidth(),
-                enabled = vm.hasBackupPin,
-                colors = ButtonDefaults.buttonColors(containerColor = Ssam.Board, contentColor = Ssam.Chalk)) {
+                enabled = vm.hasBackupPin) {
                 Text("📤 다른 폰으로 보내기", style = MaterialTheme.typography.titleMedium)
             }
             Text("새 폰에서 받은 '쌤톡스_백업.json'을 열고 쌤톡스를 고르면 바로 불러와요.",
@@ -1749,9 +1751,9 @@ private fun SchedulePage(vm: JarvisViewModel) {
                     Text(if (sc.digest) "켜짐 · " + vm.nextRunText() else "꺼짐 · 알림은 평소처럼 오고, 요약은 📋 요약 탭에서 직접 눌러요.",
                         style = MaterialTheme.typography.bodyMedium)
                 }
-                // 진한 카드 위라 켜짐 막대가 카드 색과 같아 점만 보이던 것 → 연두 막대
+                // 진한(회갈색) 카드 위라 켜짐 막대가 카드 색과 같아 점만 보이던 것 → 크림 막대 + 회갈색 점
                 Switch(checked = sc.digest, onCheckedChange = { vm.setDigest(it) },
-                    colors = SwitchDefaults.colors(checkedTrackColor = Ssam.Sprout, checkedThumbColor = Ssam.Ink))
+                    colors = SwitchDefaults.colors(checkedTrackColor = Ssam.Canvas, checkedThumbColor = Ssam.Stone))
             }
             if (sc.digest) Text(
                 "모으는 앱(🌱 알림 앱 정리에서 켠 앱)의 알림은 도착하자마자 상태바에서 사라지고 쌤톡스에 모여요. 아래 정한 때 한 번에 요약해서 알려 드려요. " +

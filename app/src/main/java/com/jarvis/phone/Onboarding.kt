@@ -39,11 +39,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
-/** 쌤톡스 아이콘 (칠판 그린 바탕 + 눈 감은 말풍선 + 새싹). */
+/** 쌤톡스 아이콘 (칠판 그린 바탕 + 눈 감은 말풍선 + 새싹). 로고는 예전 색 그대로. */
 @Composable
 fun SsamLogo(size: Dp) {
     Box(
-        Modifier.size(size).clip(RoundedCornerShape(size * 0.24f)).background(Ssam.Board),
+        Modifier.size(size).clip(RoundedCornerShape(size * 0.24f)).background(Ssam.LogoBoard),
         contentAlignment = Alignment.Center,
     ) {
         // 적응형 아이콘 전경은 108 기준이라 조금 키워서 꽉 차게
@@ -125,7 +125,7 @@ private fun StepTitle(kicker: String, title: String) {
 
 @Composable
 private fun PrimaryButton(text: String, enabled: Boolean = true, onClick: () -> Unit) {
-    Button(onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth().height(56.dp)) {
+    Button(onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth().height(56.dp), colors = actionButtonColors()) {
         Text(text, style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading())
     }
 }
@@ -162,7 +162,7 @@ private fun WelcomeStep(vm: JarvisViewModel) {
         val fmt = remember { java.text.SimpleDateFormat("M/d HH:mm", java.util.Locale.KOREA) }
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("💾 지난 설정을 찾았어요", style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading())
+                MenuTitle("💾 지난 설정을 찾았어요", Modifier.asHeading(), style = MaterialTheme.typography.titleSmall, tint = MaterialTheme.colorScheme.primary)
                 Text("${fmt.format(found.first)} 저장 · ${found.second}", style = MaterialTheme.typography.bodyMedium)
                 Button(onClick = { vm.restoreBackup(null) }) { Text("불러오기") }
             }
@@ -172,7 +172,9 @@ private fun WelcomeStep(vm: JarvisViewModel) {
         color = MaterialTheme.colorScheme.primary)
     PrimaryButton("시작하기") { vm.onboardingStep = 1 }
     TextButton(onClick = { restorePicker.launch(arrayOf("application/json", "*/*")) }, modifier = Modifier.fillMaxWidth()) {
-        Text("💾 예전에 쓰던 설정 불러오기 (다운로드/쌤톡스의 백업 파일 고르기)")
+        // 선 아이콘 + 두 줄(이름 / 어디서 고르는지)
+        Icon(painterResource(R.drawable.ic_line_restore), contentDescription = null, modifier = Modifier.padding(end = 8.dp).size(20.dp))
+        Text("예전에 쓰던 설정 불러오기\n다운로드/쌤톡스의 백업 파일 고르기", textAlign = androidx.compose.ui.text.style.TextAlign.Center)
     }
     // 모델 파일을 이미 다운로드 폴더에 받아 둔 경우: 진단·다운로드를 건너뛰고 바로 가져오기로
     TextButton(onClick = { vm.onboardingStep = 2 }, modifier = Modifier.fillMaxWidth()) {
@@ -185,7 +187,7 @@ private fun WelcomeStep(vm: JarvisViewModel) {
 @Composable
 private fun Bullet(text: String) {
     Row(verticalAlignment = Alignment.Top) {
-        Box(Modifier.padding(top = 8.dp, end = 12.dp).size(6.dp).clip(CircleShape).background(Ssam.Sprout))
+        Box(Modifier.padding(top = 8.dp, end = 12.dp).size(6.dp).clip(CircleShape).background(Ssam.GoldPale))
         Text(text, style = MaterialTheme.typography.bodyLarge)
     }
 }
@@ -358,9 +360,9 @@ private fun GuideCard(
     Card(Modifier.fillMaxWidth()) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.Top) {
             Box(Modifier.size(32.dp).clip(CircleShape).background(
-                if (done) Ssam.Sprout else MaterialTheme.colorScheme.primary), contentAlignment = Alignment.Center) {
+                if (done) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.primary), contentAlignment = Alignment.Center) {
                 Text(if (done) "✓" else number, style = MaterialTheme.typography.titleSmall,
-                    color = if (done) Ssam.Ink else MaterialTheme.colorScheme.onPrimary)
+                    color = if (done) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onPrimary)
             }
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {

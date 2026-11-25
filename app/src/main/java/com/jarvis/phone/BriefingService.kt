@@ -558,7 +558,7 @@ object Notifications {
     fun progress(ctx: Context, text: String, showStop: Boolean = true, title: String = "쌤톡스가 알림을 정리하는 중", quiet: Boolean = false): Notification =
         NotificationCompat.Builder(ctx, if (quiet) CH_PREPARE else CH_PROGRESS)
             .setSmallIcon(R.drawable.ic_stat_ssamtox)
-            .setColor(0xFF2E4A3D.toInt())
+            .setColor(0xFF4A4741.toInt())  // 알림 강조색 = Ssam.Stone
             .setContentTitle(title)
             .setContentText(text)
             .setProgress(0, 0, true)
@@ -578,7 +578,7 @@ object Notifications {
         NotificationCompat.Builder(ctx, CH_BRIEFING)
             .setOnlyAlertOnce(quiet)   // 이미 보낸 요약을 고쳐 쓸 때는 다시 울리지 않음
             .setSmallIcon(R.drawable.ic_stat_ssamtox)
-            .setColor(0xFF2E4A3D.toInt())
+            .setColor(0xFF4A4741.toInt())  // 알림 강조색 = Ssam.Stone
             .setContentTitle(title)
             .setContentText(body.lineSequence().firstOrNull { it.isNotBlank() && !it.startsWith("🕘") } ?: body)   // 접힌 알림엔 구간 줄 말고 내용
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
@@ -589,7 +589,7 @@ object Notifications {
             .setPublicVersion(
                 NotificationCompat.Builder(ctx, CH_BRIEFING)
                     .setSmallIcon(R.drawable.ic_stat_ssamtox)
-                    .setColor(0xFF2E4A3D.toInt())
+                    .setColor(0xFF4A4741.toInt())  // 알림 강조색 = Ssam.Stone
                     .setContentTitle("쌤톡스")
                     .setContentText("새 브리핑이 있어요 · 잠금을 풀면 볼 수 있어요")
                     .build()
