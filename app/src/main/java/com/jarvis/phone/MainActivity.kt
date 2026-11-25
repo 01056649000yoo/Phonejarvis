@@ -344,6 +344,18 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         private set
     fun closeMyNamesTip() { prefs.edit().putBoolean("my_names_tip_closed", true).apply(); myNamesTipClosed = true }
 
+    /** 📖 설치 방법 페이지(docs/install.html) — 브라우저로 열기·공유(앱은 인터넷 권한이 없어 직접 열지 않음) */
+    private val INSTALL_GUIDE = "https://ssamtox.xn--9y2br3k43n.kr/install.html"
+    fun openInstallGuide() {
+        runCatching { getApplication<Application>().startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(INSTALL_GUIDE))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+    }
+    fun shareInstallGuide() {
+        val send = Intent(Intent.ACTION_SEND).setType("text/plain")
+            .putExtra(Intent.EXTRA_TEXT, "쌤톡스 — 단톡방 알림을 폰 안 AI가 한 장으로 요약해 주는 앱이에요. 설치 방법은 여기 차례대로 따라 하면 돼요: $INSTALL_GUIDE")
+        runCatching { getApplication<Application>().startActivity(Intent.createChooser(send, "설치 링크 보내기").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+    }
+
     /** 📦 예전 쌤톡스(com.jarvis.phone)가 아직 설치돼 있나 — 두 앱이 함께 있으면 알림을 두 번 모음(2026-11-25 패키지 이름 바꿈) */
     val oldAppInstalled: Boolean get() = getApplication<Application>().let { a -> a.packageName != OLD_PACKAGE &&
         runCatching { a.packageManager.getPackageInfo(OLD_PACKAGE, 0); true }.getOrDefault(false) }
@@ -1038,6 +1050,40 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ── 🔎 받아 둔 모델 자동 찾기(2026-11-25 선생님: 파일 고르기 창에서 찾기 힘듦) ──
+    /** 여러 개 찾았을 때 고를 목록(하나면 바로 가져옴) */
+    var foundModels by mutableStateOf<List<java.io.File>>(emptyList())
+        private set
+    /** '모든 파일 접근'을 켜러 설정에 다녀오는 중 — 돌아오면(onResume) 바로 찾기 */
+    private var findAfterGrant = false
+    private fun hasAllFiles() = android.os.Environment.isExternalStorageManager()
+    fun findModels() {
+        val ctx = getApplication<Application>()
+        if (!hasAllFiles()) {
+            findAfterGrant = true
+            status = "🔎 '모든 파일 접근'에서 쌤톡스를 켜고 돌아오면 바로 찾아요. (다운로드 폴더의 모델 파일을 읽는 데만 써요)"
+            val pkg = android.net.Uri.parse("package:${ctx.packageName}")
+            runCatching { ctx.startActivity(Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, pkg).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                .recoverCatching { ctx.startActivity(Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            return
+        }
+        status = "🔎 받아 둔 모델을 찾는 중…"
+        viewModelScope.launch {
+            val ext = android.os.Environment.getExternalStorageDirectory()
+            val roots = listOf(android.os.Environment.DIRECTORY_DOWNLOADS, android.os.Environment.DIRECTORY_DOCUMENTS)
+                .map { android.os.Environment.getExternalStoragePublicDirectory(it) } + ext
+            val found = withContext(Dispatchers.IO) { ModelFinder.scan(roots, selectedModel.fileName) }
+            when {
+                found.isEmpty() -> status = "🔎 다운로드 폴더에서 모델 파일(.litertlm)을 찾지 못했어요. ① 다운로드 시작으로 받거나, 다운로드가 끝났는지 확인해 주세요."
+                found.size == 1 -> { status = "🔎 찾았어요: ${found[0].name}"; importModel(android.net.Uri.fromFile(found[0])) }
+                else -> { status = "🔎 모델 파일을 ${found.size}개 찾았어요. 가져올 것을 고르세요."; foundModels = found }
+            }
+        }
+    }
+    fun pickFoundModel(f: java.io.File?) { foundModels = emptyList(); if (f != null) importModel(android.net.Uri.fromFile(f)) }
+    /** 설정에서 '모든 파일 접근'을 켜고 돌아왔을 때 */
+    fun onResumeFind() { if (findAfterGrant && hasAllFiles()) { findAfterGrant = false; findModels() } }
+
     /**
      * 사용자가 고른 .litertlm 파일을 앱 내부 저장소로 복사 (E4B 약 3.7GB, 2~3분).
      * 화면을 나가도 취소되지 않도록 앱 전역 스코프에서 실행.
@@ -1234,6 +1280,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume(); vm.refresh()
+        vm.onResumeFind()   // 🔎 '모든 파일 접근'을 켜고 돌아왔으면 받아 둔 모델 바로 찾기
         AppScope.main.launch { SummaryWidget.refresh(this@MainActivity) }   // 🏠 앱에서 바꾼 것이 위젯에도
     }
 

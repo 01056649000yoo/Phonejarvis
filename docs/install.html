@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>쌤톡스 설치 방법</title>
+<meta name="description" content="쌤톡스 APK 받기부터 Play 프로텍트 차단 풀기, 알림 접근 켜기까지 — 차례대로 따라 하면 5분이면 끝나요.">
+<meta property="og:title" content="쌤톡스 설치 방법">
+<meta property="og:description" content="Play 프로텍트 '앱 차단됨'이 떠도 괜찮아요. 차례대로 따라 하세요.">
+<meta name="theme-color" content="#F7F1E8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#19191C" media="(prefers-color-scheme: dark)">
+<script>
+  // 카톡·네이버·인스타 등 앱 안 브라우저는 APK 다운로드를 막음 → 폰 기본 브라우저로 다시 열기 (index.html 과 같음)
+  (function () {
+    var ua = navigator.userAgent || "", here = location.href;
+    if (/KAKAOTALK/i.test(ua)) {
+      location.href = "kakaotalk://web/openExternal?url=" + encodeURIComponent(here);
+    } else if (/Line\//i.test(ua) && here.indexOf("openExternalBrowser=1") < 0) {
+      location.href = here + (here.indexOf("?") < 0 ? "?" : "&") + "openExternalBrowser=1";
+    }
+    window.__inApp = /KAKAOTALK|NAVER\(inapp|Instagram|FBAN|FBAV|Line\/|DaumApps|everytimeApp|; wv\)/i.test(ua);
+  })();
+</script>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='24' fill='%232E4A3D'/%3E%3Cpath d='M36 30H64A16 16 0 0 1 80 46V56A16 16 0 0 1 64 72H45L31 82L34 70.5A16 16 0 0 1 20 56V46A16 16 0 0 1 36 30Z' fill='%23F6F1E4'/%3E%3Cpath d='M64.5 19C65 11.5 73 8.5 80 10C78.5 17.5 71.5 21 64.5 19Z' fill='%239BD18B'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Jua&family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* index.html 과 같은 색(앱 Theme.kt·DESIGN.md): 종이 크림 바탕 · 흰 카드 · 회갈색 · 칠판 그린은 '앱 받기'에만 */
+  :root {
+    --bg: #F7F1E8; --fg: #1C1B1A; --muted: #5F5C56; --card: #FFFFFF; --line: #E1DCD3; --soft: #EFE8DC;
+    --action: #2E4A3D; --on-action: #FFFFFF; --em: #6B443D; --olive: #5C6F5D; --warn-bg: #F0E2D6; --warn-fg: #6B443D;
+    --ok-bg: #E6E9D9; --ok-fg: #224228; --num-bg: #4A4741; --num-fg: #F7F1E8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #19191C; --fg: #F7F1E8; --muted: #A8A5A0; --card: #232326; --line: #38373A; --soft: #29292C;
+      --em: #DDBE78; --warn-bg: #3A2C22; --warn-fg: #E9C9A8; --ok-bg: #2F332B; --ok-fg: #CED4B8; --num-bg: #F7F1E8; --num-fg: #232326;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #19191C; --fg: #F7F1E8; --muted: #A8A5A0; --card: #232326; --line: #38373A; --soft: #29292C;
+    --em: #DDBE78; --warn-bg: #3A2C22; --warn-fg: #E9C9A8; --ok-bg: #2F332B; --ok-fg: #CED4B8; --num-bg: #F7F1E8; --num-fg: #232326;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.7 "Noto Sans KR", system-ui, sans-serif; word-break: keep-all; }
+  .wrap { max-width: 680px; margin: 0 auto; padding: 0 16px 64px; }
+  a { color: inherit; }
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 0 8px; }
+  .brand { display: inline-flex; align-items: center; gap: 10px; font-family: "Jua", sans-serif; font-size: 22px; text-decoration: none; }
+  .brand svg { flex: none; }
+  .top a.back { font-size: 14px; color: var(--muted); }
+  h1 { font-size: clamp(26px, 6vw, 34px); line-height: 1.3; margin: 24px 0 8px; letter-spacing: -0.01em; }
+  .lead { color: var(--muted); margin: 0 0 20px; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 52px; padding: 0 24px;
+         border-radius: 999px; font-weight: 600; font-size: 16px; text-decoration: none; border: 0; cursor: pointer; }
+  .btn.primary { background: var(--action); color: var(--on-action); }
+  .btn.ghost { background: none; border: 1px solid var(--line); color: var(--fg); }
+  .toc { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 24px; padding: 0; list-style: none; }
+  .toc a { display: inline-block; padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; text-decoration: none; background: var(--card); }
+  .step { position: relative; background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 20px 18px 18px 64px; margin: 0 0 14px; }
+  .step .n { position: absolute; left: 18px; top: 20px; width: 32px; height: 32px; border-radius: 50%; background: var(--num-bg); color: var(--num-fg);
+             display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; }
+  .step h2 { font-size: 18px; line-height: 1.45; margin: 3px 0 8px; }
+  .step p, .step li { color: var(--fg); }
+  .step p { margin: 8px 0 0; }
+  .step ol, .step ul { margin: 8px 0 0; padding-left: 20px; }
+  .step li { margin: 2px 0; }
+  .path { display: inline; font-weight: 600; }
+  .say { display: block; margin: 10px 0 0; padding: 10px 14px; border-radius: 12px; background: var(--soft); font-size: 14px; color: var(--muted); }
+  .say b { color: var(--fg); }
+  .warn { margin: 12px 0 0; padding: 12px 14px; border-radius: 12px; background: var(--warn-bg); color: var(--warn-fg); font-size: 14.5px; }
+  .ok { margin: 12px 0 0; padding: 12px 14px; border-radius: 12px; background: var(--ok-bg); color: var(--ok-fg); font-size: 14.5px; }
+  .tag { display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: .04em; padding: 2px 8px; border-radius: 999px; background: var(--warn-bg); color: var(--warn-fg); margin-left: 6px; vertical-align: 2px; }
+  h3.sec { font-size: 15px; color: var(--muted); font-weight: 600; margin: 32px 0 12px; letter-spacing: .02em; }
+  details { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; margin: 0 0 10px; }
+  details summary { cursor: pointer; font-weight: 600; }
+  details p, details ol { margin: 10px 0 0; }
+  .inapp { background: var(--warn-bg); color: var(--warn-fg); padding: 14px 16px; border-radius: 16px; margin: 12px 0 0; font-size: 14.5px; }
+  .inapp .btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .foot { margin-top: 40px; font-size: 13px; color: var(--muted); }
+  @media (min-width: 640px) { .wrap { padding: 0 24px 80px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <a class="brand" href="./"><svg width="30" height="30" viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" rx="24" fill="#2E4A3D"/><path d="M36 30H64A16 16 0 0 1 80 46V56A16 16 0 0 1 64 72H45L31 82L34 70.5A16 16 0 0 1 20 56V46A16 16 0 0 1 36 30Z" fill="#F6F1E4"/><path d="M64.5 19C65 11.5 73 8.5 80 10C78.5 17.5 71.5 21 64.5 19Z" fill="#9BD18B"/></svg>쌤톡스</a>
+    <a class="back" href="./">쌤톡스 소개 ›</a>
+  </div>
+
+  <div class="inapp" id="inapp" hidden>
+    <b>앱 안 브라우저에서는 다운로드가 막혀요</b><br>
+    크롬이나 삼성 인터넷으로 열어 주세요. 안 되면 오른쪽 위 ⋮ → "다른 브라우저로 열기"를 누르세요.
+    <div class="btns">
+      <a class="btn primary" id="openChrome" href="#">크롬으로 열기</a>
+      <button class="btn ghost" id="copyUrl" type="button">주소 복사</button>
+    </div>
+  </div>
+
+  <h1>쌤톡스 설치 방법</h1>
+  <p class="lead">Play 스토어가 아닌 곳에서 받는 앱이라 안드로이드가 몇 번 확인을 물어요. 차례대로 따라 하면 5분이면 끝나요.
+    <b>Play 프로텍트 '앱 차단됨'이 떠도 괜찮아요</b> — 3번을 보세요.</p>
+
+  <ul class="toc" aria-label="바로 가기">
+    <li><a href="#s1">1 받기</a></li>
+    <li><a href="#s2">2 출처 허용</a></li>
+    <li><a href="#s3">3 Play 프로텍트</a></li>
+    <li><a href="#s4">4 처음 열기</a></li>
+    <li><a href="#s5">5 알림 접근</a></li>
+    <li><a href="#update">업데이트</a></li>
+    <li><a href="#help">안 될 때</a></li>
+  </ul>
+
+  <section class="step" id="s1">
+    <span class="n">1</span>
+    <h2>폰의 크롬(또는 삼성 인터넷)으로 APK 받기</h2>
+    <a class="btn primary" id="getApk" href="https://github.com/01056649000yoo/Phonejarvis/releases/latest/download/SsamTox.apk">쌤톡스 APK 받기 · 무료</a>
+    <p>다운로드가 끝나면 알림창이나 <span class="path">내 파일 → 다운로드</span>에서 <b>SsamTox.apk</b>를 눌러요.</p>
+    <span class="say">카톡에서 링크를 열었다면 다운로드가 막혀요. 위 노란 안내의 <b>크롬으로 열기</b>를 누르세요.</span>
+  </section>
+
+  <section class="step" id="s2">
+    <span class="n">2</span>
+    <h2>"출처를 알 수 없는 앱" → 이 출처 허용</h2>
+    <p>처음 한 번 이런 창이 떠요.</p>
+    <span class="say">"보안상의 이유로 휴대전화에서 이 출처의 알 수 없는 앱을 설치할 수 없습니다"</span>
+    <ol>
+      <li><b>설정</b>을 눌러요</li>
+      <li><b>이 출처 허용</b>(또는 "권한 허용")을 켜요</li>
+      <li>뒤로 가서 <b>설치</b>를 눌러요</li>
+    </ol>
+  </section>
+
+  <section class="step" id="s3">
+    <span class="n">3</span>
+    <h2>Play 프로텍트 "앱 차단됨"이 뜨면 <span class="tag">대부분 떠요</span></h2>
+    <span class="say">"앱 차단됨 — 이 앱에서 <b>민감한 정보에 대한 액세스 권한</b>을 요청할 수 있습니다. 이로 인해 신원 도용이나 금융 사기 위험이 높아질 수 있습니다."</span>
+    <p>쌤톡스는 알림을 모으려고 <b>알림 접근</b> 권한을 쓰는데, 안드로이드는 Play 스토어 밖에서 받은 앱이 이 권한을 쓰면 일단 막아요. 이 창에는 '그래도 설치' 단추가 없어서, <b>잠깐 검사를 끄고 설치한 뒤 다시 켜요</b>.</p>
+    <ol>
+      <li>차단 창은 <b>확인</b>으로 닫아요</li>
+      <li><b>Play 스토어</b> 앱 → 오른쪽 위 <b>내 프로필 사진</b> → <b>Play 프로텍트</b></li>
+      <li>오른쪽 위 <b>톱니(설정)</b> → <b>Play 프로텍트로 앱 검사</b>를 꺼요</li>
+      <li>다시 <b>SsamTox.apk</b>를 눌러 <b>설치</b>해요</li>
+      <li>설치가 끝나면 <b>Play 프로텍트로 앱 검사를 다시 켜요</b> ← 꼭!</li>
+    </ol>
+    <div class="ok"><b>왜 안심해도 되나요?</b> 쌤톡스는 <b>인터넷 권한이 아예 없는 앱</b>이라 알림 내용을 폰 밖으로 보낼 수 없어요. 요약하는 AI도 폰 안에서만 돌아요. 개발자도 Google 개발자 인증에 등록돼 있어요.</div>
+    <div class="warn">'그래도 설치'가 보이는 경고("안전하지 않을 수 있는 앱" 등)라면 <b>세부정보 → 그래도 설치</b>로 넘어가면 돼요. 검사를 끌 필요가 없어요.</div>
+  </section>
+
+  <section class="step" id="s4">
+    <span class="n">4</span>
+    <h2>쌤톡스를 열고 안내대로 진행</h2>
+    <p>폰 진단 → AI 모델 받기 → 권한 → 위젯 순서로 안내해요.</p>
+    <ul>
+      <li><b>AI 모델</b>은 약 3.7GB라 <b>와이파이</b>에서 받아요. 받은 뒤 앱 안의 <b>파일 선택</b>으로 넣어요</li>
+      <li><b>알림 표시</b>를 허용해야 정리가 끝났을 때 알려 드려요</li>
+    </ul>
+  </section>
+
+  <section class="step" id="s5">
+    <span class="n">5</span>
+    <h2>알림 접근 켜기 — 회색으로 잠겨 있으면</h2>
+    <p>앱의 <b>설정 열기</b>를 눌러 쌤톡스를 켜요. 스위치가 <b>회색으로 잠겨</b> 눌리지 않으면("제한된 설정"):</p>
+    <ol>
+      <li>폰 <b>설정 → 애플리케이션 → 쌤톡스</b></li>
+      <li>오른쪽 위 <b>⋮</b> → <b>제한된 설정 허용</b> (지문·비밀번호 확인)</li>
+      <li>다시 알림 접근에서 쌤톡스를 켜요</li>
+    </ol>
+    <div class="ok">이제 끝! 알림 접근을 켠 <b>뒤에</b> 오는 알림부터 모아요.</div>
+  </section>
+
+  <h3 class="sec" id="update">업데이트할 때</h3>
+  <details open>
+    <summary>같은 링크로 받아 덮어 설치하면 돼요</summary>
+    <p>위 <b>APK 받기</b>로 받아 <b>업데이트</b>를 누르면 설정과 모은 알림은 그대로예요. 이미 설치된 앱을 업데이트할 때는 보통 3번의 차단이 뜨지 않아요 — 혹시 뜨면 3번처럼 잠깐 검사를 끄고 업데이트하세요.</p>
+    <p>지금 버전은 쌤톡스 → <b>설정</b> 맨 위에서 볼 수 있어요. <a href="./#download">최신 버전 확인 ›</a></p>
+  </details>
+
+  <h3 class="sec" id="help">안 될 때</h3>
+  <details>
+    <summary>"패키지가 손상된 것 같습니다" · "앱이 설치되지 않았습니다"</summary>
+    <p>다운로드가 덜 됐을 수 있어요. 다운로드 폴더의 SsamTox.apk를 지우고 와이파이에서 다시 받아 보세요. 그래도 안 되면 저장 공간이 넉넉한지(1GB 이상) 확인하세요.</p>
+  </details>
+  <details>
+    <summary>Play 스토어에 Play 프로텍트 메뉴가 안 보여요</summary>
+    <p>Play 스토어 오른쪽 위 프로필 사진을 누르면 나오는 목록에 있어요. 삼성 폰은 <b>설정 → 보안 및 개인정보 보호 → 앱 보안</b>에도 있어요(폰마다 이름이 조금 달라요).</p>
+  </details>
+  <details>
+    <summary>알림이 모이지 않아요</summary>
+    <ol>
+      <li>알림 접근에서 쌤톡스가 켜져 있는지(5번)</li>
+      <li>폰 <b>설정 → 배터리 → 백그라운드 사용 제한</b>에서 쌤톡스를 <b>절전 예외 앱</b>에 넣기</li>
+      <li>앱의 <b>알림 앱 정리</b>에서 그 앱이 '모으기'로 되어 있는지</li>
+    </ol>
+  </details>
+  <details>
+    <summary>정한 시각에 요약이 늦게 와요</summary>
+    <p>쌤톡스 → 설정 → 모아서 알림에서 <b>알람 및 리마인더</b>를 허용해 주세요.</p>
+  </details>
+
+  <p class="foot">쌤톡스는 알림을 폰 밖으로 보내지 않아요 · 인터넷 권한 없음 · 회원가입·광고 없음<br>
+    이 페이지 주소를 동료 선생님께 보내면 그대로 따라 할 수 있어요.</p>
+</div>
+<script>
+  // 앱 안 브라우저면 안내 띠를 보여 주고, 다운로드 단추도 크롬으로 넘김 (index.html 과 같음)
+  (function () {
+    if (!window.__inApp) return;
+    var page = location.href.split("#")[0];
+    var toChrome = function (url) {
+      var u = new URL(url);
+      return "intent://" + u.host + u.pathname + u.search + "#Intent;scheme=https;package=com.android.chrome;" +
+             "S.browser_fallback_url=" + encodeURIComponent(url) + ";end";
+    };
+    document.getElementById("inapp").hidden = false;
+    document.getElementById("openChrome").href = toChrome(page);
+    document.getElementById("copyUrl").onclick = function () {
+      var b = this;
+      (navigator.clipboard ? navigator.clipboard.writeText(page) : Promise.reject())
+        .then(function () { b.textContent = "복사됐어요! 크롬에 붙여 넣으세요"; })
+        .catch(function () { prompt("이 주소를 복사해서 크롬에 붙여 넣으세요", page); });
+    };
+    document.querySelectorAll('a[href$="SsamTox.apk"]').forEach(function (a) { a.href = toChrome(a.href); });
+  })();
+</script>
+</body>
+</html>

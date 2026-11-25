@@ -291,8 +291,30 @@ private fun DownloadStep(vm: JarvisViewModel) {
 
     StepTitle("3 / 4 · AI 모델 받기", "${m.title} (${m.sizeText})")
     Text("쌤톡스는 개인정보 보호를 위해 인터넷 권한이 없어요. 그래서 모델은 브라우저로 받고, 받은 파일을 앱으로 가져와요.\n" +
-         "이미 다운로드 폴더에 받아 뒀다면 ①은 건너뛰고 ② 파일 선택만 하면 돼요. (E4B·E2B 어느 파일이든 알아서 인식해요)",
+         "이미 받아 뒀다면 아래 🔎 자동으로 찾기를 누르세요. (E4B·E2B 어느 파일이든 알아서 인식해요)",
         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+    // 🔎 받아 둔 모델 자동 찾기(2026-11-25 선생님) — 다운로드 폴더 등에서 .litertlm 을 찾아 바로 가져옴
+    if (!vm.hasModel) Button(onClick = { vm.findModels() }, enabled = !vm.busy, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+        Text("🔎 받아 둔 모델 자동으로 찾기")
+    }
+    if (!vm.hasModel) Text("처음 한 번 '모든 파일 접근'을 켜 달라고 해요 — 다운로드 폴더의 모델 파일을 읽는 데만 써요. 켜기 싫으면 ② 파일 선택으로 직접 골라도 돼요.",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    if (vm.status.startsWith("🔎")) Text(vm.status, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+    if (vm.foundModels.isNotEmpty()) AlertDialog(
+        onDismissRequest = { vm.pickFoundModel(null) },
+        title = { Text("가져올 모델 고르기") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                vm.foundModels.forEach { f ->
+                    TextButton(onClick = { vm.pickFoundModel(f) }, modifier = Modifier.fillMaxWidth()) {
+                        Text("${f.name}\n${f.length() / 1_000_000}MB · ${f.parentFile?.name ?: ""}", textAlign = TextAlign.Start, modifier = Modifier.fillMaxWidth())
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { vm.pickFoundModel(null) }) { Text("닫기") } },
+    )
 
 
     // 데이터 요금 안내 (앱은 네트워크 상태 권한도 없어서 직접 확인하지 않고 사용자에게 물어봄)

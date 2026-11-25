@@ -17,9 +17,10 @@
     <!-- 수업 중·퇴근 모드에서 소리까지 끄기 (방해 금지, 선생님이 설정에서 허용할 때만) -->
     <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
 
-    <!-- '모든 파일 접근'(MANAGE_EXTERNAL_STORAGE)은 쓰지 않음(2026-11-22 Play 스토어 준비) — 모델·백업은 파일 고르기, 자동 백업은 MediaStore.
-         라이브러리가 끼워 넣어도 제거 -->
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:node="remove" />
+    <!-- '모든 파일 접근'(MANAGE_EXTERNAL_STORAGE): 받아 둔 AI 모델(.litertlm)을 다운로드 폴더에서 자동으로 찾을 때만(2026-11-25 선생님).
+         Play 스토어에 올리지 않고 APK 로만 배포하기로 해서 다시 씀. 켜지 않아도 '파일 선택'으로 가져올 수 있음 -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" tools:node="remove" />
 
     <!-- 알림 앱 정리: 이 메시지 앱들이 설치돼 있는지만 확인 (알림이 0건일 때 안내하려고) -->
