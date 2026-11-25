@@ -327,6 +327,7 @@ private fun BriefingTab(vm: JarvisViewModel) {
         },
         enabled = vm.hasModel && !vm.busy && !vm.bgRunning && vm.pendingCount > 0,
         modifier = Modifier.fillMaxWidth().height(56.dp),
+        colors = actionButtonColors(),  // 🔵 이 화면의 파란 단추는 이것 하나
     ) {
         Text(when {
             vm.bgRunning -> "백그라운드에서 정리 중… 다 되면 알림"
@@ -717,7 +718,7 @@ private fun BriefingCard(vm: JarvisViewModel, b: Briefing, primary: Boolean, onH
                 Column {
                     HorizontalDivider(Modifier.padding(vertical = Space.l), color = LocalContentColor.current.copy(alpha = 0.15f))
                     // 🧾 줄의 꼴을 보고 칸 제목·사람·시각·내용을 나눠 그림(SummaryText)
-                    SummaryText(b.text, accent = if (primary) Ssam.Sprout else MaterialTheme.colorScheme.primary)
+                    SummaryText(b.text, accent = if (primary) Ssam.GoldPale else MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.height(Space.s))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         TextButton(onClick = { vm.openBriefingDetail(b) }) {
@@ -792,8 +793,7 @@ private fun PeoplePage(vm: JarvisViewModel) {
         }
         Triple(g.title, if (n == 0) "비어 있음" else "${n}명") { vm.openGroup(g.id) }
     })
-    Button(onClick = { making = true }, modifier = Modifier.fillMaxWidth().height(52.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = Ssam.Sprout, contentColor = Ssam.Ink)) {
+    Button(onClick = { making = true }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
         Text("＋ 묶음 만들기", style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading())
     }
     val hidden = vm.groups.filter { it.hidden }
@@ -1214,8 +1214,7 @@ private fun StoragePage(vm: JarvisViewModel) {
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
-    Button(onClick = { vm.cleanNow() }, enabled = !vm.cleaning, modifier = Modifier.fillMaxWidth().height(52.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = Ssam.Sprout, contentColor = Ssam.Ink)) {
+    Button(onClick = { vm.cleanNow() }, enabled = !vm.cleaning, modifier = Modifier.fillMaxWidth().height(52.dp)) {
         Text(if (vm.cleaning) "정리하는 중…" else "🧹 지금 정리하기")
     }
     OutlinedButton(onClick = { confirmClear = true }, enabled = !vm.cleaning, modifier = Modifier.fillMaxWidth()) {
@@ -1327,7 +1326,7 @@ private fun ParentCard(vm: JarvisViewModel) {
                     Text(c.displayName + if (c.link == null && c.students.isNotEmpty()) " · 🧒 " + c.students.joinToString(", ") else "",
                         style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading().weight(1f), maxLines = 1)
                     Surface(shape = MaterialTheme.shapes.small,
-                        color = if (c.category.needsReply) Ssam.Blush.copy(alpha = 0.25f) else Ssam.Sprout.copy(alpha = 0.3f)) {
+                        color = if (c.category.needsReply) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.secondaryContainer) {
                         Text(c.category.label + if (c.category.needsReply) " · 답장 필요" else "",
                             Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall)
                     }
@@ -1404,8 +1403,8 @@ private fun TasksCard(vm: JarvisViewModel) {
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                     }
                     Surface(shape = MaterialTheme.shapes.small, color = when (label) {
-                        "지남", "오늘" -> Ssam.Blush.copy(alpha = 0.3f)
-                        "D-1" -> Ssam.Sprout.copy(alpha = 0.35f)
+                        "지남", "오늘" -> MaterialTheme.colorScheme.tertiaryContainer
+                        "D-1" -> Ssam.GoldPale.copy(alpha = 0.45f)
                         else -> MaterialTheme.colorScheme.surfaceVariant
                     }) { Text(label, Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelMedium) }
                 }
@@ -1536,7 +1535,7 @@ private fun BackupCard(vm: JarvisViewModel) {
             var changing by rememberSaveable { mutableStateOf(false) }
             if (!vm.hasBackupPin || changing) {
                 Text(if (vm.hasBackupPin) "🔒 새 백업 비밀번호" else "🔒 먼저 백업 비밀번호를 정해 주세요 (6자 이상, 글자·숫자)",
-                    style = MaterialTheme.typography.labelLarge, color = Ssam.Blush)
+                    style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(value = pinInput, onValueChange = { pinInput = it.filterNot { c -> c.isWhitespace() }.take(20) },
                         singleLine = true, placeholder = { Text("6자 이상") }, modifier = Modifier.weight(1f),
@@ -1558,8 +1557,7 @@ private fun BackupCard(vm: JarvisViewModel) {
             // 📤 다른 폰으로 보내기: 카톡 나에게·드라이브·메일 등으로 백업 파일 보내기
             val ctx = LocalContext.current
             Button(onClick = { ctx.startActivity(BackupShare.shareIntent(ctx)) }, modifier = Modifier.fillMaxWidth(),
-                enabled = vm.hasBackupPin,
-                colors = ButtonDefaults.buttonColors(containerColor = Ssam.Board, contentColor = Ssam.Chalk)) {
+                enabled = vm.hasBackupPin) {
                 Text("📤 다른 폰으로 보내기", style = MaterialTheme.typography.titleMedium)
             }
             Text("새 폰에서 받은 '쌤톡스_백업.json'을 열고 쌤톡스를 고르면 바로 불러와요.",
@@ -1757,9 +1755,9 @@ private fun SchedulePage(vm: JarvisViewModel) {
                     Text(if (sc.digest) "켜짐 · " + vm.nextRunText() else "꺼짐 · 알림은 평소처럼 오고, 요약은 📋 요약 탭에서 직접 눌러요.",
                         style = MaterialTheme.typography.bodyMedium)
                 }
-                // 진한 카드 위라 켜짐 막대가 카드 색과 같아 점만 보이던 것 → 연두 막대
+                // 진한(회갈색) 카드 위라 켜짐 막대가 카드 색과 같아 점만 보이던 것 → 크림 막대 + 회갈색 점
                 Switch(checked = sc.digest, onCheckedChange = { vm.setDigest(it) },
-                    colors = SwitchDefaults.colors(checkedTrackColor = Ssam.Sprout, checkedThumbColor = Ssam.Ink))
+                    colors = SwitchDefaults.colors(checkedTrackColor = Ssam.Canvas, checkedThumbColor = Ssam.Stone))
             }
             if (sc.digest) Text(
                 "모으는 앱(🌱 알림 앱 정리에서 켠 앱)의 알림은 도착하자마자 상태바에서 사라지고 쌤톡스에 모여요. 아래 정한 때 한 번에 요약해서 알려 드려요. " +

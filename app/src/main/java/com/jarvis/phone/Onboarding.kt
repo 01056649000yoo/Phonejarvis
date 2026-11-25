@@ -39,11 +39,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
-/** 쌤톡스 아이콘 (칠판 그린 바탕 + 눈 감은 말풍선 + 새싹). */
+/** 쌤톡스 아이콘 (칠판 그린 바탕 + 눈 감은 말풍선 + 새싹). 로고는 예전 색 그대로. */
 @Composable
 fun SsamLogo(size: Dp) {
     Box(
-        Modifier.size(size).clip(RoundedCornerShape(size * 0.24f)).background(Ssam.Board),
+        Modifier.size(size).clip(RoundedCornerShape(size * 0.24f)).background(Ssam.LogoBoard),
         contentAlignment = Alignment.Center,
     ) {
         // 적응형 아이콘 전경은 108 기준이라 조금 키워서 꽉 차게
@@ -125,7 +125,7 @@ private fun StepTitle(kicker: String, title: String) {
 
 @Composable
 private fun PrimaryButton(text: String, enabled: Boolean = true, onClick: () -> Unit) {
-    Button(onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth().height(56.dp)) {
+    Button(onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth().height(56.dp), colors = actionButtonColors()) {
         Text(text, style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading())
     }
 }
@@ -185,7 +185,7 @@ private fun WelcomeStep(vm: JarvisViewModel) {
 @Composable
 private fun Bullet(text: String) {
     Row(verticalAlignment = Alignment.Top) {
-        Box(Modifier.padding(top = 8.dp, end = 12.dp).size(6.dp).clip(CircleShape).background(Ssam.Sprout))
+        Box(Modifier.padding(top = 8.dp, end = 12.dp).size(6.dp).clip(CircleShape).background(Ssam.GoldPale))
         Text(text, style = MaterialTheme.typography.bodyLarge)
     }
 }
@@ -358,9 +358,9 @@ private fun GuideCard(
     Card(Modifier.fillMaxWidth()) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.Top) {
             Box(Modifier.size(32.dp).clip(CircleShape).background(
-                if (done) Ssam.Sprout else MaterialTheme.colorScheme.primary), contentAlignment = Alignment.Center) {
+                if (done) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.primary), contentAlignment = Alignment.Center) {
                 Text(if (done) "✓" else number, style = MaterialTheme.typography.titleSmall,
-                    color = if (done) Ssam.Ink else MaterialTheme.colorScheme.onPrimary)
+                    color = if (done) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onPrimary)
             }
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
