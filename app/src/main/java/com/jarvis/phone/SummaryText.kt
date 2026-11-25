@@ -85,30 +85,15 @@ internal fun isSectionHead(line: String): Boolean {
 }
 
 
-/**
- * 🖋 이모지 → 선 아이콘 (2026-11-25 디자인): 저장된 요약 글은 그대로 두고 화면에서만 바꿔 그린다.
- * 앱이 정한 칸 이모지만 바꾸고, 사람이 고른 묶음 이모지(👔 등)는 그대로.
- */
-internal val LINE_ICONS = listOf(
-    "👥" to R.drawable.ic_line_people, "👪" to R.drawable.ic_line_people, "💬" to R.drawable.ic_line_chat,
-    "🙋" to R.drawable.ic_line_reply, "⭐" to R.drawable.ic_line_star, "💼" to R.drawable.ic_line_work,
-    "📦" to R.drawable.ic_line_box, "📌" to R.drawable.ic_line_flag, "🗓" to R.drawable.ic_line_calendar,
-)
-private val INNER_MARKS = listOf("🚫", "🔁") + LINE_ICONS.map { it.first }
+/** 칸 제목 앞 앱 이모지 → (아이콘, 나머지 글). 이모지 규칙은 Emoji.kt 한 곳에 */
+internal fun splitIcon(line: String): Pair<Int?, String> = Emoji.lead(line)
 
-/** 설정 목록·설정 화면 제목의 이모지 → 선 아이콘 */
-internal val MENU_ICONS = listOf(
-    "🌱" to R.drawable.ic_line_filter, "🔕" to R.drawable.ic_line_quiet, "🏠" to R.drawable.ic_line_widget,
-    "🤖" to R.drawable.ic_line_chip, "💾" to R.drawable.ic_line_restore, "🧹" to R.drawable.ic_line_storage,
-    "👥" to R.drawable.ic_line_people, "⭐" to R.drawable.ic_line_star,
-)
+/** 줄에 🙋(답할 것) 표시가 있으면 떼어 내고 true(순수 — 시험) */
+internal fun splitAsk(line: String): Pair<Boolean, String> =
+    if ("🙋" in line) true to line.replace("🙋 ", "").replace("🙋", "") else false to line
 
-/** 메뉴 이름 앞 이모지를 아이콘으로(순수 — 시험): (아이콘, 이모지 뗀 이름). 모르는 이모지(사람이 고른 묶음 등)면 (null, 그대로) */
-internal fun menuIcon(title: String): Pair<Int?, String> {
-    val t = title.replace("\uFE0F", "")
-    val hit = MENU_ICONS.firstOrNull { t.startsWith(it.first) } ?: return null to title
-    return hit.second to t.removePrefix(hit.first).trimStart()
-}
+/** 메뉴 이름 앞 이모지 → (아이콘, 이모지 뗀 이름) */
+internal fun menuIcon(title: String): Pair<Int?, String> = Emoji.lead(title)
 
 /** 메뉴 이름: 아는 이모지는 선 아이콘으로, 나머지는 글 그대로 */
 @Composable
@@ -122,20 +107,6 @@ fun MenuTitle(title: String, modifier: Modifier = Modifier, style: androidx.comp
     }
 }
 
-/** 칸 제목 앞 이모지를 떼어 낸다(순수 — 시험): (앞 이모지, 나머지 글). 글 사이 칸 표시 이모지도 지움. 모르는 이모지면 (null, 그대로) */
-internal fun splitIcon(line: String): Pair<String?, String> {
-    val t = line.trimStart().replace("\uFE0F", "")
-    val key = LINE_ICONS.firstOrNull { t.startsWith(it.first) }?.first ?: return null to line
-    var rest = t.removePrefix(key).trimStart()
-    INNER_MARKS.forEach { rest = rest.replace("$it ", "").replace(it, "") }
-    return key to rest
-}
-
-/** 줄에 🙋(답할 것) 표시가 있으면 떼어 내고 true(순수 — 시험) */
-internal fun splitAsk(line: String): Pair<Boolean, String> =
-    if ("🙋" in line) true to line.replace("🙋 ", "").replace("🙋", "") else false to line
-
-private fun iconRes(key: String): Int = LINE_ICONS.first { it.first == key }.second
 
 @Composable
 fun SummaryText(text: String, modifier: Modifier = Modifier, accent: Color = MaterialTheme.colorScheme.primary) {
@@ -154,7 +125,7 @@ fun SummaryText(text: String, modifier: Modifier = Modifier, accent: Color = Mat
                             val count = Regex("""\s*\(([^)]*)\)\s*$""").find(plain)
                             val title = count?.let { plain.removeRange(it.range) } ?: plain
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (icon != null) Icon(painterResource(iconRes(icon)), contentDescription = null, tint = accent,
+                            if (icon != null) Icon(painterResource(icon), contentDescription = null, tint = accent,
                                 modifier = Modifier.padding(end = Space.s).size(18.dp))
                             Text(buildAnnotatedString {
                                 withStyle(SpanStyle(color = accent, fontWeight = FontWeight.Bold)) { append(title.substringBefore(" — ")) }
@@ -173,23 +144,23 @@ fun SummaryText(text: String, modifier: Modifier = Modifier, accent: Color = Mat
                                 else Box(Modifier.padding(top = 9.dp, end = Space.m).size(5.dp).background(accent.copy(alpha = 0.7f), CircleShape))
                                 Column {
                                     if (l.who.isNotEmpty() || l.meta.isNotEmpty()) Text(buildAnnotatedString {
-                                        withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { append(l.who) }
+                                        withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { append(Emoji.strip(l.who)) }
                                         if (l.meta.isNotEmpty()) withStyle(SpanStyle(color = muted)) { append(if (l.who.isEmpty()) l.meta else "  ${l.meta}") }
                                     }, style = MaterialTheme.typography.labelLarge)
-                                    Text(l.body, style = MaterialTheme.typography.bodyMedium)
+                                    Text(Emoji.strip(l.body), style = MaterialTheme.typography.bodyMedium)
                                     // 🗓 구간별 요약(3층): 눌러서 펼침
                                     if (details.isNotEmpty()) {
                                         var open by rememberSaveable(line) { mutableStateOf(false) }
                                         Text(if (open) "▾ 구간별 요약 접기" else "▸ 구간별 요약 ${details.size}개",
                                             style = MaterialTheme.typography.labelMedium, color = accent,
                                             modifier = Modifier.clickable { open = !open }.padding(vertical = 2.dp))
-                                        if (open) details.forEach { d -> Text(d, style = MaterialTheme.typography.bodySmall, color = muted) }
+                                        if (open) details.forEach { d -> Text(Emoji.strip(d), style = MaterialTheme.typography.bodySmall, color = muted) }
                                     }
                                 }
                             }
                         }
-                        line.startsWith("(") -> Text(line, style = MaterialTheme.typography.labelMedium, color = muted)
-                        else -> Text(line, style = MaterialTheme.typography.bodyMedium)
+                        line.startsWith("(") -> Text(Emoji.strip(line), style = MaterialTheme.typography.labelMedium, color = muted)
+                        else -> Text(Emoji.strip(line), style = MaterialTheme.typography.bodyMedium)
                     }
                 }
             }

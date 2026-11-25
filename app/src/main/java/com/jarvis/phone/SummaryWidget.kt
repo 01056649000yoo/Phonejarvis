@@ -37,7 +37,7 @@ import androidx.glance.layout.height
 import androidx.glance.layout.padding
 import androidx.glance.layout.width
 import androidx.glance.text.FontWeight
-import androidx.glance.text.Text
+import androidx.glance.text.Text as GlanceText
 import androidx.glance.text.TextStyle
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -120,7 +120,7 @@ class SummaryWidget : GlanceAppWidget() {
                     style = TextStyle(color = c.onPrimaryContainer, fontWeight = FontWeight.Bold, fontSize = 13.sp),
                 )
                 Spacer(GlanceModifier.width(6.dp))
-                Text("⚙️", modifier = GlanceModifier.background(c.secondaryContainer).cornerRadius(14.dp)
+                Text("설정", modifier = GlanceModifier.background(c.secondaryContainer).cornerRadius(14.dp)
                     .padding(horizontal = 10.dp, vertical = 7.dp).clickable(openSettings),
                     style = TextStyle(fontSize = 13.sp))
             }
@@ -198,3 +198,9 @@ class SummaryWidget : GlanceAppWidget() {
 class SummaryWidgetReceiver : GlanceAppWidgetReceiver() {
     override val glanceAppWidget: GlanceAppWidget = SummaryWidget()
 }
+
+
+/** 위젯 글자: 앱 이모지는 지우고 글만(2026-11-25 디자인 — 위젯은 Glance 라 아이콘을 글 사이에 넣기 어려움) */
+@androidx.compose.runtime.Composable
+private fun Text(text: String, modifier: GlanceModifier = GlanceModifier, style: TextStyle? = null, maxLines: Int = Int.MAX_VALUE) =
+    if (style == null) GlanceText(Emoji.strip(text), modifier, maxLines = maxLines) else GlanceText(Emoji.strip(text), modifier, style, maxLines)

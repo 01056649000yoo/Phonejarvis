@@ -559,8 +559,8 @@ object Notifications {
         NotificationCompat.Builder(ctx, if (quiet) CH_PREPARE else CH_PROGRESS)
             .setSmallIcon(R.drawable.ic_stat_ssamtox)
             .setColor(0xFF4A4741.toInt())  // 알림 강조색 = Ssam.Stone
-            .setContentTitle(title)
-            .setContentText(text)
+            .setContentTitle(Emoji.strip(title))
+            .setContentText(Emoji.strip(text))
             .setProgress(0, 0, true)
             .setOngoing(true)
             .setSilent(true)
@@ -579,9 +579,10 @@ object Notifications {
             .setOnlyAlertOnce(quiet)   // 이미 보낸 요약을 고쳐 쓸 때는 다시 울리지 않음
             .setSmallIcon(R.drawable.ic_stat_ssamtox)
             .setColor(0xFF4A4741.toInt())  // 알림 강조색 = Ssam.Stone
-            .setContentTitle(title)
-            .setContentText(body.lineSequence().firstOrNull { it.isNotBlank() && !it.startsWith("🕘") } ?: body)   // 접힌 알림엔 구간 줄 말고 내용
-            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            // 알림창에는 이모지 없이(2026-11-25 디자인) — 칸 표시 이모지는 지우고 글만
+            .setContentTitle(Emoji.strip(title))
+            .setContentText(Emoji.strip(body.lineSequence().firstOrNull { it.isNotBlank() && !it.startsWith("🕘") } ?: body))   // 접힌 알림엔 구간 줄 말고 내용
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body.lines().joinToString("\n") { Emoji.strip(it) }))
             .setContentIntent(openApp(ctx, briefingTime))
             .setAutoCancel(true)
             // 🔒 잠금화면에서는 내용(학부모·학생 이름)을 숨기고 "새 브리핑"만 보여 줌
