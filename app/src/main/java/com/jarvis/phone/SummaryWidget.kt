@@ -27,6 +27,13 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.compose.runtime.remember
 import androidx.glance.background
+import androidx.glance.ColorFilter
+import androidx.glance.Image
+import androidx.glance.ImageProvider
+import androidx.glance.layout.Box
+import androidx.glance.layout.size
+import androidx.glance.unit.ColorProvider
+import androidx.compose.ui.graphics.Color
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Column
 import androidx.glance.layout.Row
@@ -45,7 +52,7 @@ import java.util.Locale
 /**
  * 🏠 홈 화면 위젯 (v1.6.0, 2026-11-21 선생님: "위젯만 봐도 되게 — 요약 버튼, 나머지는 설정 버튼으로 앱에서").
  * 가장 최근 요약을 위젯 안에서 그대로 보여 주고(길면 위젯 안에서 스크롤),
- *   [📋 요약] = 지금까지 온 알림을 바로 요약(앱의 '지금 정리하기'와 같은 백그라운드 서비스) → 끝나면 위젯이 저절로 바뀜
+ *   [요약] = 지금까지 온 알림을 바로 요약(앱의 '지금 정리하기'와 같은 백그라운드 서비스) → 끝나면 위젯이 저절로 바뀜
  *   [⚙️]     = 앱을 열어 설정 탭으로
  * 위젯은 안드로이드가 30분보다 자주 새로 그리지 않아서, 요약 시작·끝·앱을 열 때 직접 새로 그린다.
  * 2026-11-23 선생님: "위젯에서는 온 알림이 모이게 하지 말고 요약만" — 모인 알림 수(요약 N·새 알림 N건)는 보이지 않고,
@@ -91,68 +98,103 @@ class SummaryWidget : GlanceAppWidget() {
             Intent(ctx, BriefingService::class.java).putExtra(BriefingService.EXTRA_LABEL, "위젯 요약"),
             isForegroundService = true,
         )
-        Column(GlanceModifier.fillMaxSize().background(c.surface).cornerRadius(20.dp).padding(12.dp)) {
-            // 맨 위: 이름·언제 요약했는지, 오른쪽에 [요약] [⚙️]
+        // 🎨 2026-11-25 디자인: 앱과 같게 — 크림 바탕·로고, 초록 '요약' 단추(로고 색), 세이지 동그란 설정 단추,
+        //    요약은 회갈색 카드 안에 칸 제목은 금색 선 아이콘, 답할 것은 답장 화살표
+        val gold = ColorProvider(Ssam.GoldPale)
+        val cream = c.onPrimaryContainer
+        val creamSoft = ColorProvider(Ssam.Canvas.copy(alpha = 0.72f))
+        val white = ColorProvider(Color.White)
+        Column(GlanceModifier.fillMaxSize().background(c.background).cornerRadius(24.dp).padding(14.dp)) {
+            // 맨 위: 로고·이름·언제 요약했는지, 오른쪽에 [요약] [설정]
             Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                // 앱 아이콘 그대로(적응형 아이콘 — 바탕 칠판 그린 + 말풍선)
+                Image(ImageProvider(R.mipmap.ic_launcher), contentDescription = "쌤톡스",
+                    modifier = GlanceModifier.size(36.dp).cornerRadius(10.dp).clickable(openApp))
+                Spacer(GlanceModifier.width(10.dp))
                 Column(GlanceModifier.defaultWeight().clickable(openApp)) {
-                    Text("쌤톡스", style = TextStyle(color = c.primary, fontWeight = FontWeight.Bold, fontSize = 15.sp))
+                    Text("쌤톡스", style = TextStyle(color = c.onSurface, fontWeight = FontWeight.Bold, fontSize = 15.sp))
                     Text(
                         s.briefing?.let { "${it.label} · ${fmt.format(it.time)} · 알림 ${it.count}건" } ?: "아직 요약이 없어요",
                         style = TextStyle(color = c.onSurfaceVariant, fontSize = 11.sp), maxLines = 1,
                     )
-                    // ⏰ 자동 요약이 돌았는지(새 알림이 없어 조용히 넘어간 것도)·다음 요약
+                    // 자동 요약이 돌았는지(새 알림이 없어 조용히 넘어간 것도)·다음 요약
                     val hm = SimpleDateFormat("HH:mm", Locale.KOREA)
                     val auto = s.lastAuto?.takeIf { a -> s.briefing == null || a.at > s.briefing.time + 60_000 || !a.result.startsWith("요약") }
                     val line = listOfNotNull(
-                        auto?.let { "⏰ ${hm.format(it.at)} 자동 · ${it.result}" },
+                        auto?.let { "${hm.format(it.at)} 자동 · ${it.result}" },
                         s.next?.let { n -> "다음 " + SimpleDateFormat(if (SummarySchedule.startOfDay(n.at) == SummarySchedule.startOfDay(System.currentTimeMillis())) "HH:mm" else "M/d HH:mm", Locale.KOREA).format(n.at) },
                     ).joinToString(" · ")
                     if (line.isNotEmpty()) Text(line, style = TextStyle(color = c.onSurfaceVariant, fontSize = 11.sp), maxLines = 1)
                 }
-                Text(
-                    when {
-                        s.running -> "요약 중…"
-                        else -> "📋 요약"
-                    },
-                    modifier = GlanceModifier.background(c.primaryContainer).cornerRadius(14.dp)
-                        .padding(horizontal = 12.dp, vertical = 7.dp)
-                        .let { if (s.running) it else it.clickable(summarize) },
-                    style = TextStyle(color = c.onPrimaryContainer, fontWeight = FontWeight.Bold, fontSize = 13.sp),
-                )
                 Spacer(GlanceModifier.width(6.dp))
-                Text("설정", modifier = GlanceModifier.background(c.secondaryContainer).cornerRadius(14.dp)
-                    .padding(horizontal = 10.dp, vertical = 7.dp).clickable(openSettings),
-                    style = TextStyle(fontSize = 13.sp))
+                // 초록 '요약' 단추 — 위젯에서 가장 중요한 단추 하나(Ssam.Action = 로고 칠판 그린)
+                Row(GlanceModifier.background(ColorProvider(Ssam.Action)).cornerRadius(18.dp)
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                        .let { if (s.running) it else it.clickable(summarize) },
+                    verticalAlignment = Alignment.CenterVertically) {
+                    if (!s.running) {
+                        Image(ImageProvider(R.drawable.ic_line_summary), contentDescription = null,
+                            modifier = GlanceModifier.size(16.dp), colorFilter = ColorFilter.tint(white))
+                        Spacer(GlanceModifier.width(4.dp))
+                    }
+                    Text(if (s.running) "요약 중…" else "요약", style = TextStyle(color = white, fontWeight = FontWeight.Bold, fontSize = 13.sp))
+                }
+                Spacer(GlanceModifier.width(6.dp))
+                Box(GlanceModifier.size(36.dp).background(c.secondaryContainer).cornerRadius(18.dp).clickable(openSettings),
+                    contentAlignment = Alignment.Center) {
+                    Image(ImageProvider(R.drawable.ic_line_settings), contentDescription = "설정",
+                        modifier = GlanceModifier.size(18.dp), colorFilter = ColorFilter.tint(c.onSecondaryContainer))
+                }
             }
-            Spacer(GlanceModifier.height(8.dp))
-            // 요약 본문: 줄마다, 칸 제목(🙋 💬 📦 📌 …)은 굵게. 누르면 앱의 요약 탭
-            // 위젯은 요약만(2026-11-22 선생님: 온 메시지가 다 보일 필요 없음) — 🙋·💬 는 그대로, 나머지 칸은 제목만 한 줄로
+            Spacer(GlanceModifier.height(10.dp))
+            // 요약 본문: 앱의 진한 요약 카드처럼 회갈색 카드 안에. 누르면 앱의 요약 탭
+            // 위젯은 요약만(2026-11-22 선생님: 온 메시지가 다 보일 필요 없음) — 요약 칸은 그대로, 나머지 칸은 제목만 한 줄로
             val lines = s.briefing?.text?.let { summaryOnly(it) }.orEmpty()
-            if (lines.isEmpty()) {
-                Text(
-                    "아직 요약이 없어요. 📋 요약을 누르면 여기에 정리돼요. 정한 시각에는 저절로 요약해요.",
-                    modifier = GlanceModifier.clickable(openApp),
-                    style = TextStyle(color = c.onSurface, fontSize = 13.sp),
-                )
-            } else {
-                LazyColumn(GlanceModifier.fillMaxSize()) {
+            Column(GlanceModifier.fillMaxSize().background(c.primaryContainer).cornerRadius(20.dp)
+                    .padding(horizontal = 14.dp, vertical = 10.dp)) {
+                if (lines.isEmpty()) {
+                    Text(
+                        "아직 요약이 없어요. 요약을 누르면 여기에 정리돼요. 정한 시각에는 저절로 요약해요.",
+                        modifier = GlanceModifier.clickable(openApp),
+                        style = TextStyle(color = cream, fontSize = 13.sp),
+                    )
+                } else LazyColumn(GlanceModifier.fillMaxSize()) {
                     items(lines) { line ->
-                        // 앱의 요약 화면(SummaryText)과 같은 꼴: 칸 제목 굵게 · 사람 이름 굵게 + 시각·건수 옅게 / 내용은 다음 줄
+                        // 앱의 요약 화면(SummaryText)과 같은 꼴: 칸 제목은 금색 아이콘·글 · 사람 이름 굵게 + 시각·건수 옅게 / 내용은 다음 줄
                         when {
                             line.startsWith("-") -> {
-                                val l = splitLine(line)
-                                Column(GlanceModifier.fillMaxWidth().padding(top = 4.dp).clickable(openApp)) {
-                                    if (l.who.isNotEmpty() || l.meta.isNotEmpty()) Row {
-                                        if (l.who.isNotEmpty()) Text(l.who, style = TextStyle(color = c.onSurface, fontWeight = FontWeight.Bold, fontSize = 12.sp), maxLines = 1)
-                                        if (l.meta.isNotEmpty()) Text((if (l.who.isEmpty()) "" else "  ") + l.meta, style = TextStyle(color = c.onSurfaceVariant, fontSize = 11.sp), maxLines = 1)
+                                val (ask, clean) = splitAsk(line)
+                                val l = splitLine(clean)
+                                Row(GlanceModifier.fillMaxWidth().padding(top = 6.dp).clickable(openApp)) {
+                                    if (ask) Image(ImageProvider(R.drawable.ic_line_reply), contentDescription = "답할 것",
+                                        modifier = GlanceModifier.size(14.dp), colorFilter = ColorFilter.tint(gold))
+                                    else Box(GlanceModifier.size(14.dp), contentAlignment = Alignment.Center) {
+                                        Box(GlanceModifier.size(5.dp).background(gold).cornerRadius(3.dp)) {}
                                     }
-                                    Text(l.body, style = TextStyle(color = c.onSurface, fontSize = 12.sp))
+                                    Spacer(GlanceModifier.width(6.dp))
+                                    Column(GlanceModifier.defaultWeight()) {
+                                        if (l.who.isNotEmpty() || l.meta.isNotEmpty()) Row {
+                                            if (l.who.isNotEmpty()) Text(l.who, style = TextStyle(color = cream, fontWeight = FontWeight.Bold, fontSize = 12.sp), maxLines = 1)
+                                            if (l.meta.isNotEmpty()) Text(l.meta, modifier = if (l.who.isEmpty()) GlanceModifier else GlanceModifier.padding(start = 6.dp),
+                                                style = TextStyle(color = creamSoft, fontSize = 11.sp), maxLines = 1)
+                                        }
+                                        Text(l.body, style = TextStyle(color = cream, fontSize = 12.sp))
+                                    }
                                 }
                             }
-                            line.startsWith("(") -> Text(line, modifier = GlanceModifier.fillMaxWidth().padding(top = 8.dp).clickable(openApp),
-                                style = TextStyle(color = c.onSurfaceVariant, fontSize = 11.sp))
-                            else -> Text(line, modifier = GlanceModifier.fillMaxWidth().padding(top = 8.dp).clickable(openApp),
-                                style = TextStyle(color = c.primary, fontWeight = FontWeight.Bold, fontSize = 13.sp))
+                            line.startsWith("(") -> Text(line, modifier = GlanceModifier.fillMaxWidth().padding(top = 10.dp).clickable(openApp),
+                                style = TextStyle(color = creamSoft, fontSize = 11.sp))
+                            else -> {
+                                val (icon, title) = Emoji.lead(line)
+                                Row(GlanceModifier.fillMaxWidth().padding(top = 10.dp).clickable(openApp), verticalAlignment = Alignment.CenterVertically) {
+                                    if (icon != null) {
+                                        Image(ImageProvider(icon), contentDescription = null,
+                                            modifier = GlanceModifier.size(16.dp), colorFilter = ColorFilter.tint(gold))
+                                        Spacer(GlanceModifier.width(6.dp))
+                                    }
+                                    Text(title, style = TextStyle(color = gold, fontWeight = FontWeight.Bold, fontSize = 13.sp))
+                                }
+                            }
                         }
                     }
                 }
@@ -200,7 +242,7 @@ class SummaryWidgetReceiver : GlanceAppWidgetReceiver() {
 }
 
 
-/** 위젯 글자: 앱 이모지는 지우고 글만(2026-11-25 디자인 — 위젯은 Glance 라 아이콘을 글 사이에 넣기 어려움) */
+/** 위젯 글자: 앱 이모지는 지우고 글만(칸 제목 아이콘은 위에서 Image 로 따로 그림) */
 @androidx.compose.runtime.Composable
 private fun Text(text: String, modifier: GlanceModifier = GlanceModifier, style: TextStyle? = null, maxLines: Int = Int.MAX_VALUE) =
     if (style == null) GlanceText(Emoji.strip(text), modifier, maxLines = maxLines) else GlanceText(Emoji.strip(text), modifier, style, maxLines)
