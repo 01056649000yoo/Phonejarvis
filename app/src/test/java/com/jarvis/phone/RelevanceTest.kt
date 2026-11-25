@@ -152,7 +152,7 @@ class RelevanceTest {
         assertEquals(Relevance.ME, lv)
         assertTrue(Relevance.replyOk(first, lv, all, noRoster, mine = mine))
         // 1:1 처럼 온 오픈채팅: 나를 부르지 않은 물음·여럿에게 돌린 말은 그대로 한 줄
-        listOf("이거 써 보신 분 계실까요", "계정 이관 방법이 있을지요?", "선생님들 이거 어떻게 하세요?").forEach { t ->
+        listOf("이거 써 보신 분 계실까요", "계정 이관 방법이 있을지요?", "선생님들 이거 어떻게 하세요?", "샘플 파일 보내 주실 수 있나요?").forEach { t ->
             assertEquals(t, Relevance.JOINED, Relevance.level(conv("", msg("", "택배 상자를 든 네오", t)), all, noRoster, { false }))
         }
     }

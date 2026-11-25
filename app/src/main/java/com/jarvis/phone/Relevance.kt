@@ -54,7 +54,8 @@ object Relevance {
     fun isBroadcast(text: String) = BROADCAST.containsMatchIn(text)
 
     /** 한 사람을 '선생님/쌤'하고 부르는 말('선생님들'·'쌤들'처럼 여럿을 부르는 말은 아님) */
-    private val TEACHER = Regex("(선생님|쌤|샘)(?!들)")
+    // '샘'은 뒤에 한글이 이어지지 않을 때만 — '샘플'·'샘물'이 부르는 말로 잡히지 않게
+    private val TEACHER = Regex("(선생님|쌤|샘(?![가-힣]))(?!들)")
     fun callsTeacher(text: String) = TEACHER.containsMatchIn(text)
 
     /** 방 하나의 거리. [override] 는 방 고르기에서 직접 정한 값(AUTO 면 저절로) */

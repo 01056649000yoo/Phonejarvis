@@ -74,7 +74,8 @@ class CollectorRulesTest {
 
     // 2026-11-25 점검: 낱말만 있는 '비밀번호' 연락은 모으고, 실제 값이 든 것만 거름
     @Test fun 비밀번호는_값이_있을_때만_거름() {
-        listOf("임시 비밀번호는 aB3x9Kq 입니다", "보안코드 482913", "비밀번호: 1234").forEach { assertTrue(it, secret(it)) }
+        listOf("임시 비밀번호는 aB3x9Kq 입니다", "보안코드 482913", "비밀번호: 1234",
+            "483920 이(가) 임시 비밀번호입니다", "임시 비밀번호: qwerasdf", "비밀번호는 qwerasdf 입니다", "비밀번호 재설정 링크를 보냈습니다").forEach { assertTrue(it, secret(it)) }
         listOf("와이파이 비밀번호 뭐였죠?", "나이스 비밀번호 변경 안내드립니다", "비밀번호를 잊으셨다면 행정실로 오세요").forEach { assertFalse(it, secret(it)) }
     }
 

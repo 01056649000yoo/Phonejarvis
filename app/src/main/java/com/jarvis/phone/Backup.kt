@@ -28,6 +28,8 @@ object Backup {
         "quiet" to setOf("last", "since", "we_set_dnd", "zen_rule", "zen_rule_v"),   // 방해 금지 모드 번호는 폰마다 다름
         "storage" to setOf("last_clean", "last_vacuum"),
     )
+    /** 쓰면서 저절로 쌓이는 묶음: 불러올 때 지금 값을 지우지 않고 합침(시각은 더 최근 것) */
+    private val GROWING = setOf("reply_log")
     /** "app" 묶음은 이것만 (설치 안내 진행·모델 정보는 기기마다 다름) */
     private val APP_ONLY = setOf("apps_setup_done")
 
@@ -86,6 +88,7 @@ object Backup {
      * 다운로드/쌤톡스 폴더에 저장 — 안드로이드 기본 저장 통로(MediaStore)로, 권한 없이(2026-11-22 Play 스토어 준비: '모든 파일 접근' 뺌).
      * 이 앱이 만든 파일만 다시 열 수 있으므로 같은 파일을 덮어씀. 다시 설치하면 새 파일이 생기고(이름 뒤에 (1)), 불러오기는 파일 고르기로.
      */
+    @Synchronized   // 비밀번호를 정한 직후의 백업과 '지금 백업'·자동 백업이 겹치면 파일이 두 개 생김
     fun saveToDownloads(ctx: Context): Boolean {
         if (!BackupCrypto.hasPin(ctx)) return false   // 🔒 비밀번호를 정해야 백업(암호화)
         return runCatching {
@@ -175,6 +178,8 @@ object Backup {
         // ① 먼저 모두 읽어 봄 — 예전엔 읽으면서 바로 써서, 중간에 깨진 값이 있으면 앞의 묶음만 바뀐 채 '불러오지 못했어요'가 됐다
         val prefs = j.getJSONObject("prefs")
         val plan = prefs.keys().asSequence().filter { it in FILES }.associateWith { name -> readEntries(prefs.getJSONObject(name)) }
+        // 백업 파일에 이름이 있는 값(이 판이 모르는 형식 포함) — 모르는 형식이라 못 읽은 값을 '백업에 없는 값'으로 보고 지우지 않게
+        val named = plan.keys.associateWith { name -> prefs.getJSONObject(name).keys().asSequence().toSet() }
         // 새 폰에서 처음 불러올 때 쓴 비밀번호를 이 폰의 백업 비밀번호로도 씀
         if (pin != null && !BackupCrypto.hasPin(ctx)) BackupCrypto.setPin(ctx, pin)
         // ② 그다음 한 번에 씀. 백업에 든 묶음은 백업 그대로 — 백업 뒤에 생긴 값(백업 때는 없던 설정)은 지움.
@@ -182,13 +187,16 @@ object Backup {
         plan.forEach { (name, entries) ->
             val sp = ctx.getSharedPreferences(name, Context.MODE_PRIVATE)
             val ed = sp.edit()
-            sp.all.keys.forEach { k -> if (isBackedUp(name, k) && k !in entries) ed.remove(k) }
+            val now = sp.all
+            // 저절로 쌓이는 기록(내가 말한 방)은 지우지 않고 합침 — 며칠 전 백업을 불러와도 그 뒤에 말한 방이 '그 밖의 방'으로 내려가지 않게
+            val grows = name in GROWING
+            if (!grows) now.keys.forEach { k -> if (isBackedUp(name, k) && k !in named[name].orEmpty()) ed.remove(k) }
             entries.forEach { (k, v) ->
                 if (!isBackedUp(name, k)) return@forEach
                 when (v) {
                     is Boolean -> ed.putBoolean(k, v)
                     is Int -> ed.putInt(k, v)
-                    is Long -> ed.putLong(k, v)
+                    is Long -> ed.putLong(k, if (grows) maxOf(v, now[k] as? Long ?: 0L) else v)
                     is Float -> ed.putFloat(k, v)
                     is String -> ed.putString(k, v)
                     is Set<*> -> ed.putStringSet(k, v.map { it.toString() }.toSet())

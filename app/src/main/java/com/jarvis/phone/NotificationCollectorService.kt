@@ -155,6 +155,7 @@ class NotificationCollectorService : NotificationListenerService() {
         val rules = AppFilter.rules(this)
         val excluded = AppFilter.excluded(this)
         val db = NotificationDb.get(this)
+        val since = System.currentTimeMillis() - 3 * 24L * 3600 * 1000
         val active = runCatching { activeNotifications }.getOrNull() ?: return
         active.filter { it.packageName != packageName && !it.isOngoing && it.packageName !in excluded && it.packageName !in IGNORED_PACKAGES
                 && it.notification.flags and Notification.FLAG_GROUP_SUMMARY == 0 }
@@ -171,7 +172,8 @@ class NotificationCollectorService : NotificationListenerService() {
                     val newest = burst.maxByOrNull { it.key }
                     val who = (newest?.who?.ifEmpty { title } ?: title).take(200)
                     val body = (newest?.text ?: text).take(1000)
-                    if (rules.allows(sbn.packageName, room, who, body) && db.has(sbn.packageName, who, body, 0L) &&
+                    // 상태바에 남은 알림은 최근 것 — 사흘 안에서만 찾음(시각 색인을 써서 표 전체를 훑지 않게)
+                    if (rules.allows(sbn.packageName, room, who, body) && db.has(sbn.packageName, who, body, since) &&
                         !mustNeverHide(sbn, title, judgeText(text, burst))) cancelNotification(sbn.key)
                 }
             }
@@ -270,8 +272,13 @@ class NotificationCollectorService : NotificationListenerService() {
          * "와이파이 비밀번호 뭐였죠?", "나이스 비밀번호 변경 안내" 같은 연락·공지가 통째로 모이지 않았다.
          */
         private val SECRET_VALUE = Regex("""(보안\s?코드|비밀\s?번호)[^\n]{0,15}?(?=[A-Za-z0-9!@#$%^&*]*\d)[A-Za-z0-9!@#$%^&*]{4,}""")
+        /** 시스템이 내주는 비밀번호는 낱말만으로("483920 이 임시 비밀번호입니다"처럼 값이 앞에 와도) */
+        private val SECRET_ISSUED = Regex("""(임시|초기|일회용|새)\s?(비밀\s?번호|보안\s?코드|패스워드)|(비밀\s?번호|패스워드)\s?(재설정|초기화)""")
+        /** '비밀번호는 qwerasdf'·'비밀번호: abcd'처럼 숫자가 없어도 바로 뒤에 영문·숫자 값이 오면 */
+        private val SECRET_ASSIGN = Regex("""(보안\s?코드|비밀\s?번호|패스워드)\s?(는|은|:|=)\s?\[?[A-Za-z0-9!@#$%^&*]{4,}""")
         /** 인증번호·일회용 비밀번호처럼 남기면 안 되는 알림인지 */
-        fun isSecretCode(t: String): Boolean = SECRET_WORDS.any { it in t } || OTP.containsMatchIn(t) || SECRET_VALUE.containsMatchIn(t)
+        fun isSecretCode(t: String): Boolean = SECRET_WORDS.any { it in t } || OTP.containsMatchIn(t) || SECRET_VALUE.containsMatchIn(t) ||
+            SECRET_ISSUED.containsMatchIn(t) || SECRET_ASSIGN.containsMatchIn(t)
 
         /**
          * 같은 알림을 두 번 넣지 않는 열쇠(순수 — 시험).

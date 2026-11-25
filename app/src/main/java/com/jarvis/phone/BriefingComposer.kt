@@ -1124,6 +1124,8 @@ object BriefingComposer {
         val replies = rooms.filter { it.needReply }
         val chatter = rooms.filter { !it.needReply && it.point.isBlank() }.map { it.conv }
         val talk = rooms.filterNot { it.needReply || it.point.isBlank() }
+        // 요약하지 못한 방(leftover — 시간·발열로 AI 가 멈춤)은 모두 적고, 이름 수를 줄이는 것은 잡담·그 밖의 방만.
+        // 함께 줄이면 나에게 온 방이라도 건수가 적으면 '외 N곳'에 묻혀 요약 어디에도 안 나온다
         val others = leftover + chatter
         if (replies.isNotEmpty() || talk.isNotEmpty() || others.isNotEmpty()) {
             append("💬 대화 요약 (${rooms.size + leftover.size}개 방" + (if (replies.isNotEmpty()) " · 🙋 답장 ${replies.size}" else "") + ")\n")
@@ -1143,8 +1145,8 @@ object BriefingComposer {
             }
             if (others.isNotEmpty()) {
                 // 건수 많은 순으로 [MAX_OTHER_ROOMS]곳까지 — 예전엔 수십 곳 이름을 모두 적어 요약의 절반이 방 이름이었다(오픈채팅 40곳이면 600자)
-                val top = others.sortedByDescending { it.items.size }
-                append("- 그 밖의 방: " + top.take(MAX_OTHER_ROOMS).joinToString(", ") { "${it.room} ${it.items.size}건" } +
+                val top = chatter.sortedByDescending { it.items.size }
+                append("- 그 밖의 방: " + (leftover + top.take(MAX_OTHER_ROOMS)).joinToString(", ") { "${it.room} ${it.items.size}건" } +
                     (if (top.size > MAX_OTHER_ROOMS) " 외 ${top.size - MAX_OTHER_ROOMS}곳 ${top.drop(MAX_OTHER_ROOMS).sumOf { it.items.size }}건" else "") + "\n")
             }
             append("\n")

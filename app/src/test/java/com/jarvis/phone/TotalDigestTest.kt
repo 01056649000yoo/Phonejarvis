@@ -186,8 +186,11 @@ class TotalDigestTest {
 
     @Test fun 평소_요약의_그_밖의_방은_열_곳까지만_이름() {
         val others = (1..25).map { i -> BriefingComposer.Conversation("카카오톡", "오픈방$i", List(i) { NotiItem(it.toLong(), "com.kakao.talk", "카카오톡", "닉", "ㅋㅋ", at(9), "오픈방$i") }) }
-        val line = BriefingComposer.render(emptyList(), others, emptyList()).lines().single { it.startsWith("- 그 밖의 방") }
-        assertTrue(line, line.startsWith("- 그 밖의 방: 오픈방25 25건, 오픈방24 24건"))
+        val chatter = others.map { BriefingComposer.RoomSummary(it, "", "", false, byModel = false) }
+        // 요약하지 못한 방(시간·발열)은 건수가 적어도 모두 이름을 적음
+        val cut = listOf(BriefingComposer.Conversation("카카오톡", "김민준 어머니", listOf(NotiItem(99, "com.kakao.talk", "카카오톡", "김민준 어머니", "내일 상담", at(9)))))
+        val line = BriefingComposer.render(chatter, cut, emptyList()).lines().single { it.startsWith("- 그 밖의 방") }
+        assertTrue(line, line.startsWith("- 그 밖의 방: 김민준 어머니 1건, 오픈방25 25건, 오픈방24 24건"))
         assertTrue(line, line.endsWith("외 15곳 120건"))
         assertFalse(line, "오픈방15 " in line)
     }
