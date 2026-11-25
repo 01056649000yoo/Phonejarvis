@@ -37,10 +37,11 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** 이번 버전에서 바뀐 점 한 줄 (버전 올릴 때 같이 고치기). 새 것을 앞에 — 앞 세 가지가 릴리스·안내 페이지의 '바뀐 점'으로도 나감(build.yml) */
-private const val WHATS_NEW = "설정 백업 매일 자동 · 알림 앱 정리 화면 정리 · 받아 둔 모델 자동 찾기 · 설치 방법 안내 · 요약 탭에 최근 요약이 늘 보이게 · 할 일·마감 카드 없앰 · 나와 관련된 것만 요약 · 버전·업데이트 일시 표시 · 하루 정리는 하루 종일 온 알림을 총정리 · 빠지던 알림 없게 · 카톡 단톡방은 원문 줄로 · 이어진 대화 ↪ · 답한 물음 내리기 · 메일은 제목 그대로 · 짧으면 원문 그대로 · 오해 없는 요약 · 어제 메시지가 섞이지 않게 · 오픈채팅 한 방으로 · 내가 만든 묶음별 연락 · 모든 연락을 간단한 내용까지 · 중요한 대화만 요약해요 · 캘린더는 일정 그대로 · 요약 문장 다듬기"
+private const val WHATS_NEW = "앱 아이콘이 엇갈리던 것 고침 · 설정 백업 매일 자동 · 알림 앱 정리 화면 정리 · 받아 둔 모델 자동 찾기 · 설치 방법 안내 · 요약 탭에 최근 요약이 늘 보이게 · 할 일·마감 카드 없앰 · 나와 관련된 것만 요약 · 버전·업데이트 일시 표시 · 하루 정리는 하루 종일 온 알림을 총정리 · 빠지던 알림 없게 · 카톡 단톡방은 원문 줄로 · 이어진 대화 ↪ · 답한 물음 내리기 · 메일은 제목 그대로 · 짧으면 원문 그대로 · 오해 없는 요약 · 어제 메시지가 섞이지 않게 · 오픈채팅 한 방으로 · 내가 만든 묶음별 연락 · 모든 연락을 간단한 내용까지 · 중요한 대화만 요약해요 · 캘린더는 일정 그대로 · 요약 문장 다듬기"
 
 /** 업데이트 내역 큰 창 (버전 올릴 때 같이 고치기) */
 private val WHATS_NEW_DETAIL = listOf(
+    "🖼 앱 아이콘이 제자리에" to "알림 앱 정리에서 묶음을 바꾸거나 추천을 적용해 순서가 바뀌면, 앱 이름 옆에 앞에 있던 다른 앱의 아이콘이 남아 엇갈렸어요. 이제 앱마다 제 아이콘이 보여요.",
     "🌱 알림 앱 정리가 깔끔해졌어요" to "메시지·SNS / 업무·일정 / 그 밖의 앱을 칩으로 골라 한 묶음씩 봐요. 알림이 안 들어오는 앱은 따로 칸을 두지 않고 그 앱 줄 안에 경고와 '알림 설정 열기'가 보여서, 같은 앱이 두 번 나오지 않아요. 앱 추가·광고 거르기·도움말은 목록 아래로 옮겼어요.",
     "💾 설정 백업이 매일 자동으로" to "예전엔 앱을 열거나 정한 시각 요약이 돌 때만 백업했어요. 이제 매일 새벽에 따로 백업해서, 앱을 안 연 날에도 다운로드/쌤톡스 폴더에 하루 한 번 저장돼요. 나를 부르는 말·방마다 정한 모양·내가 말한 방 기록도 함께 들어가요. 백업 비밀번호를 정해 둬야 저장돼요(설정 → 백업·복원).",
     "🔎 받아 둔 모델 자동 찾기" to "AI 모델 받기 화면에서 '받아 둔 모델 자동으로 찾기'를 누르면 다운로드·문서 폴더에서 모델 파일(.litertlm)을 찾아 바로 가져와요. 처음 한 번 '모든 파일 접근'을 켜 달라고 해요(모델 파일을 읽는 데만 써요). 켜기 싫으면 예전처럼 파일 선택으로 골라도 돼요.",
@@ -1205,9 +1206,9 @@ private fun AppCleanupCard(vm: JarvisViewModel) {
                     if (tab == 1) "아직 없어요. '📱 그 밖의 앱'에서 앱을 골라 '업무·일정으로'를 누르세요." else "이 묶음에 앱이 없어요.",
                     style = MaterialTheme.typography.bodySmall)
                 rows.forEach { r ->
-                    AppRow(vm, r.stat.pkg, r.stat.app, r.stat.count, rec = r, group = tab, silentWarn = r.stat.pkg in silent)
+                    key(r.stat.pkg) { AppRow(vm, r.stat.pkg, r.stat.app, r.stat.count, rec = r, group = tab, silentWarn = r.stat.pkg in silent) }
                 }
-                if (tab == 0) silentOnly.forEach { (pkg, name) -> AppRow(vm, pkg, name, 0, rec = null, group = 0, silentWarn = true) }
+                if (tab == 0) silentOnly.forEach { (pkg, name) -> key(pkg) { AppRow(vm, pkg, name, 0, rec = null, group = 0, silentWarn = true) } }
             }
 
             HorizontalDivider()
@@ -1710,12 +1711,16 @@ internal object Motion {
 @Composable
 fun AppIcon(pkg: String, size: androidx.compose.ui.unit.Dp) {
     val ctx = LocalContext.current
-    // 아이콘 읽기는 앱마다 수 ms — 목록이 길면 화면이 멈칫해서 한 번 읽은 것은 모아 두고, 처음 읽기는 화면 밖(IO)에서
-    val bmp by produceState(IconCache.peek(pkg), pkg) {
-        if (value == null) value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { IconCache.load(ctx, pkg) }
+    // 아이콘 읽기는 앱마다 수 ms — 목록이 길면 화면이 멈칫해서 한 번 읽은 것은 모아 두고, 처음 읽기는 화면 밖(IO)에서.
+    // key(pkg): 같은 자리에 다른 앱이 오면(묶음 칩 바꾸기·추천 적용으로 순서가 바뀜) 상태를 새로 — 예전엔 앞 앱의 아이콘이 남아
+    // 앱과 아이콘이 엇갈렸다(2026-11-25 선생님: '앱과 아이콘이 불일치가 심함')
+    key(pkg) {
+        val bmp by produceState(IconCache.peek(pkg)) {
+            if (value == null) value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { IconCache.load(ctx, pkg) }
+        }
+        if (bmp != null) androidx.compose.foundation.Image(bmp!!, contentDescription = null, modifier = Modifier.size(size))
+        else Box(Modifier.size(size), contentAlignment = Alignment.Center) { Text("📱") }
     }
-    if (bmp != null) androidx.compose.foundation.Image(bmp!!, contentDescription = null, modifier = Modifier.size(size))
-    else Box(Modifier.size(size), contentAlignment = Alignment.Center) { Text("📱") }
 }
 
 private object IconCache {
