@@ -663,6 +663,9 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     fun hideBriefing(b: Briefing) {
         hiddenBriefings = hiddenBriefings + b.time.toString(); saveSet("hidden_briefings", hiddenBriefings)
     }
+    fun unhideBriefing(b: Briefing) {
+        hiddenBriefings = hiddenBriefings - b.time.toString(); saveSet("hidden_briefings", hiddenBriefings)
+    }
 
     // ── 🚫 광고 자동 거르기 ──
     var adFilterOn by mutableStateOf(AdFilter.enabled(app))
