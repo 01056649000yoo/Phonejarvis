@@ -31,7 +31,7 @@
      종이 크림 바탕 · 흰 종이 카드 + 옅은 선 · 회갈색 주색 · 흙빛 보조색 · 칠판 그린(로고 색)은 '앱 받기' 단추에만 */
   :root {
     --canvas: #F7F1E8; --stone: #4A4741; --ink: #1C1B1A; --action: #2E4A3D; --night: #19191C;
-    --clay: #6B443D; --gold: #AF751B; --gold-pale: #DDBE78; --olive: #5C6F5D; --sage-pale: #CED4B8;
+    --clay: #6B443D; --gold: #AF751B; --gold-pale: #DDBE78; --olive: #5C6F5D; --sage-pale: #CED4B8; --sage-c: #CED4B8; --on-sage: #224228;
     --bg: var(--canvas); --fg: var(--ink); --muted: #5F5C56; --card: #FFFFFF; --line: #E1DCD3; --soft: #EFE8DC;
     --accent: var(--stone); --on-accent: #FFFFFF; --em: var(--clay); --hl: #E6E9D9; --warn: #F0E2D6;
     --topbg: rgba(247,241,232,.88); --band: var(--night); --band-fg: #F7F1E8; --band-muted: #A8A5A0;
@@ -41,7 +41,7 @@
   @media (prefers-color-scheme: dark) {
     :root { --bg: #19191C; --fg: #F7F1E8; --muted: #A8A5A0; --card: #232326; --line: #38373A; --soft: #29292C;
             --accent: #F7F1E8; --on-accent: #4A4741; --em: #DDBE78; --hl: #2F332B; --warn: #3A2C22;
-            --topbg: rgba(25,25,28,.88); --band: #232326; }
+            --topbg: rgba(25,25,28,.88); --band: #232326; --sage-c: #5C6F5D; --on-sage: #EEF0E4; }
   }
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
@@ -108,6 +108,39 @@
   /* 이런 분께 */
   .who { display: grid; gap: 12px; }
   .who .card { display: grid; grid-template-columns: 44px minmax(0,1fr); gap: 16px; align-items: start; }
+  /* 홈 화면 위젯 그림 (실제 위젯과 같은 색: 바탕은 화면 모드를 따름, 요약 카드는 회갈색) */
+  .home-shot { position: relative; max-width: 380px; width: 100%; justify-self: center; border-radius: 32px; padding: 20px 14px 18px;
+               background: linear-gradient(160deg, #7E8C78 0%, #4E5E4F 45%, #23292A 100%); color: #fff; display: grid; gap: 16px; }
+  .home-shot > *, .wg > *, .wg-l > div { min-width: 0; }
+  .hs-clock { font-size: 34px; font-weight: 300; line-height: 1.1; padding: 0 6px; }
+  .hs-clock small { display: block; font-size: 12px; font-weight: 500; opacity: .85; margin-top: 4px; }
+  .wg { background: var(--bg); color: var(--fg); border-radius: 24px; padding: 12px; display: grid; gap: 10px; box-shadow: 0 6px 18px rgba(0,0,0,.18); }
+  .wg-head { display: flex; align-items: center; gap: 8px; }
+  .wg-logo { width: 34px; height: 34px; border-radius: 10px; flex: none; }
+  .wg-t { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.35; }
+  .wg-t b { font-size: 14px; }
+  .wg-t span { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .wg-btn { display: inline-flex; align-items: center; gap: 4px; background: var(--action); color: #fff; font-size: 12.5px; font-weight: 700;
+            padding: 7px 12px; border-radius: 999px; white-space: nowrap; }
+  .wg-btn svg.li { width: 15px; height: 15px; }
+  .wg-set { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--sage-c); color: var(--on-sage); flex: none; }
+  .wg-set svg.li { width: 17px; height: 17px; }
+  .wg-card { background: var(--stone); color: var(--canvas); border-radius: 20px; padding: 10px 14px 12px; font-size: 12.5px; line-height: 1.55; }
+  .wg-h { display: flex; align-items: center; gap: 6px; color: var(--gold-pale); font-weight: 700; font-size: 13px; margin-top: 8px; }
+  .wg-h:first-child { margin-top: 0; }
+  .wg-h svg.li { width: 16px; height: 16px; }
+  .wg-l { display: flex; gap: 6px; margin-top: 6px; }
+  .wg-l > svg.li { width: 14px; height: 14px; color: var(--gold-pale); margin-top: 3px; }
+  .wg-dot { width: 14px; height: 14px; flex: none; position: relative; }
+  .wg-dot::after { content: ""; position: absolute; left: 4.5px; top: 6px; width: 5px; height: 5px; border-radius: 50%; background: var(--gold-pale); }
+  .wg-card small { display: block; margin-top: 10px; font-size: 11px; opacity: .72; }
+  .hs-dock { display: flex; justify-content: space-around; padding: 4px 8px 0; }
+  .hs-dock i, .hs-dock svg { width: 46px; height: 46px; border-radius: 50%; background: rgba(255,255,255,.22); display: block; }
+  /* 보낸 사람 배지(앱 요약 화면·위젯과 같게): 글자색을 옅게 깐 둥근 칸, 시각·건수는 옆에 옅게 */
+  .who-b { display: inline-block; font-weight: 600; font-size: .92em; line-height: 1.5; padding: 0 7px; border-radius: 6px;
+           background: color-mix(in srgb, currentColor 14%, transparent); }
+  .who-b + .meta { font-size: .85em; opacity: .7; margin-left: 6px; }
+  .phone li, .after p, .w-body { line-height: 1.75; }
   /* 선 아이콘 (앱 res/drawable/ic_line_* 와 같은 그림, 2026-11-25) */
   svg.li { width: 1.1em; height: 1.1em; vertical-align: -0.18em; flex: none; }
   .ico svg.li, .feat .t i svg.li { width: 22px; height: 22px; color: var(--accent); }
@@ -352,14 +385,14 @@
         <div class="bar"><span>저녁 요약 · 17:00</span><span>알림 37건 → 한 장</span></div>
         <div class="from"><svg class="li" aria-hidden="true"><use href="#li-quiet"></use></svg> 오후 동안 <b>37건</b>을 조용히 모아 두었어요</div>
         <h4><svg class="li" aria-hidden="true"><use href="#li-people"></use></svg>교직원 연락</h4>
-        <ul><li>김민수 선생님 (3건): 내일 3시 2층 회의실에서 협의회. 자료는 메신저로 보냄.</li></ul>
+        <ul><li><span class="who-b">김민수 선생님</span><span class="meta">3건</span><br>내일 3시 2층 회의실에서 협의회. 자료는 메신저로 보냄.</li></ul>
         <h4><svg class="li" aria-hidden="true"><use href="#li-chat"></use></svg>대화 요약</h4>
         <ul>
-          <li><svg class="li" aria-hidden="true"><use href="#li-reply"></use></svg>민준 어머님 · 14:20: 내일 체험학습 도시락 챙겨야 하는지 물음</li>
-          <li><svg class="li" aria-hidden="true"><use href="#li-reply"></use></svg>6학년 동학년방 · 13:05: 학예회 반별 명단 금요일까지 올려 달라고 함</li>
-          <li>우리 가족 (5건): 일요일 12시 할머니 생신 점심. 꽃을 사 와 달라고 함.</li>
-          <li>투자 수다방 (12건): 반도체 주가가 올라 다들 기뻐함</li>
-          <li>동창 모임 (2건): 지수: 토요일 등산 갈 사람? / 민호: 나 갈게</li>
+          <li><svg class="li" aria-hidden="true"><use href="#li-reply"></use></svg><span class="who-b">민준 어머님</span><span class="meta">14:20</span><br>내일 체험학습 도시락 챙겨야 하는지 물음</li>
+          <li><svg class="li" aria-hidden="true"><use href="#li-reply"></use></svg><span class="who-b">6학년 동학년방</span><span class="meta">13:05</span><br>학예회 반별 명단 금요일까지 올려 달라고 함</li>
+          <li><span class="who-b">우리 가족</span><span class="meta">5건</span><br>일요일 12시 할머니 생신 점심. 꽃을 사 와 달라고 함.</li>
+          <li><span class="who-b">투자 수다방</span><span class="meta">12건</span><br>반도체 주가가 올라 다들 기뻐함</li>
+          <li><span class="who-b">동창 모임</span><span class="meta">2건</span><br>지수: 토요일 등산 갈 사람? / 민호: 나 갈게</li>
         </ul>
         <div class="foot"><svg class="li" aria-hidden="true"><use href="#li-box"></use></svg> 앱 알림 21건 · 광고 9건 거름 · 정기 알림 4건 — 건수만</div>
       </div>
@@ -403,7 +436,7 @@
         <span class="arrow">정한 시각에 →</span>
         <div class="card after">
           <b><svg class="li" aria-hidden="true"><use href="#li-chat"></use></svg>대화 요약 · 답장 2</b>
-          <p><svg class="li" aria-hidden="true"><use href="#li-reply"></use></svg>민준 어머님: 내일 체험학습 도시락 챙겨야 하는지 물음<br><svg class="li" aria-hidden="true"><use href="#li-reply"></use></svg>6학년 동학년방: 학예회 명단 금요일까지 올려 달라고 함<br>투자 수다방 (12건): 반도체 주가가 올라 다들 기뻐함</p>
+          <p><svg class="li" aria-hidden="true"><use href="#li-reply"></use></svg><span class="who-b">민준 어머님</span> 내일 체험학습 도시락 챙겨야 하는지 물음<br><svg class="li" aria-hidden="true"><use href="#li-reply"></use></svg><span class="who-b">6학년 동학년방</span> 학예회 명단 금요일까지 올려 달라고 함<br><span class="who-b">투자 수다방</span><span class="meta">12건</span> 반도체 주가가 올라 다들 기뻐함</p>
           <b><svg class="li" aria-hidden="true"><use href="#li-box"></use></svg>앱 알림 · 광고 · 정기 알림</b>
           <p>건수만 한 줄. 광고는 내 이름이 들어 있어도 걸러요.</p>
         </div>
@@ -488,9 +521,26 @@
         <div class="card tab"><div class="t" aria-hidden="true"><svg class="li" aria-hidden="true"><use href="#li-settings"></use></svg></div><b>설정</b><span>모아서 알림·앱 정리·위젯·사람 묶음·AI 모델·백업.</span></div>
       </div>
       <div class="twocol" style="margin-top:20px">
-        <div class="widget" aria-label="위젯 예시">
-          <div class="w-head"><div><b>쌤톡스</b><span>저녁 요약 · 17:00 · 알림 37건</span><span>17:00 자동 · 다음 22:00</span></div><span class="w-btn"><svg class="li" aria-hidden="true"><use href="#li-summary"></use></svg> 요약</span><span class="w-btn alt" aria-label="설정"><svg class="li" aria-hidden="true"><use href="#li-settings"></use></svg></span></div>
-          <div class="w-body"><b><svg class="li" aria-hidden="true"><use href="#li-chat"></use></svg>대화 요약 (2개 방 · 답장 2)</b><svg class="li" aria-hidden="true"><use href="#li-reply"></use></svg>민준 어머님 · 14:20: 도시락 챙겨야 하는지 물음<br><svg class="li" aria-hidden="true"><use href="#li-reply"></use></svg>동학년방 · 13:05: 학예회 명단 금요일까지 올려 달라고 함<small>(키워드 알림 · 앱 알림 — 눌러서 보기)</small></div>
+        <!-- 홈 화면 위젯 그림: 실제 위젯(SummaryWidget.kt)과 같은 색·아이콘·배지. 예시 내용은 가짜 -->
+        <div class="home-shot" role="img" aria-label="홈 화면에 놓인 쌤톡스 위젯 예시">
+          <div class="hs-clock">17:02<small>11월 25일 수요일</small></div>
+          <div class="wg">
+            <div class="wg-head">
+              <svg class="wg-logo" aria-hidden="true"><use href="#logo"></use></svg>
+              <div class="wg-t"><b>쌤톡스</b><span>저녁 요약 · 11/25 17:00 · 알림 37건</span><span>17:00 자동 · 다음 22:00</span></div>
+              <span class="wg-btn"><svg class="li" aria-hidden="true"><use href="#li-summary"></use></svg>요약</span>
+              <span class="wg-set"><svg class="li" aria-hidden="true"><use href="#li-settings"></use></svg></span>
+            </div>
+            <div class="wg-card">
+              <div class="wg-h"><svg class="li" aria-hidden="true"><use href="#li-people"></use></svg>교직원 연락 (1명)</div>
+              <div class="wg-l"><i class="wg-dot"></i><div><span class="who-b">김민수 선생님</span><span class="meta">3건</span><br>내일 3시 2층 회의실에서 협의회</div></div>
+              <div class="wg-h"><svg class="li" aria-hidden="true"><use href="#li-chat"></use></svg>대화 요약 (2개 방 · 답장 2)</div>
+              <div class="wg-l"><svg class="li" aria-hidden="true"><use href="#li-reply"></use></svg><div><span class="who-b">민준 어머님</span><span class="meta">14:20</span><br>체험학습 도시락 챙겨야 하는지 물음</div></div>
+              <div class="wg-l"><svg class="li" aria-hidden="true"><use href="#li-reply"></use></svg><div><span class="who-b">6학년 동학년방</span><span class="meta">13:05</span><br>학예회 명단 금요일까지 올려 달라고 함</div></div>
+              <small>(키워드 알림 · 앱 알림 — 눌러서 보기)</small>
+            </div>
+          </div>
+          <div class="hs-dock"><i></i><i></i><i></i><svg aria-hidden="true"><use href="#logo"></use></svg></div>
         </div>
         <ul class="bul gap">
           <li>위젯에는 모인 알림 수 없이 <b>요약만</b> 보여요 — 내 묶음·업무·일정·대화 요약.</li>
@@ -576,6 +626,8 @@
         <p>설정 → 애플리케이션 → 쌤톡스 → 배터리 → 제한 없음으로 바꾸고, '알람 및 리마인더' 권한을 켜 주세요. 정한 시각에는 새 알림이 없어도 '새 알림 없음'을 알려요. 위젯 위쪽 '자동' 줄이나 설정 → 모아서 알림 → 최근 자동 요약에서 실제로 돌았는지 볼 수 있어요.</p></details>
       <details><summary>알림이 모이지 않아요.</summary>
         <p>알림 접근 권한이 켜져 있는지 확인하세요. 회색으로 잠겨 있으면 설정 → 애플리케이션 → 쌤톡스 → 오른쪽 위 ⋮ → 제한된 설정 허용 후 다시 켜요. 카톡·문자 앱 자체의 알림도 켜져 있어야 모을 수 있어요.</p></details>
+      <details><summary>메시지 앱 아이콘에 안 읽은 숫자가 쌓여요.</summary>
+        <p>쌤톡스는 알림을 모아 상태바에서 숨길 뿐, 메시지 앱 안의 '안 읽음'은 바꾸지 않아요(다른 앱이 바꿀 수 없어요). 그래서 메시지 앱을 열지 않는 동안 아이콘 숫자가 13처럼 쌓여요. 메시지 앱을 한 번 열면 사라지고, 요약에는 한 번씩만 들어가요. 숫자가 거슬리면 휴대폰 설정 → 애플리케이션 → 메시지 → 알림 → 앱 아이콘 배지를 끄세요(메뉴 이름은 휴대폰마다 조금 달라요).</p></details>
       <details><summary>모델 다운로드에 데이터 요금이 나오나요?</summary>
         <p>E4B는 3.7GB, E2B는 2.6GB라서 모바일 데이터로 받으면 요금이 나올 수 있어요. 와이파이에서 받아 주세요. 이미 다운로드 폴더에 받아 둔 파일이 있으면 받기를 건너뛰고 '파일 고르기'로 바로 넣으면 돼요.</p></details>
       <details><summary>폰을 바꾸면 설정은요?</summary>

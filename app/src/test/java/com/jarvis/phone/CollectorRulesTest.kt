@@ -56,4 +56,19 @@ class CollectorRulesTest {
         org.junit.Assert.assertNull(NotificationCollectorService.groupTitle("김민수 선생님", listOf("김민수")))
         org.junit.Assert.assertNull(NotificationCollectorService.groupTitle("엄마", emptyList()))
     }
+
+    @Test fun 숨길지는_새로_온_문자로만_판단() {
+        val c = NotificationCollectorService
+        val stack = listOf(
+            NotificationCollectorService.Companion.Msg("학교", "[긴급] 내일 휴업 안내", 1_000L, 1_000L),
+            NotificationCollectorService.Companion.Msg("민준 어머님", "내일 준비물 알려 주세요", 9_000L, 9_000L),
+        )
+        // 예전 문자의 '긴급' 때문에 묶음째 뜨지 않게
+        assertFalse(c.urgentWords(c.judgeText("[긴급] 내일 휴업 안내\n내일 준비물 알려 주세요", stack)))
+        // 새로 온 문자가 긴급이면 그대로 뜸
+        val urgent = stack + NotificationCollectorService.Companion.Msg("시청", "[재난] 폭설 주의", 12_000L, 12_000L)
+        assertTrue(c.urgentWords(c.judgeText("", urgent)))
+        // 메시지 목록이 없는 알림은 글 전체로
+        assertTrue(c.urgentWords(c.judgeText("부재중 전화 1통", emptyList())))
+    }
 }

@@ -143,10 +143,17 @@ fun SummaryText(text: String, modifier: Modifier = Modifier, accent: Color = Mat
                                     modifier = Modifier.padding(top = 2.dp, end = Space.s).size(16.dp))
                                 else Box(Modifier.padding(top = 9.dp, end = Space.m).size(5.dp).background(accent.copy(alpha = 0.7f), CircleShape))
                                 Column {
-                                    if (l.who.isNotEmpty() || l.meta.isNotEmpty()) Text(buildAnnotatedString {
-                                        withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { append(Emoji.strip(l.who)) }
-                                        if (l.meta.isNotEmpty()) withStyle(SpanStyle(color = muted)) { append(if (l.who.isEmpty()) l.meta else "  ${l.meta}") }
-                                    }, style = MaterialTheme.typography.labelLarge)
+                                    // 보낸 사람은 배지(2026-11-25 디자인) — 글자색을 옅게 깐 둥근 칸, 시각·건수는 옆에 옅게
+                                    if (l.who.isNotEmpty() || l.meta.isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.padding(bottom = 2.dp)) {
+                                        if (l.who.isNotEmpty()) Text(Emoji.strip(l.who), style = MaterialTheme.typography.labelLarge, maxLines = 1,
+                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f, fill = false)
+                                                .background(base.copy(alpha = 0.12f), MaterialTheme.shapes.extraSmall)
+                                                .padding(horizontal = Space.s, vertical = 2.dp))
+                                        if (l.meta.isNotEmpty()) Text(l.meta, style = MaterialTheme.typography.labelMedium, color = muted,
+                                            modifier = if (l.who.isEmpty()) Modifier else Modifier.padding(start = Space.s))
+                                    }
                                     Text(Emoji.strip(l.body), style = MaterialTheme.typography.bodyMedium)
                                     // 🗓 구간별 요약(3층): 눌러서 펼침
                                     if (details.isNotEmpty()) {
