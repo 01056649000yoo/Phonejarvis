@@ -37,11 +37,11 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** 이번 버전에서 바뀐 점 한 줄 (버전 올릴 때 같이 고치기). 새 것을 앞에 — 앞 세 가지가 릴리스·안내 페이지의 '바뀐 점'으로도 나감(build.yml) */
-private const val WHATS_NEW = "요약 탭에 최근 요약이 늘 보이게 · 나와 관련된 것만 요약 · 버전·업데이트 일시 표시 · 하루 정리는 하루 종일 온 알림을 총정리 · 빠지던 알림 없게 · 카톡 단톡방은 원문 줄로 · 이어진 대화 ↪ · 답한 물음 내리기 · 메일은 제목 그대로 · 짧으면 원문 그대로 · 오해 없는 요약 · 어제 메시지가 섞이지 않게 · 오픈채팅 한 방으로 · 내가 만든 묶음별 연락 · 모든 연락을 간단한 내용까지 · 중요한 대화만 요약해요 · 캘린더는 일정 그대로 · 요약 문장 다듬기"
+private const val WHATS_NEW = "요약 탭에 최근 요약이 늘 보이게 · 할 일·마감 카드 없앰 · 나와 관련된 것만 요약 · 버전·업데이트 일시 표시 · 하루 정리는 하루 종일 온 알림을 총정리 · 빠지던 알림 없게 · 카톡 단톡방은 원문 줄로 · 이어진 대화 ↪ · 답한 물음 내리기 · 메일은 제목 그대로 · 짧으면 원문 그대로 · 오해 없는 요약 · 어제 메시지가 섞이지 않게 · 오픈채팅 한 방으로 · 내가 만든 묶음별 연락 · 모든 연락을 간단한 내용까지 · 중요한 대화만 요약해요 · 캘린더는 일정 그대로 · 요약 문장 다듬기"
 
 /** 업데이트 내역 큰 창 (버전 올릴 때 같이 고치기) */
 private val WHATS_NEW_DETAIL = listOf(
-    "📋 요약 탭이 비지 않게" to "요약 탭에 가장 최근 요약과 오늘의 하루 정리를 따로 보여 줘요. 예전엔 가장 최근 것 하나만 보여 줘서, 그게 숨긴 하루 정리면 방금 한 요약이 있어도 요약 탭이 텅 비었어요. 숨긴 요약은 '다시 보기' 한 줄로 남아요. 할 일·마감 카드는 직접 넣은 할 일이 있을 때만 보여요.",
+    "📋 요약 탭이 비지 않게" to "요약 탭에 가장 최근 요약과 오늘의 하루 정리를 따로 보여 줘요. 예전엔 가장 최근 것 하나만 보여 줘서, 그게 숨긴 하루 정리면 방금 한 요약이 있어도 요약 탭이 텅 비었어요. 숨긴 요약은 '다시 보기' 한 줄로 남아요. 할 일·마감 카드와 하루 정리의 마감 칸은 없앴어요(할 일인지 아닌지 구분이 어려워서).",
     "🎯 나와 관련된 것만 요약" to "방마다 나와의 거리를 셋으로 나눠요. 나에게 온 대화(1:1로 아는 사람·문자·학부모, 나를 부르거나 멘션한 말이 있는 방)는 내용까지 요약하고, 내가 말해 본 단톡방은 한 줄로, 오픈채팅·커뮤니티처럼 그 밖의 방은 이름과 건수만 적어요(그 방에는 AI를 쓰지 않아 요약도 빨라져요). 큰 단톡방에서 누가 나를 부르거나 내 말에 이어서 말하면, 방 전체를 요약하지 않고 그 말과 앞뒤 한 마디씩만 원문 그대로 보여 줘요. 🙋 답할 것은 나에게 한 물음만 — '관심 있으신 선생님들 참여 부탁'처럼 여러 사람에게 돌린 말은 빼요. 나를 부르는 말(이름·별명·닉네임)은 설정 → 사람 묶음 → 🙋 나를 부르는 말에 넣어 주세요(카톡에 찍힌 내 이름을 추천해요). 아직 안 넣었거나 처음 2주 동안은 단톡방을 함부로 줄이지 않아요. 방이 잘못 나뉘었으면 설정 → 방 고르기에서 방마다 '늘 중요 · 한 줄 · 건수만'을 고를 수 있어요.",
     "🏷 버전과 업데이트 일시" to "설정 맨 위와 이 업데이트 안내에 지금 버전과 그 버전이 나온 일시를 보여 줘요. 안내 페이지(받기 링크)에도 지금 받는 버전과 업데이트 일시가 보여서, 폰에 깔린 버전이 최신인지 바로 견줘 볼 수 있어요.",
     "🗓 하루 정리는 총정리로" to "하루에 알림이 수백 개 와도 하루 정리가 15줄로 줄어들지 않아요. 맨 위 ✨ 오늘의 핵심(AI 5줄)과 📅 내일, 그 아래 🙋 답할 것은 상한 없이 모두, 💼 업무·👥 묶음, 💬 방별 하루(내용 있는 방은 모두 한 줄씩, 인사·맞장구뿐인 방은 이름과 건수만), 📦 앱 알림 건수까지 이어져요. 방 줄 아래 '▸ 구간별 요약'을 누르면 그 방의 요약을 시각별로 펼쳐 볼 수 있어요. 알림창에는 핵심과 답할 것만 보이고, 누르면 전체가 열려요.",
@@ -405,8 +405,7 @@ private fun BriefingTab(vm: JarvisViewModel) {
         }
     }
 
-    // 📌 할 일·마감: 알림에서 저절로 뽑던 것은 2026-11-23 에 없앰 — 직접 넣은 할 일이 있을 때만 보임(빈 카드가 늘 떠 있던 것, 2026-11-25)
-    if (vm.tasks.any { !it.done }) TasksCard(vm)
+    // 📌 할 일·마감 카드는 없앰(2026-11-25 선생님: 할 일인지 아닌지 구분이 어려워 불필요)
     // 2026-11-24 선생님: 학부모 고정 칸 대신 내가 만든 👥 사람 묶음마다 그 이름으로 연락 정리
     PeopleCards(vm)
 
@@ -1379,57 +1378,6 @@ private fun AddAppDialog(vm: JarvisViewModel, apps: List<JarvisViewModel.Addable
         },
         confirmButton = { TextButton(onClick = { vm.closeAddApps() }) { Text("닫기") } },
     )
-}
-
-// ───────────────────────── 📌 할 일·마감 (브리핑 탭) ─────────────────────────
-
-/** 직접 넣은 할 일(2026-11-23 부터 알림에서 저절로 뽑지 않음): 오늘 / D-1 / 지남 표시, 체크로 끝내기, 직접 추가. */
-@Composable
-private fun TasksCard(vm: JarvisViewModel) {
-    val fmt = remember { SimpleDateFormat("M/d(E) HH:mm", Locale.KOREA) }
-    val dayFmt = remember { SimpleDateFormat("M/d(E)", Locale.KOREA) }
-    var showAll by rememberSaveable { mutableStateOf(false) }
-    var adding by rememberSaveable { mutableStateOf(false) }
-    var input by rememberSaveable { mutableStateOf("") }
-    val open = vm.tasks.filter { !it.done }
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.animateContentSize(Motion.size).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                val today = open.count { it.dLabel() == "오늘" || it.dLabel() == "지남" }
-                Text(if (open.isEmpty()) "📌 할 일·마감 · 없어요" else "📌 할 일·마감 ${open.size}건" + if (today > 0) " · 오늘 $today" else "",
-                    style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading().weight(1f))
-                TextButton(onClick = { adding = !adding }) { Text(if (adding) "닫기" else "＋ 추가") }
-            }
-            if (open.isEmpty() && !adding) Text("챙길 일을 ＋ 추가로 직접 넣어 두세요. (알림에서 저절로 뽑지는 않아요)",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (adding) {
-                OutlinedTextField(value = input, onValueChange = { input = it }, singleLine = true,
-                    placeholder = { Text("할 일 (예: 체험학습 동의서 걷기)") }, modifier = Modifier.fillMaxWidth())
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("오늘" to 0, "내일" to 1, "모레" to 2).forEach { (label, d) ->
-                        Button(onClick = { vm.addTask(input, d); input = ""; adding = false }, enabled = input.isNotBlank()) { Text(label) }
-                    }
-                }
-            }
-            (if (showAll) open else open.take(5)).forEach { t ->
-                val label = t.dLabel()
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = false, onCheckedChange = { vm.setTaskDone(t, true) })
-                    Column(Modifier.weight(1f)) {
-                        Text(t.title, style = MaterialTheme.typography.bodyMedium, maxLines = 2)
-                        Text((if (t.hasTime) fmt.format(t.due) else dayFmt.format(t.due)) + " · " + t.room,
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-                    }
-                    Surface(shape = MaterialTheme.shapes.small, color = when (label) {
-                        "지남", "오늘" -> MaterialTheme.colorScheme.tertiaryContainer
-                        "D-1" -> Ssam.GoldPale.copy(alpha = 0.45f)
-                        else -> MaterialTheme.colorScheme.surfaceVariant
-                    }) { Text(label, Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelMedium) }
-                }
-            }
-            if (open.size > 5) TextButton(onClick = { showAll = !showAll }) { Text(if (showAll) "접기" else "${open.size - 5}건 더 보기") }
-        }
-    }
 }
 
 // ───────────────────────── 🧒 우리 반 (설정) ─────────────────────────

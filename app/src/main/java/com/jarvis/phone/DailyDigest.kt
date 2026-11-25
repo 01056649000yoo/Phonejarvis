@@ -272,12 +272,13 @@ object DailyDigest {
         val entries = db.roomDays(day)
         // 🗓 총정리(방별 하루 기록이 있는 날) — 예전 판에서 요약한 날은 아래 예전 방식으로
         if (entries.isNotEmpty()) {
-            val t = total(Day(entries, keywordLines(today), Briefings.taskSection(db.tasks()), today.size, today.sumOf { it.count },
+            val t = total(Day(entries, keywordLines(today), "",   // 📌 마감 칸은 없앰(2026-11-25 선생님)
+                today.size, today.sumOf { it.count },
                 today.minOf { it.fromTime }), ReplyLog.all(ctx), now, ask)
             db.insertBriefing(Briefing(time = now, fromTime = day, label = LABEL, count = 0, text = t.full))
             return Briefings.Outcome("$LABEL · $d" + if (t.byAi) "" else " (AI 없이)", t.short, now)
         }
-        val m = material(today, Briefings.taskSection(db.tasks()), Students.names(ctx), ReplyLog.all(ctx))
+        val m = material(today, "", Students.names(ctx), ReplyLog.all(ctx))
         val (text, byAi) = write(m, now, ask)
         db.insertBriefing(Briefing(time = now, fromTime = day, label = LABEL, count = 0, text = text))
         return Briefings.Outcome("$LABEL · $d" + if (byAi) "" else " (AI 없이)", text, now)
