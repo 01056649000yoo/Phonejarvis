@@ -156,4 +156,25 @@ class RelevanceTest {
             assertEquals(t, Relevance.JOINED, Relevance.level(conv("", msg("", "택배 상자를 든 네오", t)), all, noRoster, { false }))
         }
     }
+
+    // 2026-11-26 선생님: 정기 요약은 나와 관련된 것만, 직접 누른 요약은 내가 속한 방도 한 줄(가장 최근 말 하나)
+    @Test fun 정기_요약은_내가_속한_방을_줄로_쓰지_않음() = runBlocking {
+        val items = listOf(
+            msg("동학년방", "김", "렉서스 새로 나온 건 가격이 그리 안 올랐대요"), msg("동학년방", "박", "보급형차로 옵션질하면 회사 힘들어져요"),
+            msg("동학년방", "이", "사이즈가 좀 커졌죠"),
+            msg("", "김민준 어머니", "선생님 내일 준비물이 뭔가요?", "com.samsung.android.messaging"))
+        val joined = setOf("동학년방")
+        val levels = { c: BriefingComposer.Conversation -> Relevance.level(c, names, noRoster, { it in joined }, trusted1to1 = c.items.all { Sms.isSms(it.pkg) }) }
+        suspend fun run(compact: Boolean) = BriefingComposer.compose(items, ask = { "" }, focus = true, levels = levels,
+            replyAllowed = { c -> Relevance.replyOk(c, levels(c), names, noRoster) }, compact = compact).people
+        // 직접 누른 요약: 가장 최근 말 하나만(이어 붙이지 않음)
+        val manual = run(false)
+        assertTrue(manual, "- 동학년방 (3건): 이: 사이즈가 좀 커졌죠" in manual)
+        assertFalse(manual, "렉서스" in manual || " / " in manual.lines().first { it.startsWith("- 동학년방") })
+        // 정기 요약: 줄 없이 곳 수·건수만, 나에게 온 것은 그대로
+        val auto = run(true)
+        assertFalse(auto, "사이즈가" in auto || "- 동학년방" in auto)
+        assertTrue(auto, "- 그 밖의 방: 내가 속한 방 1곳 3건" in auto)
+        assertTrue(auto, "김민준 어머니" in auto && "준비물" in auto)
+    }
 }

@@ -417,9 +417,10 @@ object DailyDigest {
         val talkLines = talk.mapNotNull { e -> line(e)?.let { e to it } }
             .sortedWith(compareBy<Pair<RoomDay.Entry, String>> { lvOf(it.first) }.thenByDescending { it.first.count })
         val meLines = talkLines.filter { lvOf(it.first) == Relevance.ME }
-        val joinedLines = talkLines.filter { lvOf(it.first) != Relevance.ME }
-        val shownKeys = talkLines.map { it.first.key }.toSet() + asks.map { it.first.key }
-        val others = talk.filter { it.key !in shownKeys }.sortedByDescending { it.count }
+        // 🗞 하루 정리는 나와 관련된 것만(2026-11-26 선생님): 내가 속한 방은 줄을 쓰지 않고 이름·건수만
+        val shownKeys = meLines.map { it.first.key }.toSet() + asks.map { it.first.key }
+        val joinedRooms = talk.filter { it.key !in shownKeys && lvOf(it) == Relevance.JOINED }.sortedByDescending { it.count }
+        val others = talk.filter { it.key !in shownKeys && lvOf(it) != Relevance.JOINED }.sortedByDescending { it.count }
 
         val body = StringBuilder()
         fun section(head: String, lines: List<String>) {
@@ -452,7 +453,7 @@ object DailyDigest {
         val since = if (d.from in 1 until SummarySchedule.startOfDay(now)) " (${SimpleDateFormat("M/d (E) HH:mm", Locale.KOREA).format(d.from)}부터)" else ""
         val meRooms = (meLines.map { it.first.key } + asks.filter { it.first.kind == RoomDay.TALK }.map { it.first.key }).distinct().size
         val intro = "요약 ${d.briefings}번 · 알림 ${d.count}건${since}을 정리했어요. 대화방 ${talk.size}곳 중 " +
-            "나에게 온 대화 ${meRooms}곳 · 내가 속한 방 ${joinedLines.size}곳 · 그 밖의 방 ${others.size}곳."
+            "나에게 온 대화 ${meRooms}곳 · 내가 속한 방 ${joinedRooms.size}곳 · 그 밖의 방 ${others.size}곳."
         val top = StringBuilder()
         core?.let { (c, t) ->
             if (c.isNotEmpty()) { top.append("✨ 오늘의 핵심\n"); c.forEach { top.append(it).append('\n') }; top.append('\n') }
@@ -465,11 +466,10 @@ object DailyDigest {
         groupBlocks.forEach { (h, ls) -> section(h, ls) }
         section("💬 나에게 온 대화 (${meLines.size}곳 · ${meLines.sumOf { it.first.count }}건)",
             meLines.flatMap { (e, l) -> listOf("- ${e.room} (${e.count}건): $l") + details(e) })
-        section("💬 내가 속한 방 (${joinedLines.size}곳 · ${joinedLines.sumOf { it.first.count }}건)",
-            joinedLines.map { (e, l) -> "- ${e.room} (${e.count}건): $l" })   // 한 줄씩(구간별 요약 없이)
-        section("💬 그 밖의 방 (${others.size}곳 · ${others.sumOf { it.count }}건)",
-            if (others.isEmpty()) emptyList() else listOf("- " + others.take(MAX_OTHER_NAMES).joinToString(", ") { "${it.room} ${it.count}건" } +
-                (if (others.size > MAX_OTHER_NAMES) " 외 ${others.size - MAX_OTHER_NAMES}곳" else "")))
+        fun names(l: List<RoomDay.Entry>) = if (l.isEmpty()) emptyList() else listOf("- " + l.take(MAX_OTHER_NAMES).joinToString(", ") { "${it.room} ${it.count}건" } +
+            (if (l.size > MAX_OTHER_NAMES) " 외 ${l.size - MAX_OTHER_NAMES}곳" else ""))
+        section("💬 내가 속한 방 (${joinedRooms.size}곳 · ${joinedRooms.sumOf { it.count }}건)", names(joinedRooms))   // 이름·건수만
+        section("💬 그 밖의 방 (${others.size}곳 · ${others.sumOf { it.count }}건)", names(others))
         if (apps.isNotEmpty()) {
             val top6 = apps.sortedByDescending { it.count }
             body.append("📦 앱 알림 ${apps.sumOf { it.count }}건 · " + top6.take(8).joinToString(", ") { "${it.app} ${it.count}" } +
@@ -479,7 +479,7 @@ object DailyDigest {
         val full = (intro + "\n\n" + top + askBlock + body + noAi).trim()
         val hint = "(📱 눌러서 열면 " + listOfNotNull(
             if (meLines.isNotEmpty()) "나에게 온 대화 ${meLines.size}곳" else null,
-            if (joinedLines.isNotEmpty()) "내가 속한 방 ${joinedLines.size}곳" else null,
+            if (joinedRooms.isNotEmpty()) "내가 속한 방 ${joinedRooms.size}곳" else null,
             if (groupBlocks.isNotEmpty()) "묶음·업무" else null,
             if (apps.isNotEmpty()) "앱 알림" else null,
         ).joinToString(" · ").ifEmpty { "전체" } + "까지 모두 볼 수 있어요)"

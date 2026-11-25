@@ -715,13 +715,14 @@ object BriefingComposer {
 
     /** 이보다 적은 마디의 잡담 방은 AI 없이 그 말을 짧게, 많으면 AI 핵심 요약 */
     const val PEEK_MAX = 3
+    const val PEEK_LATEST = 40        // 내가 속한 방의 몇 마디: 가장 최근 말 하나를 이 길이까지
     private fun said(conv: Conversation) = conv.items.filter { hasWords(it.text) && !isFiller(it.text) }
 
     /** AI 없이 간단한 내용: 뜻 있는 말을 '보낸 사람: 말' 로 이어 90자 안쪽. 답장 표시(🙋)는 붙이지 않음 */
-    fun peek(conv: Conversation): RoomSummary {
-        val point = clip(said(conv).joinToString(" / ") { m ->
-            conv.who(m).let { if (it.isNotEmpty()) "$it: " else "" } + condenseAll(m.text.replace('\n', ' ').trim())
-        }, 90)
+    fun peek(conv: Conversation, latestOnly: Boolean = false): RoomSummary {
+        fun line(m: NotiItem) = conv.who(m).let { if (it.isNotEmpty()) "$it: " else "" } + condenseAll(m.text.replace('\n', ' ').trim())
+        val point = if (latestOnly) said(conv).lastOrNull()?.let { clip(line(it), PEEK_LATEST) }.orEmpty()
+            else clip(said(conv).joinToString(" / ", transform = ::line), 90)
         return RoomSummary(conv, point, "", false, byModel = false)
     }
 
@@ -848,6 +849,11 @@ object BriefingComposer {
         levels: ((Conversation) -> Int)? = null,
         /** 🎯 문장 단위: 단톡방에서 나에게 한 말을 알아보는 법 — 방 자체는 나에게 온 방이 아니면 나에게 한 말과 앞뒤만 원문으로(AI 없이) */
         mentions: Mentions? = null,
+        /**
+         * 🗞 정기 요약(정한 시각·자동)인가(2026-11-26 선생님: 정기 요약은 나와 관련된 것만).
+         * true 면 '내가 속한 방'은 AI 도 쓰지 않고 줄도 쓰지 않음(곳 수·건수만). 직접 누른 '지금 정리'·위젯은 false — 한 줄씩 훑어봄
+         */
+        compact: Boolean = false,
     ): Result {
         val (people, apps) = items.partition(::isPerson)
         val groupList = groups.map { it.title to groupConvs(it) }.filter { it.second.isNotEmpty() }
@@ -872,7 +878,8 @@ object BriefingComposer {
         val todos = convs.sortedWith(compareBy<Conversation> { rank(it) }.thenByDescending { it.last })
             .map { conv -> val c = validCache(conv, cache, since); Todo(conv, c, freshOf(conv, c)) }
         // 모델에 묻는 횟수(진행 표시용): 새 메시지를 30개씩 나눈 덩어리 수(30개 넘으면 앞 덩어리 정리에 이어서 고쳐 씀)
-        val total = todos.filter { it.fresh.isNotEmpty() && lv(it.conv) != Relevance.OTHER && (it.prev != null || direct(it.conv) == null) }.sumOf { chunksOf(it.conv, it.fresh).size }
+        fun quietJoined(cv: Conversation) = compact && focus && levels != null && keyOf(cv) !in groupKeys && lv(cv) == Relevance.JOINED
+        val total = todos.filter { it.fresh.isNotEmpty() && lv(it.conv) != Relevance.OTHER && !quietJoined(it.conv) && (it.prev != null || direct(it.conv) == null) }.sumOf { chunksOf(it.conv, it.fresh).size }
         var asked = 0
         for ((conv, c, fresh) in todos) {
             var prev: RoomSummary? = c?.let { RoomSummary(conv, it.point, it.ask, it.needReply, byModel = true, lines = it.lines) }
@@ -889,6 +896,8 @@ object BriefingComposer {
             if (focus && mentions != null && keyOf(conv) !in groupKeys && usesMention(conv, mentions)) {
                 mentionSummary(conv, { mentions.toMe(conv, it) }, mentions.explicit)?.let { rooms += it; continue }
             }
+            // 🗞 정기 요약: 내가 속한 방은 줄 없이 곳 수·건수만(AI 도 안 씀 — 폰도 가볍게)
+            if (quietJoined(conv)) { rooms += RoomSummary(conv, "", "", false, byModel = false, level = Relevance.JOINED); continue }
             // 🧵 앞 대화(참고용) — 30분 안에 이어진 것, 더 오래됐어도 답·같은 일로 이어진 것(linked)
             val earlier = linked(conv, runCatching { before(conv) }.getOrDefault(emptyList()))
             val context = earlier.map { contextLine(conv, it, conv.items.first().time) }
@@ -896,7 +905,8 @@ object BriefingComposer {
             val prevLine = earlier.lastOrNull()?.let { n -> clip(conv.who(n).ifEmpty { n.title.trim() }.let { if (it.isNotEmpty()) "$it: " else "" } + n.text.replace('\n', ' ').trim(), 40) }.orEmpty()
             // 🎯 온 연락은 간단한 내용까지, 많으면 핵심 요약(2026-11-24 선생님) — 중요하지 않은 방이 몇 마디뿐이면 AI 없이 그 말을 짧게
             val meRoom = if (levels != null && focus) lv(conv) == Relevance.ME else important(conv, replyAllowed)
-            if (focus && keyOf(conv) !in groupKeys && !meRoom && said(conv).size <= PEEK_MAX) { rooms += peek(conv).copy(prevLine = prevLine); continue }
+            // 나와의 거리로 볼 때(내가 속한 방)는 가장 최근 말 하나만 — 두세 마디를 ' / '로 이어 붙이면 요약이 아니라 원문 나열로 보였다
+            if (focus && keyOf(conv) !in groupKeys && !meRoom && said(conv).size <= PEEK_MAX) { rooms += peek(conv, latestOnly = levels != null).copy(prevLine = prevLine); continue }
             if (fresh.isEmpty() && prev != null) { rooms += prev.copy(prevLine = prevLine); continue }        // 미리 요약해 둔 그대로
             if (prev == null) direct(conv)?.let { rooms += it.copy(prevLine = prevLine); continue }
             var covered = c?.count ?: 0
@@ -985,7 +995,7 @@ object BriefingComposer {
             if (cut != null && leftover.isNotEmpty()) add("$cut 대화방 ${leftover.size}곳은 이름만 적었어요.")
             else if (cut != null) add(cut!!)
         }
-        return Result(render(rooms, leftover, notes), appSection(apps.filterNot { AD.containsMatchIn(it.title) || AD.containsMatchIn(it.text) }),
+        return Result(render(rooms, leftover, notes, compact), appSection(apps.filterNot { AD.containsMatchIn(it.title) || AD.containsMatchIn(it.text) }),
             rooms.filter { it.needReply }, groupText, cutRooms = leftover.size + groupLeft, work = workText,
             rooms = rooms.toList(), groupRooms = groupRooms, cut = leftover.toList(), groupCut = groupLeftover)
     }
@@ -1118,7 +1128,7 @@ object BriefingComposer {
         // 🧵 지난 요약 끝에서 이어진 대화 — 앞의 마지막 말을 같이(줄 끝이라 하루 정리의 방 이름 읽기에 영향 없음)
         (if (r.prevLine.isNotEmpty()) " · ↪ 앞: “${r.prevLine}”" else "")
 
-    fun render(rooms: List<RoomSummary>, leftover: List<Conversation>, notes: List<String>): String = buildString {
+    fun render(rooms: List<RoomSummary>, leftover: List<Conversation>, notes: List<String>, compact: Boolean = false): String = buildString {
         val fmt = SimpleDateFormat("HH:mm", Locale.KOREA)
         // 2026-11-23 선생님: 칸을 줄임 — 🙋 답장할 연락을 따로 두지 않고 💬 대화 요약 맨 위에 🙋 표시로
         val replies = rooms.filter { it.needReply }
@@ -1145,6 +1155,17 @@ object BriefingComposer {
             }
             if (others.isNotEmpty()) {
                 // 건수 많은 순으로 [MAX_OTHER_ROOMS]곳까지 — 예전엔 수십 곳 이름을 모두 적어 요약의 절반이 방 이름이었다(오픈채팅 40곳이면 600자)
+                // 🗞 정기 요약: 이름을 늘어놓지 않고 곳 수·건수만(요약 못 한 방만 이름)
+                if (compact) {
+                    val quiet = rooms.filter { !it.needReply && it.point.isBlank() }
+                    val (joined, rest) = quiet.partition { it.level == Relevance.JOINED }
+                    fun n(l: List<RoomSummary>) = "${l.size}곳 ${l.sumOf { it.conv.items.size }}건"
+                    append("- 그 밖의 방: " + (leftover.map { "${it.room} ${it.items.size}건" } +
+                        listOfNotNull(if (joined.isNotEmpty()) "내가 속한 방 ${n(joined)}" else null, if (rest.isNotEmpty()) "그 밖 ${n(rest)}" else null))
+                        .joinToString(", ") + "\n\n")
+                    notes.forEach { append("($it)\n") }
+                    return@buildString
+                }
                 val top = chatter.sortedByDescending { it.items.size }
                 append("- 그 밖의 방: " + (leftover + top.take(MAX_OTHER_ROOMS)).joinToString(", ") { "${it.room} ${it.items.size}건" } +
                     (if (top.size > MAX_OTHER_ROOMS) " 외 ${top.size - MAX_OTHER_ROOMS}곳 ${top.drop(MAX_OTHER_ROOMS).sumOf { it.items.size }}건" else "") + "\n")

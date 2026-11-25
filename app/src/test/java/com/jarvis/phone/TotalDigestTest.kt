@@ -97,7 +97,10 @@ class TotalDigestTest {
         assertTrue(t.full, "🙋 답할 것 (12)" in t.full)
         // 나에게 온 대화·내가 속한 방은 한 줄씩, 맞장구뿐인 방·그 밖의 방(오픈채팅 등)은 이름과 건수만
         (1..5).forEach { assertTrue(t.full, "- 큰방$it (60건): " in t.full) }
-        (1..15).forEach { assertTrue(t.full, "- 보통방$it (10건): 보통방$it 내용" in t.full) }
+        // 나에게 온 방은 한 줄씩, 내가 속한 방은 이름과 건수만(2026-11-26: 하루 정리는 나와 관련된 것만)
+        (1..3).forEach { assertTrue(t.full, "- 보통방$it (10건): 보통방$it 내용" in t.full) }
+        assertFalse(t.full, "보통방4 내용" in t.full)
+        assertTrue(t.full, "보통방4 10건" in t.full)
         assertTrue(t.full, "💬 그 밖의 방 (25곳" in t.full && "오픈방1 8건" in t.full && "외 ${25 - DailyDigest.MAX_OTHER_NAMES}곳" in t.full)   // 이름은 건수 많은 순으로 12곳까지
         assertFalse(t.full, "- 잡담방1 (3건)" in t.full)
         assertFalse(t.full, "오픈방1 잡담" in t.full)
@@ -116,7 +119,7 @@ class TotalDigestTest {
         val joined = lines.indexOfFirst { it.startsWith("💬 내가 속한 방 (12곳") }
         assertTrue(t.full, me in 0 until joined)
         assertTrue(t.full, lines.indexOf("- 보통방1 (10건): 보통방1 내용") in me until joined)
-        assertTrue(t.full, lines.indexOf("- 보통방4 (10건): 보통방4 내용") > joined)
+        assertTrue(t.full, lines.indexOfFirst { "보통방4 10건" in it } > joined)
         // 알림창용은 1층과 🙋 만
         assertTrue(t.short, "자료12 내 달라고 함" in t.short)
         assertFalse(t.short, "💬 내가 속한 방" in t.short)

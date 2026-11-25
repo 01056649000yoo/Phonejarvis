@@ -120,10 +120,10 @@ class Summarizer private constructor(private val ctx: Context) {
                           groups: List<BriefingComposer.Group> = emptyList(), maxMillis: Long = MAX_MILLIS, focus: Boolean = false,
                           before: (BriefingComposer.Conversation) -> List<NotiItem> = { emptyList() },
                           levels: ((BriefingComposer.Conversation) -> Int)? = null,
-                          mentions: BriefingComposer.Mentions? = null): BriefingComposer.Result =
+                          mentions: BriefingComposer.Mentions? = null, compact: Boolean = false): BriefingComposer.Result =
         runLock.withLock {
             stopRequested = false; cutByTime = false
-            try { summarizeLocked(items, onStatus, replyAllowed, cache, since, onCached, extraStop, groups, maxMillis, focus, before, levels, mentions) } finally { stopRequested = false }
+            try { summarizeLocked(items, onStatus, replyAllowed, cache, since, onCached, extraStop, groups, maxMillis, focus, before, levels, mentions, compact) } finally { stopRequested = false }
         }
 
     /**
@@ -137,7 +137,7 @@ class Summarizer private constructor(private val ctx: Context) {
                                         groups: List<BriefingComposer.Group>, maxMillis: Long, focus: Boolean,
                                         before: (BriefingComposer.Conversation) -> List<NotiItem>,
                                         levels: ((BriefingComposer.Conversation) -> Int)?,
-                                        mentions: BriefingComposer.Mentions?): BriefingComposer.Result {
+                                        mentions: BriefingComposer.Mentions?, compact: Boolean): BriefingComposer.Result {
         val deadline = System.currentTimeMillis() + maxMillis
         var called = 0
         val result = BriefingComposer.compose(
@@ -152,7 +152,7 @@ class Summarizer private constructor(private val ctx: Context) {
                 }
             },
             replyAllowed = replyAllowed,
-            cache = cache, since = since, onCached = onCached, groups = groups, focus = focus, before = before, levels = levels, mentions = mentions,
+            cache = cache, since = since, onCached = onCached, groups = groups, focus = focus, before = before, levels = levels, mentions = mentions, compact = compact,
         )
         if (stopRequested && called == 0) throw StoppedException("중지했어요.")
         return result
