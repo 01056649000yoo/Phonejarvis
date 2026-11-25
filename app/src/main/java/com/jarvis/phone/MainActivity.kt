@@ -344,6 +344,15 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         private set
     fun closeMyNamesTip() { prefs.edit().putBoolean("my_names_tip_closed", true).apply(); myNamesTipClosed = true }
 
+    /** 📦 예전 쌤톡스(com.jarvis.phone)가 아직 설치돼 있나 — 두 앱이 함께 있으면 알림을 두 번 모음(2026-11-25 패키지 이름 바꿈) */
+    val oldAppInstalled: Boolean get() = getApplication<Application>().let { a -> a.packageName != OLD_PACKAGE &&
+        runCatching { a.packageManager.getPackageInfo(OLD_PACKAGE, 0); true }.getOrDefault(false) }
+    private val OLD_PACKAGE = "com.jarvis.phone"
+    fun openOldAppSettings() {
+        runCatching { getApplication<Application>().startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            android.net.Uri.parse("package:$OLD_PACKAGE")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+    }
+
     /** 🎯 방마다 직접 정한 거리(늘 중요 1 · 한 줄 2 · 건수만 3, 없으면 저절로) */
     var roomTiers by mutableStateOf(RoomTier.all(app))
         private set

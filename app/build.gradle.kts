@@ -9,11 +9,11 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.jarvis.phone"
+        applicationId = "com.ssamtox"   // 2026-11-25 선생님: 패키지 이름을 com.ssamtox 로(개발자 인증·Play 등록). 코드 패키지(namespace)는 그대로
         minSdk = 31          // Galaxy Z Fold4 (Android 14+) 기준
         targetSdk = 36
-        versionCode = 76
-        versionName = "1.14.2"
+        versionCode = 77
+        versionName = "1.15.0"
         // 🏷 빌드(=업데이트) 시각 — CI 가 BUILD_TIME(ms)을 넣음. 앱에서 'v1.14.0 · 11월 25일 22:53 업데이트'로 보임(2026-11-25 선생님)
         buildConfigField("long", "BUILD_TIME", "${System.getenv("BUILD_TIME")?.takeIf { it.all(Char::isDigit) } ?: "0"}L")
     }

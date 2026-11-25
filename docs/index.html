@@ -237,6 +237,10 @@
   .download ol { margin: 24px 0 0; padding-left: 20px; line-height: 1.95; font-size: 15px; color: #DAD5CC; }
   .download ol b { color: var(--band-fg); font-weight: 600; }
   .download .url { font-size: 13px; color: var(--band-muted); margin-top: 16px; letter-spacing: .04em; }
+  .download .move { margin-top: 20px; padding: 14px 16px; border-radius: var(--r-sm); background: rgba(247,241,232,.08); font-size: 14px; color: #DAD5CC; }
+  .download .move summary { cursor: pointer; color: var(--band-fg); font-weight: 600; }
+  .download .move ol { margin: 10px 0 0; font-size: 14px; line-height: 1.8; }
+  .download .move p { margin: 10px 0 0; }
   .qrbox { display: none; background: var(--canvas); color: var(--ink); border-radius: 24px; padding: 16px; text-align: center; font-size: 13px; width: 216px; align-self: center; }
   .qrbox #qr { width: 180px; height: 180px; margin: 0 auto 8px; }
 
@@ -588,6 +592,19 @@
             <li><b>설치</b>(이미 있으면 <b>업데이트</b>)를 누르면 끝</li>
             <li>앱을 열면 폰 진단 → AI 모델 받기 → 권한 → 위젯 순서로 안내해요</li>
           </ol>
+          <!-- 2026-11-25: 패키지 이름이 com.jarvis.phone → com.ssamtox 로 바뀜(개발자 인증·Play 등록) — 예전 앱 쓰던 선생님 갈아타기 -->
+          <details class="move">
+            <summary>이미 쌤톡스를 쓰고 있었다면 (v1.15.0 전에 설치)</summary>
+            <p>v1.15.0부터 쌤톡스가 새 앱으로 바뀌어서, 위 링크로 받으면 예전 앱 옆에 새 앱이 하나 더 설치돼요. 이렇게 옮겨 주세요.</p>
+            <ol>
+              <li>예전 쌤톡스에서 <b>설정 → 백업·복원 → 백업 만들기</b></li>
+              <li>위 링크로 새 쌤톡스를 받아 설치</li>
+              <li>새 앱의 안내대로 진행 — AI 모델은 <b>이미 받아 둔 모델 찾기</b> 또는 다시 받기</li>
+              <li>새 앱에서 <b>설정 → 백업·복원 → 복원</b> (앱 정리·묶음·키워드·나를 부르는 말이 그대로 와요)</li>
+              <li>알림 접근 권한을 새 앱에 켜고, <b>예전 앱은 지우기</b> — 둘 다 있으면 알림을 두 번 모아요</li>
+            </ol>
+            <p>지난 요약과 모은 알림 기록은 옮겨지지 않아요.</p>
+          </details>
           <div class="url">ssamtox.샘링크.kr</div>
         </div>
         <div class="qrbox"><div id="qr" role="img" aria-label="최신 APK 다운로드 QR 코드"></div>PC로 보고 있다면<br>폰 카메라로 찍으세요</div>

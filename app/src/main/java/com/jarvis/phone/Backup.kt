@@ -21,7 +21,8 @@ object Backup {
     private const val FORMAT = "ssamtox-backup"
 
     /** 백업할 설정 묶음과, 그 안에서 넣지 않을 값(그때그때 바뀌는 상태) */
-    private val FILES = listOf("apps", "briefing", "quiet", "app", "storage", "people")
+    // my_names(🙋 나를 부르는 말)·room_tier(방마다 정한 거리) — 새 패키지(com.ssamtox)로 옮길 때도 따라가게(2026-11-25)
+    private val FILES = listOf("apps", "briefing", "quiet", "app", "storage", "people", "my_names", "room_tier")
     private val SKIP = mapOf(
         "apps" to setOf("handled", "ad_day", "ad_count"),
         "quiet" to setOf("last", "since", "we_set_dnd", "zen_rule", "zen_rule_v"),   // 방해 금지 모드 번호는 폰마다 다름
