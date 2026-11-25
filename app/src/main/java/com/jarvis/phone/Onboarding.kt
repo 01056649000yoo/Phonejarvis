@@ -27,6 +27,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -432,7 +433,24 @@ private fun PermissionStep(vm: JarvisViewModel) {
         button = if (vm.hasWidget) "놓음" else "위젯 놓기",
         done = vm.hasWidget, enabled = !vm.hasWidget,
     ) { vm.pinWidget() }
-    Text("권한을 켠 뒤부터 오는 알림이 모여요. 요약 시간(아침·저녁·N시간마다·수업 뒤)과 수업 중 모아 두기는 설정 → 🔕 모아 두기·요약 시간에서 정해요.",
+    // 🔕 모아서 받을지 한 번 물음(2026-11-26 선생님) — 기본은 꺼짐(평소처럼)이라, 쌤톡스의 쓰임새인 '모아서 알림'을 모르고 지나치지 않게.
+    // 켜면 알림이 상태바에서 사라지므로 저절로 켜지 않고 여기서 고르게 함
+    var asked by rememberSaveable { mutableStateOf(false) }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("🔕 알림을 모아서 받을까요?", style = MaterialTheme.typography.titleMedium)
+            Text("모아서 받으면 카톡·문자 같은 모으는 앱의 알림은 오는 즉시 숨기고, 아침 8시·저녁 5시에 요약해서 한 번에 알려 줘요. " +
+                 "전화·알람·재난 문자·인증번호는 숨기지 않아요. 평소처럼 받으면 알림은 그대로 오고 요약은 직접 눌러서 봐요.",
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = asked && vm.schedule.digest, onClick = { vm.setDigest(true); asked = true }, label = { Text("모아서 받기") })
+                FilterChip(selected = asked && !vm.schedule.digest, onClick = { vm.setDigest(false); asked = true }, label = { Text("평소처럼 받기") })
+            }
+            Text("나중에 설정 → 🔕 모아서 알림에서 바꾸거나 시각을 고칠 수 있어요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+    Text("권한을 켠 뒤부터 오는 알림이 모여요.",
         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     PrimaryButton(if (vm.listenerEnabled && vm.notiPermission) "쌤톡스 시작하기" else "나중에 하고 시작하기") {
         vm.finishOnboarding()
