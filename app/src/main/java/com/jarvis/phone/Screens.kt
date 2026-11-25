@@ -37,10 +37,11 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** 이번 버전에서 바뀐 점 한 줄 (버전 올릴 때 같이 고치기). 새 것을 앞에 — 앞 세 가지가 릴리스·안내 페이지의 '바뀐 점'으로도 나감(build.yml) */
-private const val WHATS_NEW = "설정 백업 매일 자동 · 받아 둔 모델 자동 찾기 · 설치 방법 안내 · 요약 탭에 최근 요약이 늘 보이게 · 할 일·마감 카드 없앰 · 나와 관련된 것만 요약 · 버전·업데이트 일시 표시 · 하루 정리는 하루 종일 온 알림을 총정리 · 빠지던 알림 없게 · 카톡 단톡방은 원문 줄로 · 이어진 대화 ↪ · 답한 물음 내리기 · 메일은 제목 그대로 · 짧으면 원문 그대로 · 오해 없는 요약 · 어제 메시지가 섞이지 않게 · 오픈채팅 한 방으로 · 내가 만든 묶음별 연락 · 모든 연락을 간단한 내용까지 · 중요한 대화만 요약해요 · 캘린더는 일정 그대로 · 요약 문장 다듬기"
+private const val WHATS_NEW = "설정 백업 매일 자동 · 알림 앱 정리 화면 정리 · 받아 둔 모델 자동 찾기 · 설치 방법 안내 · 요약 탭에 최근 요약이 늘 보이게 · 할 일·마감 카드 없앰 · 나와 관련된 것만 요약 · 버전·업데이트 일시 표시 · 하루 정리는 하루 종일 온 알림을 총정리 · 빠지던 알림 없게 · 카톡 단톡방은 원문 줄로 · 이어진 대화 ↪ · 답한 물음 내리기 · 메일은 제목 그대로 · 짧으면 원문 그대로 · 오해 없는 요약 · 어제 메시지가 섞이지 않게 · 오픈채팅 한 방으로 · 내가 만든 묶음별 연락 · 모든 연락을 간단한 내용까지 · 중요한 대화만 요약해요 · 캘린더는 일정 그대로 · 요약 문장 다듬기"
 
 /** 업데이트 내역 큰 창 (버전 올릴 때 같이 고치기) */
 private val WHATS_NEW_DETAIL = listOf(
+    "🌱 알림 앱 정리가 깔끔해졌어요" to "메시지·SNS / 업무·일정 / 그 밖의 앱을 칩으로 골라 한 묶음씩 봐요. 알림이 안 들어오는 앱은 따로 칸을 두지 않고 그 앱 줄 안에 경고와 '알림 설정 열기'가 보여서, 같은 앱이 두 번 나오지 않아요. 앱 추가·광고 거르기·도움말은 목록 아래로 옮겼어요.",
     "💾 설정 백업이 매일 자동으로" to "예전엔 앱을 열거나 정한 시각 요약이 돌 때만 백업했어요. 이제 매일 새벽에 따로 백업해서, 앱을 안 연 날에도 다운로드/쌤톡스 폴더에 하루 한 번 저장돼요. 나를 부르는 말·방마다 정한 모양·내가 말한 방 기록도 함께 들어가요. 백업 비밀번호를 정해 둬야 저장돼요(설정 → 백업·복원).",
     "🔎 받아 둔 모델 자동 찾기" to "AI 모델 받기 화면에서 '받아 둔 모델 자동으로 찾기'를 누르면 다운로드·문서 폴더에서 모델 파일(.litertlm)을 찾아 바로 가져와요. 처음 한 번 '모든 파일 접근'을 켜 달라고 해요(모델 파일을 읽는 데만 써요). 켜기 싫으면 예전처럼 파일 선택으로 골라도 돼요.",
     "📖 설치 방법 안내" to "설정에 '설치 방법 보기'와 '동료에게 설치 링크 보내기'가 생겼어요. Play 프로텍트 '앱 차단됨'이 떴을 때 푸는 법, 알림 접근이 회색으로 잠겼을 때 푸는 법을 차례대로 보여 주는 페이지예요.",
@@ -1145,153 +1146,133 @@ private fun SystemSettings(vm: JarvisViewModel) {
 /** 알림 앱 정리: AI(또는 규칙)가 모으기/빼기를 추천 → "추천대로 적용" 한 번 또는 스위치로. */
 @Composable
 private fun AppCleanupCard(vm: JarvisViewModel) {
+    // 2026-11-25 선생님: '알림이 안 들어오는 메시지 앱'과 '메시지·SNS'·'업무·일정' 목록이 한 줄로 이어져 같은 앱이 두 번 보이고 관리가 불편 —
+    // 위에는 한 줄 요약과 추천 적용만, 목록은 묶음 칩으로 한 번에 하나씩, 알림이 안 오는 앱은 그 앱 줄 안에서 경고, 앱 추가·광고·도움말은 아래로
+    val ctx = LocalContext.current
     val recs = vm.appRecs
+    val imp = vm.workApps
+    val silent = vm.silentApps.toMap()
+    // 알림이 0건인 메시지 앱 중 목록에 아직 없는 것도 메시지·SNS 칸에 한 줄로(경고와 함께)
+    val silentOnly = vm.silentApps.filter { (pkg, _) -> recs.none { it.stat.pkg == pkg } }
+    val groups = listOf(0 to "💬 메시지·SNS", 1 to "💼 업무·일정", 2 to "📱 그 밖의 앱")
+    fun inGroup(g: Int) = recs.filter { AppAdvisor.group(it.stat, imp) == g }
+    var tab by rememberSaveable { mutableIntStateOf(0) }
+
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.animateContentSize(Motion.size).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("🌱 알림 앱 정리", style = MaterialTheme.typography.titleMedium)
-            Text(
-                run {
-                    // 알림을 보낸 앱 / 아직 알림이 없는 설치된 앱(처음 정리 전 미리 추천)
-                    val sent = recs.count { it.stat.count > 0 }
-                    val apps = if (sent < recs.size) "알림을 보낸 앱 ${sent}개 · 설치된 앱 ${recs.size - sent}개" else "최근 7일 동안 알림을 보낸 앱 ${recs.size}개"
-                    when {
-                        recs.isEmpty() -> "아직 모은 알림이 없어요. 알림이 쌓이면 쌤톡스가 앱을 정리해 추천해 드려요."
-                        vm.aiBusy -> "$apps · AI가 살펴보는 중…"
-                        recs.any { it.byAi } -> "$apps · AI 추천"
-                        else -> "$apps · 기본 추천"
-                    }
-                },
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            // 늘 보이는 안내: 목록은 실제로 알림이 온 앱만 나옴
-            Surface(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f), shape = MaterialTheme.shapes.medium) {
-                Text(
-                    "ℹ️ 이 목록에는 폰에 알림이 온 앱(알림 접근을 켤 때 알림창에 있던 것 포함)이 나와요. 처음 정리하기 전에는 " +
-                    "아직 알림이 없는 설치된 앱도 이름을 보고 미리 추천해요. 카톡·문자·밴드 같은 메시지·SNS 앱은 " +
-                    "그 앱의 알림을 켜 두어야 쌤톡스가 모을 수 있어요.",
-                    Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall,
-                )
-            }
-            // ＋ 앱 추가: 기본은 모든 앱을 모으고, 뺄 앱만 끔. 목록에 없는 앱은 여기서 추가(2026-11-21 선생님: 눈에 안 띈다 → 꽉 찬 버튼)
-            Button(onClick = { vm.openAddApps() }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
-                Text("＋ 목록에 없는 앱 추가하기", style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading())
-            }
-            Text("모든 앱 알림을 기본으로 모아요. 아래 목록에서 뺄 앱만 끄고, 목록에 없는 앱은 위 버튼으로 추가하세요.",
-                style = MaterialTheme.typography.bodySmall)
-            vm.addableApps?.let { list -> AddAppDialog(vm, list) }
-            // 🚫 광고 자동 거르기 (문자·카톡의 광고성 메시지)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("🚫 광고 자동 거르기", style = MaterialTheme.typography.titleMedium)
-                    Text(if (vm.adFilterOn) "오늘 광고 ${vm.adCount}건을 걸렀어요 · (광고)·수신거부·할인·쿠폰 등. 등록한 사람·키워드는 거르지 않아요"
-                         else "꺼짐 · 광고성 문자·카톡도 모아요", style = MaterialTheme.typography.bodySmall)
-                }
-                Switch(checked = vm.adFilterOn, onCheckedChange = { vm.setAdFilter(it) },
-                    colors = SwitchDefaults.colors())
-            }
+            val kept = recs.count { it.stat.pkg !in vm.excludedApps }
+            Text(when {
+                    recs.isEmpty() -> "아직 모은 알림이 없어요. 알림이 쌓이면 앱을 정리해 추천해 드려요."
+                    else -> "모으는 앱 ${kept}개 · 뺀 앱 ${vm.excludedApps.size}개" +
+                        (if (vm.adFilterOn) " · 오늘 광고 ${vm.adCount}건 거름" else "") +
+                        (if (vm.aiBusy) " · AI가 살펴보는 중…" else if (recs.any { it.byAi }) " · AI 추천" else "")
+                }, style = MaterialTheme.typography.bodyMedium)
             if (vm.aiBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
+            if (!vm.listenerEnabled) Text("⚠️ 쌤톡스의 '알림 접근' 권한이 꺼져 있어요. 설정 → AI 모델·권한에서 켜 주세요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
 
-            // 설치돼 있는데 알림이 0건인 메시지 앱 (카톡 등): 원인 안내 + 그 앱의 알림 설정 바로 열기
-            if (vm.silentApps.isNotEmpty()) {
-                val ctx = LocalContext.current
-                Text("⚠️ 알림이 안 들어오는 메시지 앱", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary)
-                vm.silentApps.forEach { (pkg, name) ->
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("$name · 최근 7일 0건", style = MaterialTheme.typography.labelLarge)
-                        Text(
-                            if (pkg == "com.kakao.talk")
-                                "카톡 알림이 꺼져 있거나, PC 카톡을 쓰는 중이라 폰 알림이 멈춰 있을 수 있어요. " +
-                                "카톡 → 설정 → 알림 켜기, PC 카톡 → 설정 → 알림에서 'PC 사용 중 모바일 알림 끄기'를 해제하세요."
-                            else "이 앱의 알림이 꺼져 있으면 쌤톡스도 모을 수 없어요.",
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(onClick = {
-                                ctx.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                                    .putExtra(Settings.EXTRA_APP_PACKAGE, pkg))
-                            }) { Text("알림 설정 열기", color = MaterialTheme.colorScheme.primary) }
-                            TextButton(onClick = { vm.dismissSilent(pkg) }) { Text("안 써요 · 숨기기", color = MaterialTheme.colorScheme.primary) }
-                        }
-                    }
-                }
-                if (!vm.listenerEnabled) Text("쌤톡스의 '알림 접근' 권한도 꺼져 있어요. 아래 기본 설정에서 켜 주세요.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
-            }
-
-            // 한 번 적용한 뒤에는 새로 알림을 보낸 앱이 생길 때만 다시 물어봄
+            // 추천 적용(처음, 또는 새로 알림을 보낸 앱이 생겼을 때만)
             val pending = if (vm.appsApplied) vm.newAppRecs else recs
             if (recs.isNotEmpty() && pending.isNotEmpty()) {
                 val drop = pending.count { !it.keep }
                 if (vm.appsApplied) Text("🆕 새로 알림을 보낸 앱 ${pending.size}개: " + pending.take(3).joinToString(", ") { it.stat.app },
                     style = MaterialTheme.typography.labelLarge)
-                Button(
-                    onClick = { vm.applyAppRecs() },
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
-                ) { Text(if (drop > 0) "추천대로 적용 (앱 ${drop}개 빼기)" else "추천대로 적용") }
-                Text("또는 아래에서 앱마다 켜고 끄세요. 끈 앱은 모으지도, 요약하지도 않아요.",
-                    style = MaterialTheme.typography.bodySmall)
-            } else if (recs.isNotEmpty()) {
-                // ✅ 이미 정리 완료: 추천 버튼 대신 한 줄. 앱 목록은 아래에 항상 보임 (여기가 알림 앱을 고르는 곳)
-                Text("✅ 정리 완료 · 뺀 앱 ${vm.excludedApps.size}개 · 아래에서 앱마다 켜고 끄세요",
-                    style = MaterialTheme.typography.bodyMedium)
-            }
-            if (recs.isNotEmpty()) {
-
-                // 그 밖의 앱은 접어 둠 (목록이 길어지지 않게). 눌러서 펼치기
-                var showOthers by rememberSaveable { mutableStateOf(false) }
-                val imp = vm.workApps
-                val others = recs.filter { AppAdvisor.group(it.stat, imp) == 2 }
-                recs.forEachIndexed { i, r ->
-                    // 묶음 제목: 💬 메시지·SNS → 💼 업무·일정(지정한 앱) → 📱 그 밖의 앱(접힘)
-                    val g = AppAdvisor.group(r.stat, imp)
-                    val msg = g == 0
-                    if (i == 0 || g != AppAdvisor.group(recs[i - 1].stat, imp)) {
-                        if (g < 2) Text(if (g == 0) "💬 메시지·SNS 앱" else "💼 업무·일정 앱 (요약의 업무·일정 칸)", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
-                        else TextButton(onClick = { showOthers = !showOthers }, contentPadding = PaddingValues(0.dp)) {
-                            Text("📱 그 밖의 앱 ${others.size}개 (빼기 추천 ${others.count { !it.keep }}) " +
-                                if (showOthers) "▾ 접기" else "▸ 펼치기",
-                                color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
-                        }
-                    }
-                    if (g == 2 && !showOthers) return@forEachIndexed
-                    val keepNow = r.stat.pkg !in vm.excludedApps
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        AppIcon(r.stat.pkg, 32.dp)
-                        Column(Modifier.weight(1f)) {
-                            Text("${r.stat.app} · " + if (r.stat.count > 0) "${r.stat.count}건" else "최근 7일 0건",
-                                style = MaterialTheme.typography.labelLarge)
-                            Text((if (r.keep) "추천: 모으기 — " else "추천: 빼기 — ") + r.reason,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = if (r.keep) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.tertiary)
-                            // 💼 업무·일정 앱으로 지정 / 빼기 — 지정한 앱의 알림만 요약의 업무·일정 칸에서 AI 가 요약(2026-11-23)
-                            if (g == 2) TextButton(onClick = { vm.setWork(r.stat.pkg, true) }, contentPadding = PaddingValues(0.dp)) {
-                                Text("💼 업무·일정 앱으로 지정", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
-                            } else if (g == 1) TextButton(
-                                onClick = { vm.setWork(r.stat.pkg, false) }, contentPadding = PaddingValues(0.dp)) {
-                                Text("💼 업무·일정에서 빼기", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
-                            }
-                            // 메시지·SNS 앱은 방 단위로 고르기
-                            if (msg && keepNow) {
-                                val off = vm.excludedRoomCount(r.stat.pkg)
-                                TextButton(onClick = { vm.openRooms(r.stat.pkg, r.stat.app) },
-                                    contentPadding = PaddingValues(0.dp)) {
-                                    Text(if (off > 0) "💬 방 고르기 (뺀 방 ${off}개) ›" else "💬 방 고르기 ›",
-                                        color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
-                                }
-                            }
-                        }
-                        Switch(
-                            checked = keepNow,
-                            onCheckedChange = { vm.setAppKeep(r.stat.pkg, it) },
-                            colors = SwitchDefaults.colors(),
-                        )
-                    }
+                Button(onClick = { vm.applyAppRecs() }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                    Text(if (drop > 0) "추천대로 적용 (앱 ${drop}개 빼기)" else "추천대로 적용")
                 }
             }
-            if (recs.isEmpty()) {
-                OutlinedButton(onClick = { vm.skipAppSetup() }) { Text("나중에 할게요", color = MaterialTheme.colorScheme.primary) }
+
+            if (recs.isNotEmpty() || silentOnly.isNotEmpty()) {
+                // 묶음 칩: 한 번에 한 묶음만(칩에 앱 수 · 경고 수)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    groups.forEach { (g, label) ->
+                        val list = inGroup(g)
+                        val warn = if (g == 0) list.count { it.stat.pkg in silent } + silentOnly.size else 0
+                        val n = list.size + if (g == 0) silentOnly.size else 0
+                        FilterChip(selected = tab == g, onClick = { tab = g },
+                            label = { Text("$label $n" + if (warn > 0) " · ⚠️$warn" else "") })
+                    }
+                }
+                Text(when (tab) {
+                        0 -> "켜 둔 앱의 알림을 모아요. 단톡방은 앱마다 '방 고르기'로 뺄 수 있어요."
+                        1 -> "여기 앱의 알림은 요약의 '업무·일정' 칸에 따로 정리해요(메일은 제목, 캘린더는 일정 그대로)."
+                        else -> "쇼핑·은행·게임 등은 빼기를 추천해요. 끈 앱은 모으지도, 요약하지도 않아요."
+                    }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                val rows = inGroup(tab)
+                if (rows.isEmpty() && (tab != 0 || silentOnly.isEmpty())) Text(
+                    if (tab == 1) "아직 없어요. '📱 그 밖의 앱'에서 앱을 골라 '업무·일정으로'를 누르세요." else "이 묶음에 앱이 없어요.",
+                    style = MaterialTheme.typography.bodySmall)
+                rows.forEach { r ->
+                    AppRow(vm, r.stat.pkg, r.stat.app, r.stat.count, rec = r, group = tab, silentWarn = r.stat.pkg in silent)
+                }
+                if (tab == 0) silentOnly.forEach { (pkg, name) -> AppRow(vm, pkg, name, 0, rec = null, group = 0, silentWarn = true) }
+            }
+
+            HorizontalDivider()
+            // 아래: 앱 추가 · 광고 거르기 · 도움말
+            OutlinedButton(onClick = { vm.openAddApps() }, modifier = Modifier.fillMaxWidth()) { Text("＋ 목록에 없는 앱 추가") }
+            vm.addableApps?.let { list -> AddAppDialog(vm, list) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("🚫 광고 자동 거르기", style = MaterialTheme.typography.labelLarge)
+                    Text(if (vm.adFilterOn) "(광고)·수신거부·할인·쿠폰 같은 문자·카톡은 모으지 않아요. 등록한 사람·키워드는 거르지 않아요"
+                         else "꺼짐 · 광고성 문자·카톡도 모아요", style = MaterialTheme.typography.bodySmall)
+                }
+                Switch(checked = vm.adFilterOn, onCheckedChange = { vm.setAdFilter(it) })
+            }
+            var help by rememberSaveable { mutableStateOf(false) }
+            TextButton(onClick = { help = !help }, contentPadding = PaddingValues(0.dp)) {
+                Text(if (help) "ℹ️ 도움말 접기" else "ℹ️ 목록에 어떤 앱이 나오나요?", style = MaterialTheme.typography.labelLarge)
+            }
+            if (help) Text("폰에 알림이 온 앱(알림 접근을 켤 때 알림창에 있던 것 포함)이 나와요. 처음 정리하기 전에는 아직 알림이 없는 설치된 앱도 " +
+                "이름을 보고 미리 추천해요. 모든 앱 알림을 기본으로 모으고, 뺄 앱만 끄면 돼요. 카톡·문자·밴드 같은 메시지 앱은 그 앱의 알림을 " +
+                "켜 두어야 쌤톡스가 모을 수 있어요.", style = MaterialTheme.typography.bodySmall)
+            if (recs.isEmpty()) OutlinedButton(onClick = { vm.skipAppSetup() }) { Text("나중에 할게요") }
+        }
+    }
+}
+
+/** 알림 앱 정리의 앱 한 줄: 아이콘·이름·건수, 모으기 스위치, 묶음에 맞는 할 일(방 고르기·업무로 옮기기), 알림이 안 오면 그 자리에서 경고 */
+@Composable
+private fun AppRow(vm: JarvisViewModel, pkg: String, name: String, count: Int, rec: AppRec?, group: Int, silentWarn: Boolean) {
+    val ctx = LocalContext.current
+    val keepNow = pkg !in vm.excludedApps
+    Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        AppIcon(pkg, 32.dp)
+        Column(Modifier.weight(1f)) {
+            Text(name + if (count > 0) " · ${count}건" else "", style = MaterialTheme.typography.labelLarge)
+            if (rec != null) Text((if (rec.keep) "추천: 모으기 — " else "추천: 빼기 — ") + rec.reason,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (rec.keep) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.tertiary)
+            if (silentWarn) {
+                Text(if (pkg == "com.kakao.talk") "⚠️ 7일간 0건 — 카톡 알림이 꺼져 있거나, PC 카톡을 쓰는 중이라 폰 알림이 멈춰 있을 수 있어요(PC 카톡 → 설정 → 알림 → 'PC 사용 중 모바일 알림 끄기' 해제)."
+                     else "⚠️ 7일간 0건 — 이 앱의 알림이 꺼져 있으면 모을 수 없어요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
+                Row {
+                    TextButton(onClick = { runCatching { ctx.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, pkg)) } },
+                        contentPadding = PaddingValues(0.dp)) { Text("알림 설정 열기", style = MaterialTheme.typography.labelLarge) }
+                    Spacer(Modifier.width(12.dp))
+                    TextButton(onClick = { vm.dismissSilent(pkg) }, contentPadding = PaddingValues(0.dp)) { Text("안 써요 · 경고 숨기기", style = MaterialTheme.typography.labelLarge) }
+                }
+            }
+            when {
+                group == 0 && keepNow -> {
+                    val off = vm.excludedRoomCount(pkg)
+                    TextButton(onClick = { vm.openRooms(pkg, name) }, contentPadding = PaddingValues(0.dp)) {
+                        Text(if (off > 0) "💬 방 고르기 (뺀 방 ${off}개) ›" else "💬 방 고르기 ›", style = MaterialTheme.typography.labelLarge)
+                    }
+                }
+                group == 1 -> TextButton(onClick = { vm.setWork(pkg, false) }, contentPadding = PaddingValues(0.dp)) {
+                    Text("업무·일정에서 빼기", style = MaterialTheme.typography.labelLarge)
+                }
+                group == 2 && keepNow -> TextButton(onClick = { vm.setWork(pkg, true) }, contentPadding = PaddingValues(0.dp)) {
+                    Text("💼 업무·일정으로", style = MaterialTheme.typography.labelLarge)
+                }
             }
         }
+        Switch(checked = keepNow, onCheckedChange = { vm.setAppKeep(pkg, it) })
     }
 }
 
