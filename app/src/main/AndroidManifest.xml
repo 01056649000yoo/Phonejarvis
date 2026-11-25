@@ -32,8 +32,8 @@
         <package android:name="jp.naver.line.android" />
         <package android:name="org.telegram.messenger" />
         <package android:name="com.microsoft.teams" />
-        <!-- 예전 쌤톡스(패키지 이름이 com.jarvis.phone 이던 판)가 남아 있는지 — 옮긴 뒤 지우도록 안내(2026-11-25) -->
-        <package android:name="com.jarvis.phone" />
+        <!-- 잠깐 나갔던 com.ssamtox 판(v1.15.0)이 남아 있는지 — 지우도록 안내(2026-11-25, 패키지 이름 되돌림) -->
+        <package android:name="com.ssamtox" />
         <!-- ＋ 앱 추가: 홈 화면에 보이는 앱 목록 -->
         <intent>
             <action android:name="android.intent.action.MAIN" />

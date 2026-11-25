@@ -9,7 +9,7 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.ssamtox"   // 2026-11-25 선생님: 패키지 이름을 com.ssamtox 로(개발자 인증·Play 등록). 코드 패키지(namespace)는 그대로
+        applicationId = "com.jarvis.phone"   // 2026-11-25: com.ssamtox 로 바꿨다가 되돌림 — 새 패키지는 첫 설치라 Play 프로텍트 '앱 차단됨'(알림 접근 앱)에 걸리고, 지금 쓰는 선생님들이 갈아타야 해서
         minSdk = 31          // Galaxy Z Fold4 (Android 14+) 기준
         targetSdk = 36
         versionCode = 78
