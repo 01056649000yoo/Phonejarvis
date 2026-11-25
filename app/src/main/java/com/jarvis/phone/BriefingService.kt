@@ -430,7 +430,10 @@ object Briefings {
     class Closeness(val levels: ((BriefingComposer.Conversation) -> Int)?, val reply: (BriefingComposer.Conversation) -> Boolean)
     fun closeness(ctx: Context, rules: AppFilter.Rules = AppFilter.rules(ctx), focus: Boolean = focusOn(ctx)): Closeness {
         if (!focus) return Closeness(null) { c -> c.items.any { rules.mentionsRoster(it) } }
-        val names = rules.keywords                      // 내 이름·별명·학생 이름은 ⭐ 키워드에(선생님이 넣어 둠)
+        val mine = MyNames.all(ctx)                     // 🙋 나를 부르는 말(설정 → 사람 묶음 → 나를 부르는 말)
+        val names = mine + Students.allTerms(Students.names(ctx))   // 학생 이름이 나오는 말도 나에게 온 것
+        val hasMine = mine.isNotEmpty()
+        val learning = System.currentTimeMillis() - MyNames.since(ctx) < Relevance.LEARN_MS
         val joined = ReplyLog.all(ctx).keys             // 내가 말한 방(1:1 은 상대 이름) — 30일
         val tiers = RoomTier.all(ctx)
         // 학부모: 명부의 이름·번호, 학부모 방 — 키워드는 '나를 부름'으로 따로 봄(방 아무 데나 키워드가 있다고 방 전체가 나에게 온 것은 아님)
@@ -439,8 +442,8 @@ object Briefings {
         val memo = HashMap<String, Int>()
         val level = { c: BriefingComposer.Conversation -> memo.getOrPut(BriefingComposer.keyOf(c)) {
             Relevance.level(c, names, parent, { it in joined }, tiers[RoomTier.key(c)] ?: Relevance.AUTO,
-                trusted1to1 = c.items.all { Sms.isSms(it.pkg) }) } }
-        return Closeness(level) { c -> Relevance.replyOk(c, level(c), names, parent) }
+                trusted1to1 = c.items.all { Sms.isSms(it.pkg) }, hasMyNames = hasMine, learning = learning) } }
+        return Closeness(level) { c -> Relevance.replyOk(c, level(c), names, parent, hasMine) }
     }
 
     /** 🧵 대화방마다 이번 구간(from) 바로 앞 30분 안의 같은 방 메시지 — 업무 앱(💼)은 빼고 */

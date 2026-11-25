@@ -48,6 +48,23 @@ class RelevanceTest {
         assertEquals(Relevance.ME, lv(conv("라이프오브파이", msg("라이프오브파이", "A", "공개")), override = Relevance.ME))
     }
 
+    @Test fun 처음_쓰는_사람도_놓치지_않게() {
+        fun lv(c: BriefingComposer.Conversation, hasMine: Boolean, learning: Boolean) =
+            Relevance.level(c, if (hasMine) names else emptyList(), noRoster, { false }, hasMyNames = hasMine, learning = learning)
+        val small = conv("우리 학년방", msg("우리 학년방", "김", "학예회 금요일"), msg("우리 학년방", "박", "명단은 제가 모을게요"))
+        val crowd = conv("교사 커뮤니티", *Array(9) { msg("교사 커뮤니티", "사람$it", "AI 수업 자료 공유합니다 $it") })
+        // 익히는 기간: 작은 단톡방은 한 줄, 사람이 아주 많은 방만 그 밖의 방
+        assertEquals(Relevance.JOINED, lv(small, hasMine = true, learning = true))
+        assertEquals(Relevance.OTHER, lv(crowd, hasMine = true, learning = true))
+        // 익힌 뒤에는 내가 말한 적 없는 방은 그 밖의 방
+        assertEquals(Relevance.OTHER, lv(small, hasMine = true, learning = false))
+        // 나를 부르는 말을 아직 안 넣었으면: '선생님'을 부르는 방은 나에게(예전 규칙), 나머지는 한 줄
+        val calls = conv("우리 학년방", msg("우리 학년방", "김", "선생님 내일 회의 몇 시에 하나요?"), msg("우리 학년방", "박", "네"))
+        assertEquals(Relevance.ME, lv(calls, hasMine = false, learning = false))
+        assertEquals(Relevance.JOINED, lv(small, hasMine = false, learning = false))
+        assertTrue(Relevance.replyOk(calls, Relevance.ME, emptyList(), noRoster, hasMyNames = false))
+    }
+
     @Test fun 답할_것은_나에게_한_물음만() {
         val c = conv("끄적끄적아지트", msg("끄적끄적아지트", "A", "다들 내일 몇 시에 와요?"), msg("끄적끄적아지트", "햅삐", "@친절한유쌤 PRD 검토해 주실 수 있나요?"))
         assertTrue(Relevance.replyOk(c, Relevance.ME, names, noRoster))

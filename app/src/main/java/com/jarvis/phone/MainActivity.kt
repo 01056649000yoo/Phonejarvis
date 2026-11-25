@@ -334,6 +334,16 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         AppFilter.setAllRooms(ctx, pkg, rooms.map { it.name }, keep)
         excludedRooms = AppFilter.excludedRooms(ctx)
     }
+    // ── 🙋 나를 부르는 말 (2026-11-25: 여러 선생님이 쓰는 앱 — 나에게 온 대화를 알아보는 기준) ──
+    var myNames by mutableStateOf(MyNames.all(app))
+        private set
+    fun myNameSuggestions() = MyNames.suggestions(getApplication<Application>(), AppFilter.keywords(getApplication<Application>()))
+    fun addMyName(name: String) { MyNames.add(getApplication<Application>(), name); myNames = MyNames.all(getApplication<Application>()) }
+    fun removeMyName(name: String) { MyNames.remove(getApplication<Application>(), name); myNames = MyNames.all(getApplication<Application>()) }
+    var myNamesTipClosed by mutableStateOf(prefs.getBoolean("my_names_tip_closed", false))
+        private set
+    fun closeMyNamesTip() { prefs.edit().putBoolean("my_names_tip_closed", true).apply(); myNamesTipClosed = true }
+
     /** 🎯 방마다 직접 정한 거리(늘 중요 1 · 한 줄 2 · 건수만 3, 없으면 저절로) */
     var roomTiers by mutableStateOf(RoomTier.all(app))
         private set
@@ -369,6 +379,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         SYSTEM("🤖 AI 모델·권한", Tab.SETTINGS), BACKUP("💾 백업·복원", Tab.SETTINGS), STORAGE("🧹 저장 공간", Tab.SETTINGS),
         PEOPLE("👥 사람 묶음", Tab.SETTINGS),
         GROUP("👥 묶음", Tab.SETTINGS, PEOPLE), KEYWORDS("⭐ 중요 키워드", Tab.SETTINGS, PEOPLE),
+        MY_NAMES("🙋 나를 부르는 말", Tab.SETTINGS, PEOPLE),
     }
     /** 지금 열린 세부 화면 (null이면 탭의 첫 화면) */
     var page by mutableStateOf<Page?>(if (prefs.getBoolean("apps_setup_done", false)) null else Page.APPS)

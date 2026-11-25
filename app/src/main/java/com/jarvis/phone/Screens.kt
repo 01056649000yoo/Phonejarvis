@@ -41,7 +41,7 @@ private const val WHATS_NEW = "나와 관련된 것만 요약 · 버전·업데�
 
 /** 업데이트 내역 큰 창 (버전 올릴 때 같이 고치기) */
 private val WHATS_NEW_DETAIL = listOf(
-    "🎯 나와 관련된 것만 요약" to "방마다 나와의 거리를 셋으로 나눠요. 나에게 온 대화(1:1로 아는 사람·문자·학부모, 나를 부르거나 멘션한 말이 있는 방)는 내용까지 요약하고, 내가 말해 본 단톡방은 한 줄로, 오픈채팅·커뮤니티처럼 그 밖의 방은 이름과 건수만 적어요(그 방에는 AI를 쓰지 않아 요약도 빨라져요). 🙋 답할 것은 나에게 한 물음만 — '관심 있으신 선생님들 참여 부탁'처럼 여러 사람에게 돌린 말은 빼요. 내 이름·별명은 ⭐ 중요 키워드에 넣어 두면 알아봐요. 방이 잘못 나뉘었으면 설정 → 방 고르기에서 방마다 '늘 중요 · 한 줄 · 건수만'을 고를 수 있어요.",
+    "🎯 나와 관련된 것만 요약" to "방마다 나와의 거리를 셋으로 나눠요. 나에게 온 대화(1:1로 아는 사람·문자·학부모, 나를 부르거나 멘션한 말이 있는 방)는 내용까지 요약하고, 내가 말해 본 단톡방은 한 줄로, 오픈채팅·커뮤니티처럼 그 밖의 방은 이름과 건수만 적어요(그 방에는 AI를 쓰지 않아 요약도 빨라져요). 🙋 답할 것은 나에게 한 물음만 — '관심 있으신 선생님들 참여 부탁'처럼 여러 사람에게 돌린 말은 빼요. 나를 부르는 말(이름·별명·닉네임)은 설정 → 사람 묶음 → 🙋 나를 부르는 말에 넣어 주세요(카톡에 찍힌 내 이름을 추천해요). 아직 안 넣었거나 처음 2주 동안은 단톡방을 함부로 줄이지 않아요. 방이 잘못 나뉘었으면 설정 → 방 고르기에서 방마다 '늘 중요 · 한 줄 · 건수만'을 고를 수 있어요.",
     "🏷 버전과 업데이트 일시" to "설정 맨 위와 이 업데이트 안내에 지금 버전과 그 버전이 나온 일시를 보여 줘요. 안내 페이지(받기 링크)에도 지금 받는 버전과 업데이트 일시가 보여서, 폰에 깔린 버전이 최신인지 바로 견줘 볼 수 있어요.",
     "🗓 하루 정리는 총정리로" to "하루에 알림이 수백 개 와도 하루 정리가 15줄로 줄어들지 않아요. 맨 위 ✨ 오늘의 핵심(AI 5줄)과 📅 내일, 그 아래 🙋 답할 것은 상한 없이 모두, 💼 업무·👥 묶음, 💬 방별 하루(내용 있는 방은 모두 한 줄씩, 인사·맞장구뿐인 방은 이름과 건수만), 📦 앱 알림 건수까지 이어져요. 방 줄 아래 '▸ 구간별 요약'을 누르면 그 방의 요약을 시각별로 펼쳐 볼 수 있어요. 알림창에는 핵심과 답할 것만 보이고, 누르면 전체가 열려요.",
     "🕳 빠지던 알림 없게" to "문자·카톡은 보낸 시각으로 저장되는데, 그 시각이 폰에 도착한 때보다 조금 이를 수 있어요. 정각 5분 전 미리 준비처럼 그 사이에 요약이 돌면 그 메시지가 어느 요약에도 안 들어갔어요(예: 9시 55분 문자). 이제 요약마다 어디까지 맡았는지를 알림 번호로 기억해, 늦게 저장된 알림도 다음 요약에 꼭 들어가요.",
@@ -268,6 +268,7 @@ private fun PageContent(vm: JarvisViewModel, page: JarvisViewModel.Page) {
         JarvisViewModel.Page.PEOPLE -> PeoplePage(vm)
         JarvisViewModel.Page.GROUP -> GroupPage(vm)
         JarvisViewModel.Page.KEYWORDS -> KeywordCard(vm)
+        JarvisViewModel.Page.MY_NAMES -> MyNamesCard(vm)
     }
 }
 
@@ -320,6 +321,18 @@ private fun BriefingTab(vm: JarvisViewModel) {
             }
             TextButton(onClick = { vm.pinWidget() }) { Text("위젯 놓기") }
             TextButton(onClick = { vm.closeWidgetTip() }) { Text("닫기") }
+        }
+    }
+    // 🙋 나를 부르는 말을 아직 안 넣었으면 한 번 권함 — 나에게 온 대화를 알아보는 기준(닫으면 다시 안 보임)
+    if (vm.myNames.isEmpty() && !vm.myNamesTipClosed) Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(start = 16.dp, top = 12.dp, bottom = 8.dp, end = 8.dp)) {
+            Text("🙋 나를 부르는 말을 넣어 주세요", style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading())
+            Text("이름·별명·단톡방 닉네임(예: 김민수, 민수쌤)을 넣으면, 나를 부르거나 멘션한 대화만 내용까지 요약하고 나머지 방은 짧게 줄여요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row {
+                TextButton(onClick = { vm.open(JarvisViewModel.Page.MY_NAMES) }) { Text("넣기") }
+                TextButton(onClick = { vm.closeMyNamesTip() }) { Text("닫기") }
+            }
         }
     }
     if (whatsNewOpen) AlertDialog(
@@ -834,6 +847,9 @@ private fun PeoplePage(vm: JarvisViewModel) {
         hidden.forEach { g -> TextButton(onClick = { vm.unhideGroup(g.id) }) { Text("${g.title} 다시 보기") } }
     }
     MenuGroup(listOf(
+        Triple("🙋 나를 부르는 말",
+            if (vm.myNames.isEmpty()) "아직 없음 — 넣어 주세요" else vm.myNames.take(3).joinToString(", ") + if (vm.myNames.size > 3) " 외 ${vm.myNames.size - 3}개" else "") {
+            vm.open(JarvisViewModel.Page.MY_NAMES) },
         Triple("⭐ 중요 키워드",
             if (vm.keywords.isEmpty()) "아직 없음" else vm.keywords.take(2).joinToString(", ") + if (vm.keywords.size > 2) " 외 ${vm.keywords.size - 2}개" else "") {
             vm.open(JarvisViewModel.Page.KEYWORDS) },
@@ -1626,6 +1642,39 @@ private fun RoomPickerDialog(vm: JarvisViewModel, pkg: String, name: String) {
         },
         confirmButton = { TextButton(onClick = { vm.closeRooms() }) { Text("완료") } },
     )
+}
+
+/** 🙋 나를 부르는 말: 이름·별명·닉네임. 카톡의 내 이름·⭐ 키워드를 추천으로 */
+@Composable
+@OptIn(ExperimentalLayoutApi::class)
+private fun MyNamesCard(vm: JarvisViewModel) {
+    var input by rememberSaveable { mutableStateOf("") }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("🙋 나를 부르는 말", style = MaterialTheme.typography.titleMedium)
+            Text("단톡방에서 나를 부르거나 멘션할 때 쓰는 이름·별명·닉네임이에요. 이 말이 나온 대화는 '나에게 온 대화'로 내용까지 요약하고, " +
+                "그 사람이 나에게 묻거나 부탁하면 🙋 답할 것에 올려요. 나를 부르지 않은 단톡방은 한 줄이나 이름·건수로만 짧게 보여요.",
+                style = MaterialTheme.typography.bodySmall)
+            Text("띄어 쓴 별명('민수 쌤')은 붙여 써도('@민수쌤') 알아봐요. 우리 반 학생 이름이 나온 대화도 나에게 온 대화로 봐요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (vm.myNames.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                vm.myNames.forEach { n -> InputChip(selected = true, onClick = { vm.removeMyName(n) }, label = { Text("$n  ✕") }) }
+            }
+            val recs = remember(vm.myNames) { vm.myNameSuggestions() }
+            if (recs.isNotEmpty()) {
+                Text("눌러서 추가 (카톡에 찍힌 내 이름 · 중요 키워드)", style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    recs.take(12).forEach { w -> AssistChip(onClick = { vm.addMyName(w) }, label = { Text("+ $w") }) }
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(value = input, onValueChange = { input = it }, singleLine = true,
+                    placeholder = { Text("예: 김민수, 민수쌤") }, modifier = Modifier.weight(1f))
+                Button(onClick = { vm.addMyName(input); input = "" }, enabled = input.trim().length >= 2) { Text("추가") }
+            }
+        }
+    }
 }
 
 /** 중요 키워드: 추천 칩을 누르거나 직접 입력. 들어간 알림은 브리핑 맨 위 ⭐에 따로 모임. */

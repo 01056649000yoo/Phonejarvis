@@ -40,6 +40,7 @@ class NotificationCollectorService : NotificationListenerService() {
         // ✔ 내가 이 방에 답한 시각(알림에 딸려 온 내 말) — 하루 정리에서 답한 🙋 물음을 내리려고
         runCatching {
             val me = style?.user?.name?.toString().orEmpty()
+            if (me.isNotBlank()) MyNames.noteMe(this, me)   // 🙋 나를 부르는 말 추천(카톡의 내 이름)
             style?.messages?.filter { m -> m.person == null || (me.isNotEmpty() && m.person?.name?.toString()?.trim() == me) }
                 ?.maxOfOrNull { it.timestamp }?.let { ReplyLog.mark(this, room.ifEmpty { title }, it) }
         }
