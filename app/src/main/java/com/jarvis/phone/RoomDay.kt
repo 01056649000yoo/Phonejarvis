@@ -55,6 +55,7 @@ object RoomDay {
 
     /** 🙋 줄에 넣는 말 — 요약 화면의 답장할 연락 줄과 같게 */
     fun replyDetail(r: BriefingComposer.RoomSummary): String = when {
+        r.mention -> r.point   // 나에게 한 말과 앞뒤 원문
         r.ask.isNotEmpty() && r.byModel && !r.point.contains(r.ask) -> "${r.ask} (${BriefingComposer.dropName(r.point, r.conv.room)})"
         !r.byModel && r.ask.isNotEmpty() && r.point.contains(r.ask) -> BriefingComposer.dropName(r.point, r.conv.room)
         else -> r.ask.ifEmpty { BriefingComposer.dropName(r.point, r.conv.room) }

@@ -19,8 +19,48 @@ class RelevanceTest {
         assertTrue(Relevance.addressesMe("[나를 멘션] @친절한유쌤(끄적끄적아지트) 응답바랍니다.", names))
         assertTrue(Relevance.addressesMe("유쌤이 지금 저한테 13주 걸리는 작업을 시켰습니다", names))
         assertTrue(Relevance.addressesMe("@친절한유쌤 이거 봐 주세요", names))       // 띄어 쓴 별명을 붙여 불러도
-        assertFalse(Relevance.addressesMe("유승현님 오늘만 특가 혜택", names))         // 부르는 말뿐인 광고는 아님
+        assertTrue(Relevance.addressesMe("유승현님 확인 부탁드려요", names))           // 사람이 보낸 말의 '이름+님'도 부르는 말(광고는 앞에서 거름)
         assertFalse(Relevance.addressesMe("주택 경매 증가와 세수 급감", names))
+    }
+
+    @Test fun 호칭_추천() {
+        val v = MyNames.variants("유승현")
+        assertTrue(v.toString(), listOf("승현쌤", "승현 선생님", "유쌤", "유 선생님").all { it in v })
+        assertFalse(v.toString(), v.any { "유승현" in it })                           // 이름이 그대로 든 호칭은 이미 알아봄
+        assertTrue(MyNames.variants("친절한 유쌤").isEmpty())                          // 별명은 그대로
+    }
+
+    @Test fun 내_말에_이어진_말() {
+        val saidAt = 2_000_000L
+        val after = NotiItem(1, "com.kakao.talk", "카카오톡", "김", "그럼 그걸로 할게요", saidAt + 10 * 60_000L, "끄적끄적아지트")
+        val late = after.copy(time = saidAt + 40 * 60_000L)
+        val before = after.copy(time = saidAt - 60_000L)
+        assertTrue(Relevance.toMe(after, names, saidAt))
+        assertFalse(Relevance.toMe(late, names, saidAt))
+        assertFalse(Relevance.toMe(before, names, saidAt))
+        // 방 자체의 거리(나에게 한 말을 빼고)는 그대로 그 밖의 방
+        val c = conv("끄적끄적아지트", after, after.copy(id = 2, title = "박", text = "좋아요"))
+        assertEquals(Relevance.ME, Relevance.level(c, names, noRoster, { false }, saidAt = saidAt))
+        assertEquals(Relevance.OTHER, Relevance.level(c, names, noRoster, { false }, saidAt = saidAt, ignoreCalls = true))
+    }
+
+    @Test fun 큰_방은_나에게_한_말과_앞뒤만_원문으로() = runBlocking {
+        val room = "AI 교사 커뮤니티"
+        fun talk(r: IntRange) = r.map { msg(room, "사람${it % 9}", "AI 수업 자료 이야기 $it 번째 말이에요") }
+        val items = talk(1..10) + msg(room, "햅삐", "@친절한유쌤 이 자료 내일까지 봐 주실 수 있나요?") + msg(room, "사람3", "저도 궁금해요") + talk(11..20)
+        var asked = 0
+        val m = BriefingComposer.Mentions(base = { Relevance.OTHER }, toMe = { _, n -> Relevance.addressesMe(n.text, names) },
+            explicit = { n -> Relevance.addressesMe(n.text, names) })
+        val r = BriefingComposer.compose(items, ask = { asked++; "" }, focus = true, levels = { Relevance.ME }, mentions = m,
+            replyAllowed = { false })
+        assertEquals(0, asked)                                                        // AI 없이
+        val s = r.rooms.single()
+        assertTrue(s.mention && s.needReply)
+        assertTrue(s.point, "햅삐: @친절한유쌤 이 자료 내일까지 봐 주실 수 있나요?" in s.point)
+        assertTrue(s.point, "AI 수업 자료 이야기 10 번째" in s.point && "저도 궁금해요" in s.point)   // 앞 한 마디·뒤 한 마디
+        assertFalse(s.point, "이야기 1 번째" in s.point)
+        assertTrue(s.point, "(이 방 다른 말 19마디)" in s.point)
+        assertTrue(r.people, "🙋 $room" in r.people)
     }
 
     @Test fun 여러_사람에게_돌린_말() {

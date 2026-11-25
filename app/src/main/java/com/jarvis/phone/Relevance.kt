@@ -36,11 +36,18 @@ object Relevance {
      */
     fun addressesMe(text: String, names: Collection<String>): Boolean {
         if (MENTION_MARK.containsMatchIn(text)) return true
-        if (AppFilter.hasRealKeyword(names, text)) return true
+        // 사람이 보낸 말은 '유승현님 확인 부탁드려요'처럼 이름+님도 부르는 말(2026-11-25 — 예전엔 광고 거르기 규칙에 막혔다. 광고·업체는 앞에서 따로 거름)
+        if (AppFilter.hasKeyword(names, text)) return true
         // 띄어 쓴 이름('친절한 유쌤')만 붙여 쓴 꼴('@친절한유쌤')로도 봄 — 붙여 쓴 이름은 위에서 이미 봄('OO님' 광고 거르기를 지나치지 않게)
         val flat = text.filterNot { it.isWhitespace() }
         return names.any { n -> n.trim().contains(' ') && n.filterNot { it.isWhitespace() }.let { it.length >= 3 && it in flat } }
     }
+
+    /** 내가 그 방에서 말한 뒤 이만큼 안에 이어진 말은 나와 나누는 대화 */
+    const val THREAD_MS = 30 * 60_000L
+    fun inMyThread(n: NotiItem, saidAt: Long) = saidAt > 0 && n.time > saidAt && n.time - saidAt <= THREAD_MS
+    /** 나에게 한 말: 나를 부르거나, 내가 말한 직후 이어진 말([saidAt] = 그 방에서 내가 마지막으로 말한 시각) */
+    fun toMe(n: NotiItem, names: Collection<String>, saidAt: Long = 0L) = addressesMe(n.text, names) || inMyThread(n, saidAt)
 
     /** 여러 사람에게 돌린 말('관심 있으신 선생님들 참여 부탁', '사용해 보신 분 계실지') — 나에게 묻는 말이 아님 */
     private val BROADCAST = Regex("(관심 ?있으신|참여 ?(를 )?(부탁|바랍|해 ?주|하세요)|선생님들|여러분|분들|있으신 ?분|하실 ?분|해 ?보신 ?분|보신 ?(선생님|분)|계실까요|계신가요|계실지|계시면|모집|신청 ?(하세요|바랍)|서명|공유 ?(부탁|바랍)|널리 ?알려)")
@@ -55,9 +62,11 @@ object Relevance {
     fun level(conv: BriefingComposer.Conversation, names: Collection<String>, roster: (BriefingComposer.Conversation) -> Boolean,
               joined: (String) -> Boolean, override: Int = AUTO, trusted1to1: Boolean = false,
               /** 나를 부르는 말을 넣었는가(학생 이름만 있으면 false) */ hasMyNames: Boolean = true,
-              /** 익히는 기간인가 */ learning: Boolean = false): Int {
+              /** 익히는 기간인가 */ learning: Boolean = false,
+              /** 그 방에서 내가 마지막으로 말한 시각 */ saidAt: Long = 0L,
+              /** true 면 나를 부른 말은 보지 않은 '방 자체의' 거리(문장 단위로 보여 줄 때 나머지 대화의 거리) */ ignoreCalls: Boolean = false): Int {
         if (override in ME..OTHER) return override
-        val called = conv.items.any { addressesMe(it.text, names) }
+        val called = !ignoreCalls && conv.items.any { toMe(it, names, saidAt) }
         if (conv.items.all { it.room.isEmpty() }) return if (trusted1to1 || joined(conv.room) || roster(conv) || called) ME else JOINED
         if (roster(conv) || called) return ME
         if (!hasMyNames && BriefingComposer.important(conv, roster)) return ME      // 이름을 모르면 예전 규칙으로
@@ -121,10 +130,22 @@ object MyNames {
         if (n in seen) return
         p(ctx).edit().putStringSet("seen", (seen + n).toList().takeLast(5).toSet()).apply()
     }
-    /** 추천: 카톡에서 본 내 이름 + ⭐ 키워드(이미 넣은 것은 빼고) */
+    /** 추천: 넣은 이름으로 만든 호칭(승현쌤·유 선생님) + 카톡에서 본 내 이름 + ⭐ 키워드(이미 넣은 것은 빼고) */
     fun suggestions(ctx: Context, keywords: Collection<String>): List<String> {
-        val mine = all(ctx).toSet()
-        return (p(ctx).getStringSet("seen", emptySet())!!.toList() + keywords).map { it.trim() }.filter { it.length >= 2 && it !in mine }.distinct()
+        val mine = all(ctx)
+        return (mine.flatMap(::variants) + p(ctx).getStringSet("seen", emptySet())!!.toList() + keywords).map { it.trim() }
+            .filter { it.length >= 2 && it !in mine }.distinct()
+    }
+
+    /**
+     * 사람 이름 → 흔히 부르는 호칭(순수 — 시험): 유승현 → 승현쌤·승현샘·승현 선생님·유쌤·유샘·유 선생님.
+     * '유승현 선생님'처럼 이름이 그대로 든 호칭은 이름만으로 이미 알아봐서 뺌. 한글 2~4자 이름만
+     */
+    fun variants(name: String): List<String> {
+        val n = name.trim()
+        if (n.length !in 2..4 || !n.all { it in '가'..'힣' }) return emptyList()
+        val family = n.take(1); val given = if (n.length >= 3) n.drop(1) else n
+        return listOf("${given}쌤", "${given}샘", "$given 선생님", "${family}쌤", "${family}샘", "$family 선생님").filter { it != n && n !in it }.distinct()
     }
     /** 이 기능을 처음 쓴 시각(익히는 기간) */
     fun since(ctx: Context, now: Long = System.currentTimeMillis()): Long {

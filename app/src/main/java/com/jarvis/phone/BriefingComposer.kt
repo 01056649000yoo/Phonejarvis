@@ -29,7 +29,8 @@ object BriefingComposer {
                            /** 요약 줄에 못 들어간 부탁 수(단톡방) — '외 부탁 N건' */ val extra: Int = 0,
                            /** 지난 요약 구간 끝에서 이어진 대화면 그 마지막 말('보낸 사람: 말') — 줄 끝에 '↪ 앞: …' */ val prevLine: String = "",
                            /** 🧵 단톡방에서 고른 줄('보낸 사람: 말') — 뒤에 온 메시지를 이어 정리할 때 기한·날짜가 든 줄을 이어받음 */ val lines: List<String> = emptyList(),
-                           /** 🎯 나와의 거리(Relevance: 1 나에게 · 2 내가 속한 방 · 3 그 밖) */ val level: Int = Relevance.ME)
+                           /** 🎯 나와의 거리(Relevance: 1 나에게 · 2 내가 속한 방 · 3 그 밖) */ val level: Int = Relevance.ME,
+                           /** 🎯 단톡방에서 나에게 한 말과 그 앞뒤만 원문으로 뽑은 것(mentionSummary) */ val mention: Boolean = false)
 
     const val CHUNK = 30              // 대화방 하나에서 모델에 한 번에 넣는 메시지 수 — 넘으면 30개씩 나눠 요약한 뒤 합침(2026-11-21 선생님)
     // 2026-11-22 빠르게(선생님: "2건인데 오래 걸림"): 넣는 글·받는 글을 줄이고, 짧은 1:1 은 모델 없이
@@ -783,8 +784,8 @@ object BriefingComposer {
 
     /** 지금 요약하면 모델에 넣어야 할 사람 메시지 수(미리 요약해 둔 것·모델 없이 쓰는 한 마디는 뺌) — 미리 요약을 할지 정할 때 */
     fun pendingForModel(items: List<NotiItem>, cache: Map<String, Cached>, since: Long, groups: List<Group> = emptyList(),
-                        levels: ((Conversation) -> Int)? = null): Int =
-        (conversations(items.filter(::isPerson)).filter { levels?.invoke(it) != Relevance.OTHER } + groups.flatMap { groupConvs(it) }).sumOf { conv ->
+                        /** AI 를 쓰지 않을 방(그 밖의 방·나에게 한 말만 뽑는 방) */ skip: ((Conversation) -> Boolean)? = null): Int =
+        (conversations(items.filter(::isPerson)).filter { skip?.invoke(it) != true } + groups.flatMap { groupConvs(it) }).sumOf { conv ->
             val c = validCache(conv, cache, since)
             if (c == null && direct(conv) != null) 0 else freshOf(conv, c).size
         }
@@ -794,8 +795,8 @@ object BriefingComposer {
      * ⚡ 미리 요약은 이게 [PreSummary.MIN_CHARS] 를 넘으면 돈다(2026-11-23 선생님: 개수 말고 글자 수로 미리미리).
      */
     fun pendingCharsForModel(items: List<NotiItem>, cache: Map<String, Cached>, since: Long, groups: List<Group> = emptyList(),
-                             levels: ((Conversation) -> Int)? = null): Int =
-        (conversations(items.filter(::isPerson)).filter { levels?.invoke(it) != Relevance.OTHER } + groups.flatMap { groupConvs(it) }).sumOf { conv ->
+                             skip: ((Conversation) -> Boolean)? = null): Int =
+        (conversations(items.filter(::isPerson)).filter { skip?.invoke(it) != true } + groups.flatMap { groupConvs(it) }).sumOf { conv ->
             val c = validCache(conv, cache, since)
             if (c == null && direct(conv) != null) 0 else freshOf(conv, c).sumOf { minOf(it.text.length, lineChars) }
         }
@@ -845,6 +846,8 @@ object BriefingComposer {
         before: (Conversation) -> List<NotiItem> = { emptyList() },
         /** 🎯 나와의 거리(Relevance) — [focus] 일 때만. 3(그 밖)은 AI 없이 이름·건수만, 2(내가 속한 방)는 한 줄, 1(나에게)만 🙋 */
         levels: ((Conversation) -> Int)? = null,
+        /** 🎯 문장 단위: 단톡방에서 나에게 한 말을 알아보는 법 — 방 자체는 나에게 온 방이 아니면 나에게 한 말과 앞뒤만 원문으로(AI 없이) */
+        mentions: Mentions? = null,
     ): Result {
         val (people, apps) = items.partition(::isPerson)
         val groupList = groups.map { it.title to groupConvs(it) }.filter { it.second.isNotEmpty() }
@@ -881,6 +884,11 @@ object BriefingComposer {
             if (conv.items.all { isFiller(it.text) }) { rooms += RoomSummary(conv, "", "", false, byModel = false); continue }
             // 🎯 그 밖의 방(오픈채팅·커뮤니티·내가 말한 적 없는 단톡방)은 AI 없이 이름과 건수만(2026-11-25)
             if (lv(conv) == Relevance.OTHER) { rooms += RoomSummary(conv, "", "", false, byModel = false, level = Relevance.OTHER); continue }
+            // 🎯 문장 단위(2026-11-25): 나를 부르거나 내 말에 이어진 말이 있는 단톡방 — 방 자체가 나에게 온 방(학부모 방·직접 정함)이 아니면
+            // 방 전체를 AI 로 요약하지 않고 나에게 한 말과 그 앞뒤만 원문으로. 100마디 커뮤니티 방에서 나를 부른 한 문장이 핵심에서 빠지던 것
+            if (focus && mentions != null && keyOf(conv) !in groupKeys && usesMention(conv, mentions)) {
+                mentionSummary(conv, { mentions.toMe(conv, it) }, mentions.explicit)?.let { rooms += it; continue }
+            }
             // 🧵 앞 대화(참고용) — 30분 안에 이어진 것, 더 오래됐어도 답·같은 일로 이어진 것(linked)
             val earlier = linked(conv, runCatching { before(conv) }.getOrDefault(emptyList()))
             val context = earlier.map { contextLine(conv, it, conv.items.first().time) }
@@ -967,7 +975,7 @@ object BriefingComposer {
         val groupLeft = leftover.count { keyOf(it) in groupKeys }
         leftover.removeAll { keyOf(it) in groupKeys }
         // 명부·키워드가 안 나오는 방은 답장할 연락에서 뺌(요청은 💬 줄에 → 로 남김)
-        rooms.replaceAll { if (it.needReply && !replyAllowed(it.conv)) it.copy(needReply = false) else it }
+        rooms.replaceAll { if (it.needReply && !it.mention && !replyAllowed(it.conv)) it.copy(needReply = false) else it }
         // 단톡방: 줄에 못 들어간 부탁 수(AI 없이 원문에서) — 전부는 세부 내역에서
         rooms.replaceAll { r -> if (r.byModel && r.conv.items.any { it.room.isNotEmpty() }) r.copy(extra = extraAsks(r.conv, r.point + " " + r.ask)) else r }
         // 🎯 나와의 거리를 적어 두고, 방 순서는 가까운 방(나에게 → 내가 속한 방)부터, 같으면 최근에 온 것부터
@@ -980,6 +988,48 @@ object BriefingComposer {
         return Result(render(rooms, leftover, notes), appSection(apps.filterNot { AD.containsMatchIn(it.title) || AD.containsMatchIn(it.text) }),
             rooms.filter { it.needReply }, groupText, cutRooms = leftover.size + groupLeft, work = workText,
             rooms = rooms.toList(), groupRooms = groupRooms, cut = leftover.toList(), groupCut = groupLeftover)
+    }
+
+    /**
+     * 🎯 문장 단위로 나에게 한 말 알아보기(Relevance): base = 나를 부른 말을 빼고 본 방 자체의 거리,
+     * toMe = 나를 부르거나 내 말에 이어진 말, explicit = 나를 부른 말(🙋 은 이것만)
+     */
+    class Mentions(val base: (Conversation) -> Int, val toMe: (Conversation, NotiItem) -> Boolean, val explicit: (NotiItem) -> Boolean)
+
+    /** 이 방은 나에게 한 말만 뽑아 보여 주는가: 여러 사람의 단톡방이고, 방 자체는 나에게 온 방이 아니고, 나에게 한 말이 있음 */
+    fun usesMention(conv: Conversation, m: Mentions): Boolean =
+        multiSpeaker(conv) && m.base(conv) != Relevance.ME && conv.items.any { m.toMe(conv, it) }
+
+    const val MENTION_TURNS = 8      // 뽑아 보여 주는 말 차례(나에게 한 말 + 앞뒤)
+    const val MENTION_LINE = 70
+
+    /**
+     * 나에게 한 말과 그 앞 한 마디·뒤 한 마디(누가 무엇을 물었고 어떻게 이어졌는지)를 원문 그대로 — AI 없이(순수 — 시험).
+     * 🙋 은 나를 부른 말([explicit]) 자체가 묻거나 부탁할 때만. 나머지 말 수는 끝에 '(이 방 다른 말 N마디)'
+     */
+    fun mentionSummary(conv: Conversation, toMe: (NotiItem) -> Boolean, explicit: (NotiItem) -> Boolean): RoomSummary? {
+        val ts = turns(conv, conv.items.filterNot { isFiller(it.text) })
+        val hits = ts.indices.filter { toMe(ts[it]) }
+        if (hits.isEmpty()) return null
+        val keep = sortedSetOf<Int>()
+        for (h in hits.asReversed()) {
+            listOf(h - 1, h, h + 1).filter { it in ts.indices }.forEach { keep += it }
+            if (keep.size >= MENTION_TURNS) break
+        }
+        val shown = keep.toList().takeLast(MENTION_TURNS)
+        fun said(n: NotiItem) = n.text.replace('\n', ' ').replace(URL, "(링크)").trim()
+        var last = "\u0000"; var lastI = -2
+        val point = shown.joinToString(" / ") { i ->
+            val n = ts[i]; val w = speaker(conv, n)
+            (if (w != last || i != lastI + 1) "$w: " else "").also { last = w; lastI = i } + clip(said(n), MENTION_LINE)
+        }
+        val asks = hits.map { ts[it] }.filter { n -> explicit(n) && asksSomething(said(n)) }
+            .takeLast(MAX_GROUP_ASKS).map { n -> "${speaker(conv, n)}: ${clip(quotedAsk(said(n)), 60)}" }
+        val rest = ts.size - shown.size
+        val more = if (rest > 0) " (이 방 다른 말 ${rest}마디)" else ""
+        val ask = asks.joinToString(", ")
+        return RoomSummary(conv, point + more, ask, ask.isNotEmpty(), byModel = false, level = Relevance.ME, mention = true,
+            lines = shown.map { i -> "${speaker(conv, ts[i])}: ${clip(said(ts[i]), MENTION_LINE)}" })
     }
 
     /** 선생님을 부르는 말 */
@@ -1078,6 +1128,7 @@ object BriefingComposer {
             append("💬 대화 요약 (${rooms.size + leftover.size}개 방" + (if (replies.isNotEmpty()) " · 🙋 답장 ${replies.size}" else "") + ")\n")
             replies.forEach { r ->
                 val detail = when {
+                    r.mention -> r.point   // 나에게 한 말과 앞뒤 원문 그대로(물음이 그 안에 있음)
                     r.ask.isNotEmpty() && r.byModel && !r.point.contains(r.ask) -> "${r.ask} (${dropName(r.point, r.conv.room)})"
                     !r.byModel && r.ask.isNotEmpty() && r.point.contains(r.ask) -> dropName(r.point, r.conv.room)   // 원문 그대로 — 물음만 떼지 않고 앞뒤 말까지
                     else -> r.ask.ifEmpty { dropName(r.point, r.conv.room) }
@@ -1086,7 +1137,7 @@ object BriefingComposer {
             }
             talk.forEach { r ->
                 append("- ${r.conv.room} (${r.conv.items.size}건): ${dropName(r.point, r.conv.room)}")
-                if (r.ask.isNotEmpty() && !r.point.contains(r.ask)) append(" → ${r.ask}")   // 짧은 한 마디는 요점이 곧 물음이라 두 번 쓰지 않음
+                if (r.ask.isNotEmpty() && !r.mention && !r.point.contains(r.ask)) append(" → ${r.ask}")   // 짧은 한 마디는 요점이 곧 물음이라 두 번 쓰지 않음
                 append(more(r) + "\n")
             }
             if (others.isNotEmpty()) {

@@ -330,18 +330,18 @@ object Briefings {
         val near = closeness(ctx, rules, focus)   // 🎯 나와의 거리(나에게 · 내가 속한 방 · 그 밖)
         val ai = when {
             rest.isEmpty() && split.groups.isEmpty() -> null
-            skipAi != null -> BriefingComposer.compose(rest, ask = { "" }, replyAllowed = near.reply, cache = cache, since = from, groups = split.groups, focus = focus, before = before, levels = near.levels)
+            skipAi != null -> BriefingComposer.compose(rest, ask = { "" }, replyAllowed = near.reply, cache = cache, since = from, groups = split.groups, focus = focus, before = before, levels = near.levels, mentions = near.mentions)
             else -> {
                 // 2026-11-23 선생님: 알림이 100건 넘으면 요약이 중간에 끊김 — 정리한 방은 기억해 두고(캐시), 6분 안에 못 끝내면
                 // 지금까지 정리한 것을 먼저 알리고 남은 방을 이어서 마무리(중요한 방부터 정리하므로 먼저 간 알림에도 꼭 볼 것은 들어 있음)
                 val mem = cache.toMutableMap()
                 val allowed = near.reply
-                val first = summarizer.summarize(rest, onStatus, allowed, mem, from, onCached = { mem[it.key] = it }, groups = split.groups, maxMillis = FIRST_PASS_MS, focus = focus, before = before, levels = near.levels)
+                val first = summarizer.summarize(rest, onStatus, allowed, mem, from, onCached = { mem[it.key] = it }, groups = split.groups, maxMillis = FIRST_PASS_MS, focus = focus, before = before, levels = near.levels, mentions = near.mentions)
                 if (first.cutRooms > 0 && summarizer.cutByTime) {
                     val partial = (order(first.groups, keywordPart, first.work, first.people, first.apps) +
                         "\n\n(⏳ 남은 대화방 ${first.cutRooms}곳은 이어서 정리하고 있어요. 다 되면 이 알림이 바뀌어요)")
                     runCatching { onPartial("$label · 알림 ${items.size}건 (정리 중)", partial, cutoff) }
-                    summarizer.summarize(rest, onStatus, allowed, mem, from, onCached = { mem[it.key] = it }, groups = split.groups, maxMillis = SECOND_PASS_MS, focus = focus, before = before, levels = near.levels)
+                    summarizer.summarize(rest, onStatus, allowed, mem, from, onCached = { mem[it.key] = it }, groups = split.groups, maxMillis = SECOND_PASS_MS, focus = focus, before = before, levels = near.levels, mentions = near.mentions)
                 } else first
             }
         }
@@ -427,23 +427,33 @@ object Briefings {
      * 🎯 나와의 거리(Relevance, 2026-11-25 선생님: 나와 관련된 것만 요약) — levels: 방 → 1·2·3, reply: 🙋 로 올려도 되나.
      * '중요한 대화만 요약'을 끄면 예전처럼(모든 방 AI, 🙋 는 명부·키워드가 나오는 방)
      */
-    class Closeness(val levels: ((BriefingComposer.Conversation) -> Int)?, val reply: (BriefingComposer.Conversation) -> Boolean)
+    class Closeness(val levels: ((BriefingComposer.Conversation) -> Int)?, val reply: (BriefingComposer.Conversation) -> Boolean,
+                    /** 문장 단위: 나에게 한 말 알아보기 */ val mentions: BriefingComposer.Mentions? = null) {
+        /** AI 를 쓰지 않을 방: 그 밖의 방, 나에게 한 말만 뽑는 방 */
+        val skip: ((BriefingComposer.Conversation) -> Boolean)? = levels?.let { lv -> { c: BriefingComposer.Conversation ->
+            lv(c) == Relevance.OTHER || (mentions != null && BriefingComposer.usesMention(c, mentions)) } }
+    }
     fun closeness(ctx: Context, rules: AppFilter.Rules = AppFilter.rules(ctx), focus: Boolean = focusOn(ctx)): Closeness {
-        if (!focus) return Closeness(null) { c -> c.items.any { rules.mentionsRoster(it) } }
+        if (!focus) return Closeness(null, { c -> c.items.any { rules.mentionsRoster(it) } })
         val mine = MyNames.all(ctx)                     // 🙋 나를 부르는 말(설정 → 사람 묶음 → 나를 부르는 말)
         val names = mine + Students.allTerms(Students.names(ctx))   // 학생 이름이 나오는 말도 나에게 온 것
         val hasMine = mine.isNotEmpty()
         val learning = System.currentTimeMillis() - MyNames.since(ctx) < Relevance.LEARN_MS
-        val joined = ReplyLog.all(ctx).keys             // 내가 말한 방(1:1 은 상대 이름) — 30일
+        val said = ReplyLog.all(ctx)                    // 내가 말한 방(1:1 은 상대 이름) → 마지막으로 말한 시각 — 30일
+        val joined = said.keys
         val tiers = RoomTier.all(ctx)
         // 학부모: 명부의 이름·번호, 학부모 방 — 키워드는 '나를 부름'으로 따로 봄(방 아무 데나 키워드가 있다고 방 전체가 나에게 온 것은 아님)
         val parent = { c: BriefingComposer.Conversation -> c.items.any { n ->
             rules.isLinkedParent(n.pkg, n.room, n.title, n.text) || ParentAdvisor.isParent(rules.parentRooms, n.pkg, n.room.ifEmpty { n.title }) } }
         val memo = HashMap<String, Int>()
-        val level = { c: BriefingComposer.Conversation -> memo.getOrPut(BriefingComposer.keyOf(c)) {
-            Relevance.level(c, names, parent, { it in joined }, tiers[RoomTier.key(c)] ?: Relevance.AUTO,
-                trusted1to1 = c.items.all { Sms.isSms(it.pkg) }, hasMyNames = hasMine, learning = learning) } }
-        return Closeness(level) { c -> Relevance.replyOk(c, level(c), names, parent, hasMine) }
+        fun lv(c: BriefingComposer.Conversation, ignoreCalls: Boolean) = Relevance.level(c, names, parent, { it in joined },
+            tiers[RoomTier.key(c)] ?: Relevance.AUTO, trusted1to1 = c.items.all { Sms.isSms(it.pkg) }, hasMyNames = hasMine,
+            learning = learning, saidAt = said[c.room] ?: 0L, ignoreCalls = ignoreCalls)
+        val memoBase = HashMap<String, Int>()
+        val level = { c: BriefingComposer.Conversation -> memo.getOrPut(BriefingComposer.keyOf(c)) { lv(c, false) } }
+        val base = { c: BriefingComposer.Conversation -> memoBase.getOrPut(BriefingComposer.keyOf(c)) { lv(c, true) } }
+        val mentions = BriefingComposer.Mentions(base, { c, n -> Relevance.toMe(n, names, said[c.room] ?: 0L) }, { n -> Relevance.addressesMe(n.text, names) })
+        return Closeness(level, { c -> Relevance.replyOk(c, level(c), names, parent, hasMine) }, mentions)
     }
 
     /** 🧵 대화방마다 이번 구간(from) 바로 앞 30분 안의 같은 방 메시지 — 업무 앱(💼)은 빼고 */
