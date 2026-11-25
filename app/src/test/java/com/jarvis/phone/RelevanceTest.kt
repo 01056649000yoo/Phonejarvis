@@ -131,4 +131,29 @@ class RelevanceTest {
         assertTrue(r.people, "🙋 끄적끄적아지트" in r.people)
         assertEquals(Relevance.OTHER, r.rooms.first { it.conv.room == "라이프오브파이" }.level)
     }
+
+    // 2026-11-26 선생님: 답할 것에는 나를 언급한 대화만, 1:1 도 포함
+    @Test fun 답할_것은_나를_언급한_말과_일대일만() {
+        val mine = listOf("유쌤", "유승현")
+        val all = mine + listOf("김민준")                       // 학생 이름도 '나에게 온 대화'의 기준
+        val parentRoom = { _: BriefingComposer.Conversation -> true }
+        // 단톡방(학부모 방이어도): 나를 부르지 않은 물음은 🙋 아님
+        val notMe = conv("3반 학부모방", msg("3반 학부모방", "민준맘", "내일 준비물이 뭔가요?"))
+        assertFalse(Relevance.replyOk(notMe, Relevance.ME, all, parentRoom, mine = mine))
+        // 학생 이름만 나온 물음도 🙋 아님(내용은 나에게 온 대화에 보임)
+        val student = conv("오픈채팅", msg("오픈채팅", "닉네임", "김민준 오늘 조퇴했나요?"))
+        assertFalse(Relevance.replyOk(student, Relevance.ME, all, noRoster, mine = mine))
+        // 나를 부르며 묻는 말은 🙋
+        val me = conv("오픈채팅", msg("오픈채팅", "닉네임", "유쌤 내일까지 자료 보내 주실 수 있나요?"))
+        assertTrue(Relevance.replyOk(me, Relevance.ME, all, noRoster, mine = mine))
+        // 처음 보는 사람의 카톡 1:1 도 나에게 직접 물으면 나에게 온 것 → 🙋
+        val first = conv("", msg("", "처음 보는 학부모", "선생님 안녕하세요. 내일 상담 가능할까요?"))
+        val lv = Relevance.level(first, all, noRoster, { false })
+        assertEquals(Relevance.ME, lv)
+        assertTrue(Relevance.replyOk(first, lv, all, noRoster, mine = mine))
+        // 1:1 처럼 온 오픈채팅: 나를 부르지 않은 물음·여럿에게 돌린 말은 그대로 한 줄
+        listOf("이거 써 보신 분 계실까요", "계정 이관 방법이 있을지요?", "선생님들 이거 어떻게 하세요?").forEach { t ->
+            assertEquals(t, Relevance.JOINED, Relevance.level(conv("", msg("", "택배 상자를 든 네오", t)), all, noRoster, { false }))
+        }
+    }
 }

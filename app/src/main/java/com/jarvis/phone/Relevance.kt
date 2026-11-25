@@ -53,6 +53,10 @@ object Relevance {
     private val BROADCAST = Regex("(관심 ?있으신|참여 ?(를 )?(부탁|바랍|해 ?주|하세요)|선생님들|여러분|분들|있으신 ?분|하실 ?분|해 ?보신 ?분|보신 ?(선생님|분)|계실까요|계신가요|계실지|계시면|모집|신청 ?(하세요|바랍)|서명|공유 ?(부탁|바랍)|널리 ?알려)")
     fun isBroadcast(text: String) = BROADCAST.containsMatchIn(text)
 
+    /** 한 사람을 '선생님/쌤'하고 부르는 말('선생님들'·'쌤들'처럼 여럿을 부르는 말은 아님) */
+    private val TEACHER = Regex("(선생님|쌤|샘)(?!들)")
+    fun callsTeacher(text: String) = TEACHER.containsMatchIn(text)
+
     /** 방 하나의 거리. [override] 는 방 고르기에서 직접 정한 값(AUTO 면 저절로) */
     /**
      * 1:1 은 문자(번호로 오는 사람), 내가 답한 적 있는 사람, 명부·나를 부른 말이면 1, 아니면 2(한 줄) —
@@ -67,7 +71,11 @@ object Relevance {
               /** true 면 나를 부른 말은 보지 않은 '방 자체의' 거리(문장 단위로 보여 줄 때 나머지 대화의 거리) */ ignoreCalls: Boolean = false): Int {
         if (override in ME..OTHER) return override
         val called = !ignoreCalls && conv.items.any { toMe(it, names, saidAt) }
-        if (conv.items.all { it.room.isEmpty() }) return if (trusted1to1 || joined(conv.room) || roster(conv) || called) ME else JOINED
+        // 처음 보는 1:1 이라도 '선생님/쌤'하고 나를 부르며 묻거나 부탁하면 나에게 온 것(2026-11-26 선생님: 답할 것에 1:1 도 포함 —
+        // 명부에 없는 학부모의 첫 카톡 "선생님 내일 상담 가능할까요?"가 한 줄로 내려가 답할 것에 안 올라갔다).
+        // 부르는 말 없이 묻기만 한 것은 그대로 한 줄 — 1:1 처럼 오는 오픈채팅의 "계정 이관 방법이 있을지요?"가 답할 것에 섞이지 않게
+        if (conv.items.all { it.room.isEmpty() }) return if (trusted1to1 || joined(conv.room) || roster(conv) || called ||
+            conv.items.any { callsTeacher(it.text) && BriefingComposer.asksSomething(it.text) && !isBroadcast(it.text) }) ME else JOINED
         if (roster(conv) || called) return ME
         if (!hasMyNames && BriefingComposer.important(conv, roster)) return ME      // 이름을 모르면 예전 규칙으로
         if (joined(conv.room)) return JOINED
@@ -79,20 +87,21 @@ object Relevance {
     fun speakers(conv: BriefingComposer.Conversation) = conv.items.map { conv.who(it).ifEmpty { it.title.trim() } }.filter { it.isNotEmpty() }.distinct().size
 
     /**
-     * 🙋 답할 것으로 올려도 되는가: 나에게 온 방(1단계)이고
-     *  - 1:1·학부모: 묻는 말이 모두 '여러 사람에게 돌린 말'만은 아닐 때
-     *  - 단톡방: 나를 부른 말 자체가 묻거나 부탁할 때(같은 방 다른 사람에게 한 부탁은 🙋 이 아님)
+     * 🙋 답할 것으로 올려도 되는가(2026-11-26 선생님: 답할 것에는 나를 언급한 대화만, 1:1 도 포함): 나에게 온 방(1단계)이고
+     *  - 1:1: 묻는 말이 모두 '여러 사람에게 돌린 말'만은 아닐 때
+     *  - 단톡방(학부모 방 포함): 나를 부르거나 멘션한 말 자체가 묻거나 부탁할 때. [mine] = 나를 부르는 말 —
+     *    학생 이름만 나온 말, 같은 방 다른 사람에게 한 부탁은 🙋 이 아님(내용은 '나에게 온 대화'에 그대로 보임)
+     *  - 나를 부르는 말을 아직 안 넣었으면 예전 규칙(학부모 방·돌린 말이 아닌 물음)
      */
     fun replyOk(conv: BriefingComposer.Conversation, level: Int, names: Collection<String>, roster: (BriefingComposer.Conversation) -> Boolean,
-                hasMyNames: Boolean = true): Boolean {
+                hasMyNames: Boolean = true, mine: Collection<String> = names): Boolean {
         if (level != ME) return false
         val asks = conv.items.filter { BriefingComposer.asksSomething(it.text) }
         if (asks.isEmpty()) return false
-        // 1:1(1단계면 이미 아는 사람)·학부모: 돌린 말만 아니면
-        val direct = conv.items.all { it.room.isEmpty() } || roster(conv)
-        if (direct) return asks.any { !isBroadcast(it.text) || addressesMe(it.text, names) }
-        // 이름을 모르면 예전처럼 돌린 말이 아닌 물음
-        return asks.any { addressesMe(it.text, names) || (!hasMyNames && !isBroadcast(it.text)) }
+        if (conv.items.all { it.room.isEmpty() }) return asks.any { !isBroadcast(it.text) || addressesMe(it.text, names) }
+        if (hasMyNames) return asks.any { addressesMe(it.text, mine) }
+        // 이름을 모르면 예전처럼: 학부모 방이거나 돌린 말이 아닌 물음
+        return asks.any { addressesMe(it.text, names) || !isBroadcast(it.text) }
     }
 }
 

@@ -452,8 +452,8 @@ object Briefings {
         val memoBase = HashMap<String, Int>()
         val level = { c: BriefingComposer.Conversation -> memo.getOrPut(BriefingComposer.keyOf(c)) { lv(c, false) } }
         val base = { c: BriefingComposer.Conversation -> memoBase.getOrPut(BriefingComposer.keyOf(c)) { lv(c, true) } }
-        val mentions = BriefingComposer.Mentions(base, { c, n -> Relevance.toMe(n, names, said[c.room] ?: 0L) }, { n -> Relevance.addressesMe(n.text, names) })
-        return Closeness(level, { c -> Relevance.replyOk(c, level(c), names, parent, hasMine) }, mentions)
+        val mentions = BriefingComposer.Mentions(base, { c, n -> Relevance.toMe(n, names, said[c.room] ?: 0L) }, { n -> Relevance.addressesMe(n.text, if (hasMine) mine else names) })   // 🙋 은 나를 부른 말만(학생 이름만 나온 말은 내용만 보여 줌)
+        return Closeness(level, { c -> Relevance.replyOk(c, level(c), names, parent, hasMine, mine = if (hasMine) mine else names) }, mentions)
     }
 
     /** 🧵 대화방마다 이번 구간(from) 바로 앞 30분 안의 같은 방 메시지 — 업무 앱(💼)은 빼고 */
