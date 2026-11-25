@@ -19,6 +19,8 @@ object BriefingScheduler {
     const val ACTION_BRIEFING = "com.jarvis.phone.ACTION_BRIEFING"
     const val ACTION_PREPARE = "com.jarvis.phone.ACTION_PREPARE"
     const val ACTION_DAILY = "com.jarvis.phone.ACTION_DAILY"
+    /** 💾 설정 자동 백업(하루 한 번) — 앱을 안 열고 정한 시각 요약도 꺼 둔 날에도(2026-11-25 선생님) */
+    const val ACTION_BACKUP = "com.jarvis.phone.ACTION_BACKUP"
     const val EXTRA_KIND = "kind"
     const val EXTRA_MINUTE = "minute"
     /**
@@ -38,6 +40,7 @@ object BriefingScheduler {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         am.cancel(dailyPi)
         DailyDigest.next(System.currentTimeMillis(), SummarySchedule.config(ctx)) { RestDays.isRest(ctx, it) }?.let { set(am, it, dailyPi) }
+        scheduleBackup(ctx, am)
         val run = nextRun(ctx)
         val show = pendingIntent(ctx, ACTION_BRIEFING, run)
         val prep = pendingIntent(ctx, ACTION_PREPARE, run)
@@ -47,6 +50,20 @@ object BriefingScheduler {
         // 정한 시각만 미리 준비. 준비 시각이 이미 지났으면 그 시각에 바로 요약
         val prepAt = run.at - LEAD_MINUTES * 60_000L
         if (run.kind == SummarySchedule.Kind.FIXED && prepAt > System.currentTimeMillis() + 5_000) set(am, prepAt, prep)
+    }
+
+    /**
+     * 💾 하루 한 번 설정 백업 알람: 매일 새벽 3시 무렵(정확한 시각일 필요 없음 — 폰이 깨어 있을 때 묶어서 돎, 정확한 알람 권한 불필요).
+     * 백업은 20시간 안에 이미 했으면 건너뜀(Backup.autoBackup) — 앱을 열 때·요약이 끝날 때 한 백업과 겹치지 않게
+     */
+    fun scheduleBackup(ctx: Context, am: AlarmManager = ctx.getSystemService(AlarmManager::class.java)) {
+        val pi = PendingIntent.getBroadcast(ctx, 40, Intent(ctx, BriefingReceiver::class.java).setAction(ACTION_BACKUP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val first = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 3); set(Calendar.MINUTE, 17); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+            if (timeInMillis <= System.currentTimeMillis()) add(Calendar.DAY_OF_YEAR, 1)
+        }.timeInMillis
+        am.setInexactRepeating(AlarmManager.RTC_WAKEUP, first, AlarmManager.INTERVAL_DAY, pi)
     }
 
     private fun set(am: AlarmManager, at: Long, pi: PendingIntent) = setAlarm(am, at, pi)
@@ -133,6 +150,11 @@ class BriefingReceiver : BroadcastReceiver() {
                     .putExtra(BriefingService.EXTRA_LABEL, DailyDigest.LABEL).putExtra(BriefingService.EXTRA_DAILY, true), DailyDigest.LABEL)
             }
             PreSummary.ACTION -> PreSummary.onAlarm(ctx)
+            // 💾 하루 한 번 설정 백업(가벼운 일 — 서비스 없이 잠깐)
+            BriefingScheduler.ACTION_BACKUP -> {
+                val pending = goAsync()
+                AppScope.io.launch { try { runCatching { Backup.autoBackup(ctx) } } finally { pending.finish() } }
+            }
             BriefingScheduler.ACTION_PREPARE -> {
                 if (kind != null) BriefingScheduler.startNow(ctx, BriefingScheduler.labelOf(kind, minute), prepare = true, auto = true)
             }

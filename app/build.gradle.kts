@@ -12,8 +12,8 @@ android {
         applicationId = "com.jarvis.phone"   // 2026-11-25: com.ssamtox 로 바꿨다가 되돌림 — 새 패키지는 첫 설치라 Play 프로텍트 '앱 차단됨'(알림 접근 앱)에 걸리고, 지금 쓰는 선생님들이 갈아타야 해서
         minSdk = 31          // Galaxy Z Fold4 (Android 14+) 기준
         targetSdk = 36
-        versionCode = 78
-        versionName = "1.15.1"
+        versionCode = 79
+        versionName = "1.15.2"
         // 🏷 빌드(=업데이트) 시각 — CI 가 BUILD_TIME(ms)을 넣음. 앱에서 'v1.14.0 · 11월 25일 22:53 업데이트'로 보임(2026-11-25 선생님)
         buildConfigField("long", "BUILD_TIME", "${System.getenv("BUILD_TIME")?.takeIf { it.all(Char::isDigit) } ?: "0"}L")
     }

@@ -13,7 +13,7 @@ import java.io.File
  *
  * - 넣는 것: 학생·학부모 명부, 학부모 방, 앱·방 끄기, 키워드, 광고 거르기, 요약 시간·쉬는 날, 수업·퇴근 시간표
  * - 넣지 않는 것: 메시지 내용, 학생별 기록, AI 모델 (개인정보·용량)
- * - 자동 백업: 하루 한 번 다운로드/쌤톡스/쌤톡스_백업.json ('모든 파일 접근' 권한이 있을 때). 앱을 지워도 남음
+ * - 자동 백업: 하루 한 번(매일 새벽 알람 + 앱 열 때·요약 끝날 때) 다운로드/쌤톡스/쌤톡스_백업.json, 비밀번호로 암호화. 앱을 지워도 남음
  * - 수동: 원하는 곳으로 내보내기 / 파일에서 불러오기 (권한 없이도 됨)
  * 인터넷 권한이 없어서 백업 파일도 폰 밖으로 나가지 않음.
  */
@@ -21,8 +21,8 @@ object Backup {
     private const val FORMAT = "ssamtox-backup"
 
     /** 백업할 설정 묶음과, 그 안에서 넣지 않을 값(그때그때 바뀌는 상태) */
-    // my_names(🙋 나를 부르는 말)·room_tier(방마다 정한 거리) — 새 패키지(com.ssamtox)로 옮길 때도 따라가게(2026-11-25)
-    private val FILES = listOf("apps", "briefing", "quiet", "app", "storage", "people", "my_names", "room_tier")
+    // my_names(🙋 나를 부르는 말)·room_tier(방마다 정한 거리)·reply_log(내가 말한 방 — 방 이름과 시각만, 내용 X) — 폰을 바꿔도 '나와의 거리'가 이어지게(2026-11-25)
+    private val FILES = listOf("apps", "briefing", "quiet", "app", "storage", "people", "my_names", "room_tier", "reply_log")
     private val SKIP = mapOf(
         "apps" to setOf("handled", "ad_day", "ad_count"),
         "quiet" to setOf("last", "since", "we_set_dnd", "zen_rule", "zen_rule_v"),   // 방해 금지 모드 번호는 폰마다 다름
@@ -100,7 +100,7 @@ object Backup {
         runCatching { ctx.contentResolver.query(u, arrayOf(MediaStore.MediaColumns._ID), null, null, null)?.use { it.moveToFirst() } == true }.getOrDefault(false)
     }
 
-    /** 하루 한 번 자동 백업 (앱 열 때·자동 브리핑 끝날 때) */
+    /** 하루 한 번 자동 백업 (매일 새벽 알람 · 앱 열 때 · 요약이 끝날 때 — 20시간 안에 했으면 건너뜀). 비밀번호가 없으면 안 함 */
     fun autoBackup(ctx: Context) {
         if (System.currentTimeMillis() - lastBackupTime(ctx) < 20 * 3600 * 1000L) return
         saveToDownloads(ctx)
