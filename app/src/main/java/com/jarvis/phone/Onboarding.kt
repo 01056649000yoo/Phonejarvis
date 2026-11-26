@@ -16,6 +16,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
@@ -403,7 +404,28 @@ private fun PermissionStep(vm: JarvisViewModel) {
     val ctx = LocalContext.current
     val notiPermLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { vm.refresh() }
 
-    StepTitle("4 / 4 · 권한", "마지막으로 세 가지만 허용해 주세요")
+    StepTitle("4 / 4 · 내 이름과 권한", "나를 부르는 말을 넣고, 세 가지만 허용해 주세요")
+    // 🙋 나를 부르는 말은 꼭(2026-11-26 선생님: 설치할 때 강제) — 단톡방은 나를 부르거나 멘션한 말만 요약하므로,
+    // 이름이 없으면 단톡방에서 나에게 한 말을 찾지 못함. 하나 이상 넣어야 시작할 수 있음
+    var nameInput by rememberSaveable { mutableStateOf("") }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("🙋 나를 부르는 말 (꼭 넣어 주세요)", style = MaterialTheme.typography.titleMedium)
+            Text("단톡방에서는 나를 부르거나 멘션한 말만 요약해요. 사람들이 나를 부르는 이름·별명·카톡 닉네임을 넣어 주세요. " +
+                 "예: 유승현, 유쌤, 친절한 유쌤. 나중에 설정에서 더 넣거나 고칠 수 있어요.",
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(value = nameInput, onValueChange = { nameInput = it.take(20) }, singleLine = true,
+                    modifier = Modifier.weight(1f), placeholder = { Text("이름 또는 별명 (두 글자 이상)") })
+                Button(onClick = { vm.addMyName(nameInput); nameInput = "" }, enabled = nameInput.trim().length >= 2) { Text("넣기") }
+            }
+            if (vm.myNames.isEmpty()) Text("아직 없어요 — 하나 이상 넣어야 시작할 수 있어요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
+            else Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                vm.myNames.forEach { n -> InputChip(selected = true, onClick = { vm.removeMyName(n) }, label = { Text("$n ✕") }) }
+            }
+        }
+    }
     GuideCard(
         number = "1", title = "알림 접근",
         desc = "다른 앱(카톡, 학교 앱 등)의 알림을 모으려면 필요해요. 목록에서 쌤톡스를 켜 주세요.\n" +
@@ -452,7 +474,11 @@ private fun PermissionStep(vm: JarvisViewModel) {
     }
     Text("권한을 켠 뒤부터 오는 알림이 모여요.",
         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    PrimaryButton(if (vm.listenerEnabled && vm.notiPermission) "쌤톡스 시작하기" else "나중에 하고 시작하기") {
+    PrimaryButton(when {
+            vm.myNames.isEmpty() -> "나를 부르는 말을 먼저 넣어 주세요"
+            vm.listenerEnabled && vm.notiPermission -> "쌤톡스 시작하기"
+            else -> "권한은 나중에 하고 시작하기"
+        }, enabled = vm.myNames.isNotEmpty()) {
         vm.finishOnboarding()
     }
 }
