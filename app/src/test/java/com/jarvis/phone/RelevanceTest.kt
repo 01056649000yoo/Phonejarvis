@@ -263,4 +263,24 @@ class RelevanceTest {
         assertTrue(r.groups, lines.any { it.startsWith("- 권지혜 선생님 (1건)") })                 // 묻지 않은 사람은 표시 없이
         BriefingComposer.myNames = emptyList()
     }
+
+    // 2026-11-26 선생님: 꼭 받을 사람은 합쳐서 50자 넘으면 요약으로, 앞 요약과 이어지면 참조해서
+    @Test fun 꼭_받을_사람의_말은_오십_자_넘으면_요약_앞_요약과_이어지면_함께() = runBlocking {
+        val long = listOf("김진수" to msg("", "김진수", "종고에서 발명지도달라는 학부모가 있어서 한번 나가볼듯합니다"),
+            "김진수" to msg("", "김진수", "지금 6학년이긴한디 엄마가 의지가 강하다는군요."))
+        val short = listOf("권지혜" to msg("", "권지혜 선생님", "1학년도 패스할게요."))
+        val asked = mutableListOf<String>()
+        val r = BriefingComposer.compose(emptyList(), ask = { q -> asked += q; "요점: 종고 학부모가 발명 지도를 부탁해 한번 나가 볼 예정\n요청: 없음" },
+            groups = listOf(BriefingComposer.Group("🤝 지인", long + short)), focus = true,
+            earlier = { c -> if (c.room.startsWith("김진수")) "발명 지도 요청이 들어와 일정을 보고 있다고 함" else "점심 약속 이야기" })
+        assertEquals(1, asked.size)                                                       // 50자 넘는 사람만 AI
+        assertTrue(asked[0], "앞서 이 방을 이렇게 요약했어" in asked[0] && "발명 지도 요청이 들어와" in asked[0])   // 이어지는 내용이라 앞 요약을 함께
+        assertTrue(r.groups, "- 김진수 (2건)" in r.groups && "종고 학부모가 발명 지도를 부탁해" in r.groups)
+        assertTrue(r.groups, "1학년도 패스할게요" in r.groups)                              // 짧은 말은 그대로
+        // 이어지지 않는 앞 요약은 넣지 않음
+        asked.clear()
+        BriefingComposer.compose(emptyList(), ask = { q -> asked += q; "요점: 나가 볼 예정\n요청: 없음" },
+            groups = listOf(BriefingComposer.Group("🤝 지인", long)), focus = true, earlier = { "주말 등산 약속을 잡음" })
+        assertFalse(asked.joinToString(), asked.any { "앞서 이 방을 이렇게 요약했어" in it })
+    }
 }

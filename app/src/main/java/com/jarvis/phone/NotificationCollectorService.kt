@@ -148,6 +148,9 @@ class NotificationCollectorService : NotificationListenerService() {
             ?: groupTitle(ex.getCharSequence("android.hiddenConversationTitle")?.toString().orEmpty(), burst.map { it.who })
             ?: groupTitle(title, burst.map { it.who }))
             ?.toString()?.trim().orEmpty().take(100)
+            // 방 이름은 못 찾았지만 알림이 '여럿이 있는 대화'라고 알려 주면 1:1 로 보지 않음(2026-11-26 선생님 캡처: 같은 단톡방의 말이
+            // 사람마다 1:1 연락처럼 '지인 연락'에 올라옴). 이름을 모르니 한데 묶어 건수만 — 나를 부른 말은 그래도 찾음
+            .ifEmpty { if (ex.getBoolean("android.isGroupConversation", false) || style?.isGroupConversation == true) UNNAMED_GROUP else "" }
     }
 
     /** 묶음 안에 보이는 알림이 하나도 없으면 묶음 요약("새 메시지 N개")도 지움 */
@@ -260,6 +263,8 @@ class NotificationCollectorService : NotificationListenerService() {
         private val worker: java.util.concurrent.ExecutorService = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
             Thread(r, "collector").apply { isDaemon = true }
         }
+
+        const val UNNAMED_GROUP = "단톡방(이름 미확인)"
 
         /** 지금 연결된 알림 수집 서비스(모아 두는 시간이 시작될 때 상태바 정리에 씀) */
         @Volatile var instance: NotificationCollectorService? = null

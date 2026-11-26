@@ -37,6 +37,7 @@ object BriefingComposer {
     const val ROOM_CHARS = 1600       // 한 번에 넣는 글자 상한(최근 메시지부터 채움) — 2400 에서 줄임
     const val LINE_CHARS = 200        // 메시지 한 개에서 넣는 글자(300 에서 줄임)
     const val SHORT_CHARS = 60        // (예전 기준 — 지금은 RAW_CHARS)
+    const val CLOSE_RAW_CHARS = 50    // 2026-11-26 선생님: 꼭 받을 사람·놓치기 싫은 방은 합쳐서 50자 넘으면 원문 대신 요약으로
     const val RAW_CHARS = 80          // 2026-11-24 선생님: 짧으면 원문 — 맞장구를 뺀 말이 합쳐 이만큼 이하면 AI 없이 그대로
     const val SHORT_MAX_MSGS = 1      // 2026-11-23 선생님: 한 사람 말은 종합해서 — 원문 그대로는 한 마디일 때만(3개까지 이어 붙이니 나열처럼 보임)
     const val MAX_ASKS = 2            // 요청 칸은 가장 중요한 것 2개까지(여러 개를 쉼표로 늘어놓으면 핵심이 흐려짐)
@@ -693,7 +694,7 @@ object BriefingComposer {
      * 모델 없이 그 말을 그대로: 짧은 메시지 하나뿐인 방, 또는 짧은 메시지(60자 이하) 3개까지뿐인 1:1 대화(2026-11-22).
      * 짧은 말은 요약하는 것보다 원문이 더 정확하고, 모델을 부르지 않아 빠름. 단톡방 여러 메시지는 누구에게 한 부탁인지 봐야 해서 모델로.
      */
-    fun direct(conv: Conversation): RoomSummary? {
+    fun direct(conv: Conversation, rawChars: Int = RAW_CHARS): RoomSummary? {
         val texts = conv.items.map { it.text.replace('\n', ' ').trim() }
         if (texts.all { isChatter(it) }) return if (texts.size == 1) RoomSummary(conv, "", "", false, byModel = false) else null
         // 나를 부르기만 한 말('유승현', '유쌤~')은 뒤에 할 말이 따로 있으면 뺌 — '유승현 / 시지정 심사 언제해요?' 로 이어 붙던 것(2026-11-26 캡처)
@@ -702,7 +703,7 @@ object BriefingComposer {
         // '에이씨...해양교육 오ㅐ이리 많오 / 화양 또 냅?' 을 AI 가 '해양교육에 불만이 많다'로 바꿔 오해가 생김 — 짧은 말은 원문이 더 빠르고 정확
         if (said.size > SHORT_MAX_MSGS) {
             // 한 사람의 말(1:1·👥 사람별)만 — 여러 사람이 섞인 단톡방은 누가 누구에게 한 부탁인지 봐야 해서 AI 로
-            if (conv.app == WORK_TITLE || said.map { conv.who(it.first) }.distinct().size > 1 || said.sumOf { it.second.length } > RAW_CHARS) return null
+            if (conv.app == WORK_TITLE || said.map { conv.who(it.first) }.distinct().size > 1 || said.sumOf { it.second.length } > rawChars) return null
             var last = "\u0000"
             val point = said.joinToString(" / ") { (n, t) ->
                 val w = conv.who(n); (if (w.isNotEmpty() && w != last) "$w: " else "").also { last = w } + t
@@ -713,7 +714,7 @@ object BriefingComposer {
             val ask = q?.takeIf { oneToOne || URGENT.containsMatchIn(it) }.orEmpty()
             return RoomSummary(conv, point, ask, ask.isNotEmpty(), byModel = false)
         }
-        if (said.any { it.second.length > SHORT_CHARS }) return null
+        if (said.any { it.second.length > minOf(SHORT_CHARS, rawChars) }) return null
         val who = conv.who(said.last().first).let { if (it.isNotEmpty()) "$it: " else "" }
         // 한 마디는 AI 없이 — 물음·부탁은 짧은 말로(…하는지 물음·…달라고 함), 인사는 뗌(2026-11-23)
         val point = who + said.joinToString(" / ") { condenseAll(it.second) }
@@ -930,11 +931,15 @@ object BriefingComposer {
             // 나와의 거리로 볼 때(내가 속한 방)는 가장 최근 말 하나만 — 두세 마디를 ' / '로 이어 붙이면 요약이 아니라 원문 나열로 보였다
             if (focus && keyOf(conv) !in groupKeys && !meRoom && said(conv).size <= PEEK_MAX) { rooms += peek(conv, latestOnly = levels != null).copy(prevLine = prevLine); continue }
             if (fresh.isEmpty() && prev != null) { rooms += prev.copy(prevLine = prevLine); continue }        // 미리 요약해 둔 그대로
-            if (prev == null) direct(conv)?.let { rooms += it.copy(prevLine = prevLine); continue }
+            val wantProse = keyOf(conv) !in groupKeys && runCatching { prose(conv) }.getOrDefault(false)
+            // 가까운 대화(👥 꼭 받을 사람·📌 놓치기 싫은 방): 앞서 요약한 줄이 이번 말과 이어지는 내용이면(낱말 조각이 겹침) 함께 넣어 비교해서 요약
+            val close = wantProse || (keyOf(conv) in groupKeys && conv.app != WORK_TITLE)
+            val earlierText = if (close) runCatching { earlier(conv) }.getOrNull().orEmpty().takeIf { e ->
+                val now = fresh.joinToString(" ") { it.text }
+                e.isNotBlank() && maxOf(overlap(now, e), overlap(e, now)) >= EARLIER_OVERLAP }.orEmpty() else ""
+            if (prev == null) direct(conv, if (close) CLOSE_RAW_CHARS else RAW_CHARS)?.let { rooms += it.copy(prevLine = prevLine); continue }
             var covered = c?.count ?: 0
             // 🧵 여러 사람이 말한 단톡방은 고르기만 — 원문 줄을 그대로(2026-11-24)
-            val wantProse = keyOf(conv) !in groupKeys && runCatching { prose(conv) }.getOrDefault(false)
-            val earlierText = if (wantProse) runCatching { earlier(conv) }.getOrNull().orEmpty() else ""
             if (pickLines && !wantProse && multiSpeaker(conv) && keyOf(conv) !in groupKeys && fresh.any { !isFiller(it.text) }) {
                 if (cut == null) cut = stopReason()
                 if (cut == null) {
@@ -1034,6 +1039,7 @@ object BriefingComposer {
     fun usesMention(conv: Conversation, m: Mentions): Boolean =
         multiSpeaker(conv) && m.base(conv) != Relevance.ME && conv.items.any { m.toMe(conv, it) }
 
+    const val EARLIER_OVERLAP = 0.12  // 앞 요약과 이번 말이 이만큼 겹치면 이어지는 이야기로 봄
     const val MAX_OTHER_ROOMS = 10   // 평소 요약의 '그 밖의 방' 줄에 이름을 적는 방 수
     const val MENTION_TURNS = 8      // 뽑아 보여 주는 말 차례(나에게 한 말 + 앞뒤)
     const val MENTION_LINE = 70
