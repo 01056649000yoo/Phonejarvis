@@ -86,4 +86,24 @@ class ToMeTest {
         assertFalse(rec.toString(), "김쌤" in rec)                                   // 한 번뿐인 것은 추천하지 않음
         assertTrue(ToMe.nicknames(texts, listOf("승현쌤", "유부장님")).isEmpty())     // 이미 넣은 것은 뺌
     }
+
+    @Test fun 하루_정리_추천_고르기() {
+        val now = 100L * 24 * 3600_000L
+        val stats = mapOf(
+            "k|6학년 동학년방" to ToMe.RoomStat(hits = 9, days = 4, yes = 2, no = 0, last = now),     // 여러 날 나에게 한 말 → 놓치기 싫은 방
+            "k|오픈채팅" to ToMe.RoomStat(hits = 5, days = 2, yes = 0, no = 4, last = now),            // AI 가 계속 아니오 → 건수만
+            "k|가끔방" to ToMe.RoomStat(hits = 1, days = 1, last = now),                               // 아직 모자람
+            "k|이미 정한 방" to ToMe.RoomStat(hits = 20, days = 9, last = now))
+        val senders = mapOf("김민수 선생님" to 0.5, "박" to 0.1, "엄마" to 0.7)
+        val r = ToMe.pickRecs(stats, senders, tiers = mapOf("k|이미 정한 방" to Relevance.ME), known = listOf("엄마"), asked = emptyMap(), now = now)
+        assertEquals(listOf("6학년 동학년방" to 9), r.pin)
+        assertEquals(listOf("오픈채팅" to 5), r.mute)
+        assertEquals(listOf("김민수 선생님"), r.people)                               // 이미 묶음에 있는 사람·점수 낮은 사람은 빼고
+        // 한 번 권한 것은 2주 동안 다시 권하지 않음
+        val again = ToMe.pickRecs(stats, senders, emptyMap(), listOf("엄마"),
+            asked = mapOf("pin|k|6학년 동학년방" to now - 24 * 3600_000L, "person|김민수 선생님" to now - 20L * 24 * 3600_000L), now = now)
+        assertFalse(again.pin.any { it.first == "6학년 동학년방" })
+        assertEquals(listOf("김민수 선생님"), again.people)                           // 20일 전에 권한 것은 다시
+        assertEquals(ToMe.RoomStat(3, 2, 1, 0, 77L), ToMe.roomStat(ToMe.RoomStat(3, 2, 1, 0, 77L).pack()))
+    }
 }

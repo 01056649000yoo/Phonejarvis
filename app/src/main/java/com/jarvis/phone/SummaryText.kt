@@ -153,7 +153,7 @@ fun SummaryText(text: String, modifier: Modifier = Modifier, accent: Color = Mat
                             val (ask, clean) = splitAsk(line)
                             val l = splitLine(clean)
                             // 방 이름만 늘어놓은 줄('그 밖의 방: A 3건, B 2건', 하루 정리의 내가 속한 방·그 밖의 방): 이름마다 누를 수 있게
-                            val namesLine = onRoom != null && (l.who.startsWith("그 밖의 방") ||
+                            val namesLine = onRoom != null && (l.who.startsWith("그 밖의 방") || l.who.startsWith("놓치기 싫은 방 추천") || l.who.startsWith("건수만 볼 방 추천") ||
                                 (l.who.isEmpty() && ("그 밖의 방" in section || "내가 속한 방" in section)))
                             Row(verticalAlignment = Alignment.Top) {
                                 // 🙋 답할 것은 점 대신 답장 화살표

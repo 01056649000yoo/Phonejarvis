@@ -279,7 +279,9 @@ object DailyDigest {
             val t = total(Day(entries, keywordLines(today), "",   // 📌 마감 칸은 없앰(2026-11-25 선생님)
                 today.size, today.sumOf { it.count },
                 today.minOf { it.fromTime }), ReplyLog.all(ctx), now, ask)
-            db.insertBriefing(Briefing(time = now, fromTime = day, label = LABEL, count = 0, text = t.full + learnNote))
+            // 💡 쓰면서 쌓인 기록으로 추천(놓치기 싫은 방·건수만 볼 방·꼭 받을 사람) — 권하기만 하고 적용은 눌러서
+            val recs = runCatching { ToMe.recommend(ctx, now) }.getOrDefault("")
+            db.insertBriefing(Briefing(time = now, fromTime = day, label = LABEL, count = 0, text = t.full + (if (recs.isNotEmpty()) "\n\n$recs" else "") + learnNote))
             return Briefings.Outcome("$LABEL · $d" + if (t.byAi) "" else " (AI 없이)", t.short, now)
         }
         val m = material(today, "", Students.names(ctx), ReplyLog.all(ctx))

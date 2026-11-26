@@ -99,8 +99,9 @@ object ToMe {
             (all["trained"] as? Int) ?: 0)
     }
     fun save(ctx: Context, wt: Weights) {
+        val old = p(ctx).all.keys
         p(ctx).edit().apply {
-            clear()
+            old.filter { it.startsWith("s_") }.forEach { remove(it) }   // 보낸 사람 점수만 새로(방 기록·추천 기록은 그대로)
             LEARNED.forEach { putFloat("w_$it", wt.of(it).toFloat()) }
             // 점수가 0에 가까운 사람은 지우고, 많으면 점수가 큰 사람부터 남김
             wt.senders.filterValues { kotlin.math.abs(it) >= 0.05 }.entries.sortedByDescending { kotlin.math.abs(it.value) }.take(MAX_SENDERS)
@@ -184,6 +185,7 @@ object ToMe {
         val sc = Scorer(wt, mine, Students.allTerms(Students.names(ctx)), { said[it] ?: 0L }, { texts[it].orEmpty() })
         val convs = BriefingComposer.conversations(items)
         val examples = mutableListOf<Example>()
+        val judged = HashMap<String, Pair<Int, Int>>()   // 방 → AI 가 (예, 아니오)라고 한 수
         // ① 내가 답한 말
         val answeredTexts = mutableListOf<String>()
         convs.forEach { c ->
@@ -201,11 +203,28 @@ object ToMe {
             val near = cands.filter { it.s < THRESHOLD && it.s >= 0.4 }.sortedByDescending { it.s }.take(maxAi - caught.size)
             for (x in caught + near) {
                 if (stop()) break
+                val rk = RoomTier.key(x.c)
                 val before = x.c.items.filter { it.time < x.n.time }.sortedBy { it.time }.takeLast(3)
                     .map { "${sc.sender(x.c, it)}: ${it.text.replace('\n', ' ').take(80)}" }
                 val y = runCatching { parseYesNo(ask(askPrompt(x.c.room, mine.first(), before, sc.sender(x.c, x.n), x.n.text))) }.getOrNull() ?: continue
                 examples += Example(x.f, sc.sender(x.c, x.n), y)
+                judged[rk] = (judged[rk] ?: (0 to 0)).let { (a, b) -> if (y) a + 1 to b else a to b + 1 }
             }
+        }
+        // 📊 방마다 기록: 나에게 한 말이 나온 날 수·건수, AI 가 예/아니오라고 한 수 — 하루 정리의 추천 재료
+        runCatching {
+            val ed = p(ctx).edit()
+            convs.forEach { c ->
+                val k = RoomTier.key(c)
+                val hits = c.items.count { sc.toMe(c, it) }
+                val (yes, no) = judged[k] ?: (0 to 0)
+                if (hits == 0 && yes == 0 && no == 0) return@forEach
+                val old = roomStat(p(ctx).getString("r_$k", null))
+                ed.putString("r_$k", RoomStat(old.hits + hits, old.days + if (hits > 0) 1 else 0, old.yes + yes, old.no + no, now).pack())
+            }
+            // 60일 동안 소식 없는 방 기록은 지움
+            p(ctx).all.forEach { (key, v) -> if (key.startsWith("r_") && roomStat(v as? String).last < now - 60L * 24 * 3600_000L) ed.remove(key) }
+            ed.apply()
         }
         var changed = 0
         for (e in examples) {
@@ -215,5 +234,61 @@ object ToMe {
         if (changed > 0) save(ctx, wt.copy(trained = wt.trained + changed))
         p(ctx).edit().putLong("day", now).apply()
         return changed
+    }
+
+    // ── 💡 추천(2026-11-26 선생님: 추천은 하루 정리하면서 — 더 나에게 맞는 앱으로) ──
+    /** 방 하나의 기록: 나에게 한 말 건수·나온 날 수, AI 가 예/아니오라고 한 수, 마지막으로 고친 때 */
+    data class RoomStat(val hits: Int = 0, val days: Int = 0, val yes: Int = 0, val no: Int = 0, val last: Long = 0L) {
+        fun pack() = "$hits|$days|$yes|$no|$last"
+    }
+    fun roomStat(s: String?): RoomStat = s?.split('|')?.takeIf { it.size == 5 }?.let { v ->
+        RoomStat(v[0].toIntOrNull() ?: 0, v[1].toIntOrNull() ?: 0, v[2].toIntOrNull() ?: 0, v[3].toIntOrNull() ?: 0, v[4].toLongOrNull() ?: 0L) } ?: RoomStat()
+
+    const val PIN_DAYS = 3             // 나에게 한 말이 이만큼의 날에 나온 방은 놓치기 싫은 방으로 권함
+    const val MUTE_NO = 3              // AI 가 이만큼 '아니오'라고만 한 방은 건수만 보기를 권함
+    const val PERSON_SCORE = 0.4       // 보낸 사람 점수가 이만큼 넘으면 꼭 받을 사람으로 권함
+    const val REC_AGAIN_MS = 14L * 24 * 3600_000L   // 한 번 권한 것은 2주 뒤에나 다시
+
+    data class Recs(val pin: List<Pair<String, Int>>, val mute: List<Pair<String, Int>>, val people: List<String>)
+
+    /**
+     * 추천 고르기(순수 — 시험). [stats]: 'pkg|방' → 기록, [tiers]: 직접 정한 방, [known]: 이미 꼭 받을 사람·명부에 있는 이름,
+     * [asked]: 추천 열쇠 → 마지막으로 권한 때. 권하기만 하고 적용은 사용자가 요약에서 눌러서 함
+     */
+    fun pickRecs(stats: Map<String, RoomStat>, senders: Map<String, Double>, tiers: Map<String, Int>, known: Collection<String>,
+                 asked: Map<String, Long>, now: Long): Recs {
+        fun fresh(k: String) = now - (asked[k] ?: 0L) >= REC_AGAIN_MS
+        val free = stats.filterKeys { it !in tiers }
+        val pin = free.filter { (k, s) -> s.days >= PIN_DAYS && s.no <= s.yes && fresh("pin|$k") }
+            .entries.sortedByDescending { it.value.hits }.take(3).map { it.key.substringAfter('|') to it.value.hits }
+        val mute = free.filter { (k, s) -> s.no >= MUTE_NO && s.yes == 0 && s.hits > 0 && fresh("mute|$k") }
+            .entries.sortedByDescending { it.value.no }.take(3).map { it.key.substringAfter('|') to it.value.hits }
+        val people = senders.filter { (name, v) -> v >= PERSON_SCORE && known.none { it in name || name in it } && fresh("person|$name") }
+            .entries.sortedByDescending { it.value }.take(3).map { it.key }
+        return Recs(pin, mute, people)
+    }
+
+    /** 하루 정리에 붙일 추천 칸(없으면 ""). 권한 것은 적어 두어 2주 동안 다시 권하지 않음 */
+    fun recommend(ctx: Context, now: Long): String {
+        val all = p(ctx).all
+        val stats = all.filterKeys { it.startsWith("r_") }.mapKeys { it.key.removePrefix("r_") }.mapValues { roomStat(it.value as? String) }
+        val asked = all.filterKeys { it.startsWith("rec_") }.mapNotNull { (k, v) -> (v as? Long)?.let { k.removePrefix("rec_") to it } }.toMap()
+        val known = People.allNames(ctx) + Students.names(ctx) + ParentBook.links(ctx).map { it.label }
+        val r = pickRecs(stats, load(ctx).senders, RoomTier.all(ctx), known, asked, now)
+        if (r.pin.isEmpty() && r.mute.isEmpty() && r.people.isEmpty()) return ""
+        val ed = p(ctx).edit()
+        stats.keys.forEach { k ->
+            if (r.pin.any { it.first == k.substringAfter('|') }) ed.putLong("rec_pin|$k", now)
+            if (r.mute.any { it.first == k.substringAfter('|') }) ed.putLong("rec_mute|$k", now)
+        }
+        r.people.forEach { ed.putLong("rec_person|$it", now) }
+        ed.apply()
+        return buildString {
+            append("💡 나에게 맞추기 추천\n")
+            if (r.pin.isNotEmpty()) append("- 놓치기 싫은 방 추천: " + r.pin.joinToString(", ") { "${it.first} ${it.second}건" } + "\n")
+            if (r.mute.isNotEmpty()) append("- 건수만 볼 방 추천: " + r.mute.joinToString(", ") { "${it.first} ${it.second}건" } + "\n")
+            if (r.people.isNotEmpty()) append("- 꼭 받을 사람 추천: " + r.people.joinToString(", ") + "\n")
+            append("(방 이름을 누르면 바로 정할 수 있어요. 사람은 설정 → 꼭 받을 사람에서 넣어요)")
+        }
     }
 }
