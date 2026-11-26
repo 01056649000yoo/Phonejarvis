@@ -37,10 +37,11 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** 이번 버전에서 바뀐 점 한 줄 (버전 올릴 때 같이 고치기). 새 것을 앞에 — 앞 세 가지가 릴리스·안내 페이지의 '바뀐 점'으로도 나감(build.yml) */
-private const val WHATS_NEW = "알림이 몰려도 화면이 덜 끊기게 · 정기 요약은 나와 관련된 것만 · 두세 마디 방은 최근 말 하나만 · 처음 설치할 때 모아서 받을지 물어봄 · 답할 것에는 나를 부른 말과 1:1만 · 하루 정리가 더 짧게 · 놓치던 알림·빠지던 백업 고침 · 앱 아이콘이 엇갈리던 것 고침 · 설정 백업 매일 자동 · 알림 앱 정리 화면 정리 · 받아 둔 모델 자동 찾기 · 설치 방법 안내 · 요약 탭에 최근 요약이 늘 보이게 · 할 일·마감 카드 없앰 · 나와 관련된 것만 요약 · 버전·업데이트 일시 표시 · 하루 정리는 하루 종일 온 알림을 총정리 · 빠지던 알림 없게 · 카톡 단톡방은 원문 줄로 · 이어진 대화 ↪ · 답한 물음 내리기 · 메일은 제목 그대로 · 짧으면 원문 그대로 · 오해 없는 요약 · 어제 메시지가 섞이지 않게 · 오픈채팅 한 방으로 · 내가 만든 묶음별 연락 · 모든 연락을 간단한 내용까지 · 중요한 대화만 요약해요 · 캘린더는 일정 그대로 · 요약 문장 다듬기"
+private const val WHATS_NEW = "놓치기 싫은 방을 설정에서 고르기 · 알림이 몰려도 화면이 덜 끊기게 · 정기 요약은 나와 관련된 것만 · 두세 마디 방은 최근 말 하나만 · 처음 설치할 때 모아서 받을지 물어봄 · 답할 것에는 나를 부른 말과 1:1만 · 하루 정리가 더 짧게 · 놓치던 알림·빠지던 백업 고침 · 앱 아이콘이 엇갈리던 것 고침 · 설정 백업 매일 자동 · 알림 앱 정리 화면 정리 · 받아 둔 모델 자동 찾기 · 설치 방법 안내 · 요약 탭에 최근 요약이 늘 보이게 · 할 일·마감 카드 없앰 · 나와 관련된 것만 요약 · 버전·업데이트 일시 표시 · 하루 정리는 하루 종일 온 알림을 총정리 · 빠지던 알림 없게 · 카톡 단톡방은 원문 줄로 · 이어진 대화 ↪ · 답한 물음 내리기 · 메일은 제목 그대로 · 짧으면 원문 그대로 · 오해 없는 요약 · 어제 메시지가 섞이지 않게 · 오픈채팅 한 방으로 · 내가 만든 묶음별 연락 · 모든 연락을 간단한 내용까지 · 중요한 대화만 요약해요 · 캘린더는 일정 그대로 · 요약 문장 다듬기"
 
 /** 업데이트 내역 큰 창 (버전 올릴 때 같이 고치기) */
 private val WHATS_NEW_DETAIL = listOf(
+    "📌 놓치기 싫은 방" to "설정에 '놓치기 싫은 방'이 생겼어요. 여기 넣은 방은 나를 부르지 않아도 정한 시각 요약과 하루 정리에 늘 내용까지 요약해요. 읽기만 하는 동학년방·공지방을 넣어 두세요.",
     "🪶 더 가볍게" to "알림을 모으는 일을 화면과 다른 줄에서 하고, 모으는 규칙은 설정이 바뀔 때만 다시 읽어요. 단톡방 알림이 몰려도 앱 화면이 덜 끊겨요. 앱 목록과 통계는 알림 앱 정리·키워드 화면을 열 때만 읽어서 첫 화면도 가벼워졌어요.",
     "🗞 정기 요약은 나와 관련된 것만" to "정한 시각에 오는 요약과 하루 정리에는 답할 것·나에게 온 대화·사람 묶음·업무만 보여 줘요. 내가 속한 방은 줄을 쓰지 않고 곳 수와 건수만 적어요(AI도 쓰지 않아 폰도 가벼워져요). 직접 누른 '지금 정리'와 위젯 요약에서는 내가 속한 방도 한 줄씩 볼 수 있어요.",
     "✂️ 두세 마디 방은 최근 말 하나만" to "내가 속한 방에 온 두세 마디를 ' / '로 이어 붙여 보여 주던 것을, 가장 최근 말 하나만 짧게 보여 주도록 바꿨어요.",
@@ -285,6 +286,7 @@ private fun PageContent(vm: JarvisViewModel, page: JarvisViewModel.Page) {
         JarvisViewModel.Page.GROUP -> GroupPage(vm)
         JarvisViewModel.Page.KEYWORDS -> KeywordCard(vm)
         JarvisViewModel.Page.MY_NAMES -> MyNamesCard(vm)
+        JarvisViewModel.Page.PINNED -> PinnedRoomsPage(vm)
     }
 }
 
@@ -835,6 +837,7 @@ private fun SettingsTab(vm: JarvisViewModel) {
 
     MenuGroup(listOf(
         Triple("🌱 알림 앱 정리", "뺀 앱 ${vm.excludedApps.size}개 · 광고 ${vm.adCount}건") { vm.open(JarvisViewModel.Page.APPS) },
+        Triple("📌 놓치기 싫은 방", if (vm.pinnedRooms.isEmpty()) "정기 요약에 늘 내용까지 볼 방 고르기" else "${vm.pinnedRooms.size}곳 · 늘 내용까지 요약") { vm.open(JarvisViewModel.Page.PINNED) },
         Triple("🔕 모아서 알림", scheduleStatus) { vm.open(JarvisViewModel.Page.SCHEDULE) },
         Triple("🏠 홈 화면 위젯", if (vm.hasWidget) "놓여 있어요 · 하나 더 놓기" else "위젯 놓기 — 요약을 홈 화면에서 바로") { vm.pinWidget() },
     ))
@@ -859,6 +862,73 @@ private fun SettingsTab(vm: JarvisViewModel) {
             (vm.storageUsage?.let { Storage.size(it.bytes) + " · " } ?: "") + "알림 ${Storage.label(vm.notiDays)} 보관 · 자동 정리") {
             vm.open(JarvisViewModel.Page.STORAGE) },
     ))
+}
+
+// ───────────────────────── 📌 놓치기 싫은 방 (설정 → 세부 화면) ─────────────────────────
+
+/**
+ * 📌 놓치기 싫은 방(2026-11-26 선생님): 정기 요약·하루 정리는 나와 관련된 것만 보여 주므로, 나를 부르지 않아도 꼭 볼 방
+ * (읽기만 하는 동학년방 공지 등)을 한곳에서 고름. 방 고르기의 '늘 중요'와 같은 값(RoomTier)
+ */
+@Composable
+private fun PinnedRoomsPage(vm: JarvisViewModel) {
+    val pinned = vm.pinnedRooms
+    val pinnedKeys = pinned.map { "${it.first}|${it.second}" }.toSet()
+    var q by rememberSaveable { mutableStateOf("") }
+    Text("여기 넣은 방은 나를 부르지 않아도 정한 시각 요약과 하루 정리에 늘 내용까지 요약해요. " +
+         "읽기만 하는 동학년방·공지방처럼 놓치기 싫은 방을 넣어 두세요. '답할 것'에는 지금처럼 나를 부른 말만 올라가요.",
+        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("📌 놓치기 싫은 방 ${pinned.size}곳", style = MaterialTheme.typography.titleMedium)
+            if (pinned.isEmpty()) Text("아직 없어요. 아래에서 방을 골라 넣어 주세요.", style = MaterialTheme.typography.bodySmall)
+            pinned.forEach { (pkg, room) ->
+                key(pkg, room) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        AppIcon(pkg, 28.dp)
+                        Column(Modifier.weight(1f)) {
+                            Text(room, maxLines = 1, style = MaterialTheme.typography.labelLarge)
+                            Text(vm.appNameOf(pkg), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        TextButton(onClick = { vm.unpinRoom(pkg, room) }) { Text("빼기") }
+                    }
+                }
+            }
+        }
+    }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("＋ 방 넣기", style = MaterialTheme.typography.titleMedium)
+            OutlinedTextField(value = q, onValueChange = { q = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("방 이름 찾기") })
+            val word = q.trim()
+            val list = vm.pinCandidates.filter { "${it.pkg}|${it.room}" !in pinnedKeys && (word.isEmpty() || it.room.contains(word, ignoreCase = true)) }
+            if (vm.pinCandidates.isEmpty()) Text("아직 알림이 온 방이 없어요. 알림이 오면 여기에 방이 보여요.", style = MaterialTheme.typography.bodySmall)
+            else if (list.isEmpty()) Text("찾는 방이 없어요.", style = MaterialTheme.typography.bodySmall)
+            else if (word.isEmpty()) Text("최근에 알림이 온 방부터 보여요.", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            list.take(if (word.isEmpty()) 20 else 50).forEach { r ->
+                key(r.pkg, r.room) {
+                    Row(Modifier.fillMaxWidth().clickable { vm.pinRoom(r.pkg, r.room) }.padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        AppIcon(r.pkg, 28.dp)
+                        Column(Modifier.weight(1f)) {
+                            Text(r.room, maxLines = 1, style = MaterialTheme.typography.labelLarge)
+                            Text(r.app + " · 마지막 알림 " + SimpleDateFormat("M/d", Locale.KOREA).format(r.last) +
+                                (if (!vm.isRoomOn(r.pkg, r.room)) " · 꺼 둔 방(넣으면 다시 모아요)" else ""),
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Text("＋ 넣기", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
+                    }
+                }
+            }
+            // 아직 알림이 안 온 카톡 방은 이름을 그대로 넣어 미리
+            if (word.isNotEmpty() && vm.pinCandidates.none { it.room == word } && "com.kakao.talk|$word" !in pinnedKeys)
+                OutlinedButton(onClick = { vm.pinRoom("com.kakao.talk", word); q = "" }, modifier = Modifier.fillMaxWidth()) {
+                    Text("'$word' 이름 그대로 카톡 방으로 넣기")
+                }
+        }
+    }
 }
 
 // ───────────────────────── 👥 사람 묶음 (설정 → 세부 화면) ─────────────────────────

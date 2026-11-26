@@ -199,6 +199,12 @@ class NotificationDb private constructor(ctx: Context) :
         readableDatabase.rawQuery("SELECT pkg, app, last FROM seen WHERE room='' ORDER BY last DESC", null)
             .use { c -> buildList { while (c.moveToNext()) add(Triple(c.getString(0), c.getString(1), c.getLong(2))) } }
 
+    /** 알림이 온 적 있는 방 모두(앱 가리지 않고, 최근에 온 순) — 📌 놓치기 싫은 방 고르기 */
+    data class SeenRoom(val pkg: String, val app: String, val room: String, val last: Long)
+    fun recentRooms(limit: Int = 300): List<SeenRoom> =
+        readableDatabase.rawQuery("SELECT pkg, app, room, last FROM seen WHERE room<>'' ORDER BY last DESC LIMIT $limit", null)
+            .use { c -> buildList { while (c.moveToNext()) add(SeenRoom(c.getString(0), c.getString(1), c.getString(2), c.getLong(3))) } }
+
     /** 방 고르기 목록: 지금까지 알림이 온 모든 방 (최근 7일 건수가 많은 순, 그다음 최근에 온 순) */
     fun knownRooms(pkg: String): List<KnownRoom> {
         val recent = roomStats(pkg, 7).toMap()

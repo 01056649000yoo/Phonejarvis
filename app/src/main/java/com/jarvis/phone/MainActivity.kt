@@ -390,6 +390,25 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         RoomTier.set(ctx, pkg, room, tier)
         roomTiers = RoomTier.all(ctx)
     }
+    // ── 📌 놓치기 싫은 방(2026-11-26 선생님): '늘 중요'로 정한 방을 한곳에서 보고 고름 — 정기 요약·하루 정리에도 늘 내용까지 ──
+    /** 놓치기 싫은 방(패키지, 방 이름) — 방 고르기의 '늘 중요'와 같은 값 */
+    val pinnedRooms: List<Pair<String, String>> get() = roomTiers.filterValues { it == Relevance.ME }.keys
+        .map { it.substringBefore('|') to it.substringAfter('|') }.sortedBy { it.second }
+    /** 고를 수 있는 방: 알림이 온 적 있는 방(최근 순) */
+    var pinCandidates by mutableStateOf<List<NotificationDb.SeenRoom>>(emptyList())
+        private set
+    private fun loadPinCandidates() {
+        viewModelScope.launch { pinCandidates = withContext(Dispatchers.IO) { runCatching { db.recentRooms() }.getOrDefault(emptyList()) } }
+    }
+    fun pinRoom(pkg: String, room: String) {
+        val r = room.trim().take(100)
+        if (r.isEmpty()) return
+        setRoomTier(pkg, r, Relevance.ME)
+        if (!isRoomOn(pkg, r)) setRoom(pkg, r, true)   // 꺼 둔 방이면 다시 모음(꺼져 있으면 요약에 안 나옴)
+    }
+    fun unpinRoom(pkg: String, room: String) = setRoomTier(pkg, room, Relevance.AUTO)
+    fun appNameOf(pkg: String): String = pinCandidates.firstOrNull { it.pkg == pkg }?.app ?: labelOf(pkg)
+
     /** 앱 목록에 보여 줄 "뺀 방 N개" */
     fun excludedRoomCount(pkg: String) = excludedRooms.count { it.startsWith("$pkg|") }
 
@@ -417,10 +436,14 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         PEOPLE("👥 사람 묶음", Tab.SETTINGS),
         GROUP("👥 묶음", Tab.SETTINGS, PEOPLE), KEYWORDS("⭐ 중요 키워드", Tab.SETTINGS, PEOPLE),
         MY_NAMES("🙋 나를 부르는 말", Tab.SETTINGS, PEOPLE),
+        PINNED("📌 놓치기 싫은 방", Tab.SETTINGS),
     }
     /** 지금 열린 세부 화면 (null이면 탭의 첫 화면) */
     var page by mutableStateOf<Page?>(if (prefs.getBoolean("apps_setup_done", false)) null else Page.APPS)
-    fun open(p: Page) { tab = p.tab; page = p; if (p == Page.APPS) loadApps(ai = true) else if (p == Page.KEYWORDS) loadApps() }
+    fun open(p: Page) {
+        tab = p.tab; page = p
+        when (p) { Page.APPS -> loadApps(ai = true); Page.KEYWORDS -> loadApps(); Page.PINNED -> loadPinCandidates(); else -> {} }
+    }
 
     // ── 👥 사람들: 쓰는 사람이 만드는 묶음 ──
     var groups by mutableStateOf(People.groups(app))
