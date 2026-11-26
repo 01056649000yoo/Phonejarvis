@@ -429,7 +429,8 @@ object Briefings {
 
     // ── 🎯 중요한 대화만 요약(2026-11-24, IDENTITY.md 원칙 2 — 기본 켬). 끄면 예전처럼 모든 방을 AI 로 ──
     private fun prefs(ctx: Context) = ctx.getSharedPreferences("briefing", Context.MODE_PRIVATE)
-    fun focusOn(ctx: Context) = prefs(ctx).getBoolean("focus_talk", true)
+    /** 늘 켬(2026-11-26: 스위치를 없앰 — 끄면 모든 방을 AI 로 요약하던 예전 방식이라 지금 컨셉과 맞지 않음) */
+    fun focusOn(ctx: Context) = true
     fun setFocus(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("focus_talk", on).apply()
     /** 명부·학부모 방·키워드·학생 이름이 나오는 대화인가 */
     fun roster(ctx: Context): (BriefingComposer.Conversation) -> Boolean {
@@ -473,7 +474,9 @@ object Briefings {
         val memoBase = HashMap<String, Int>()
         val level = { c: BriefingComposer.Conversation -> memo.getOrPut(BriefingComposer.keyOf(c)) { lv(c, false) } }
         val base = { c: BriefingComposer.Conversation -> memoBase.getOrPut(BriefingComposer.keyOf(c)) { lv(c, true) } }
-        val mentions = BriefingComposer.Mentions(base, { c, n -> Relevance.toMe(n, names, said[c.room] ?: 0L) }, { n -> Relevance.addressesMe(n.text, if (hasMine) mine else names) })   // 🙋 은 나를 부른 말만(학생 이름만 나온 말은 내용만 보여 줌)
+        val threads = HashMap<String, Set<NotiItem>>()
+        fun thread(c: BriefingComposer.Conversation) = threads.getOrPut(BriefingComposer.keyOf(c)) { Relevance.myThread(c.items, said[c.room] ?: 0L).toSet() }
+        val mentions = BriefingComposer.Mentions(base, { c, n -> Relevance.addressesMe(n.text, names) || n in thread(c) }, { n -> Relevance.addressesMe(n.text, if (hasMine) mine else names) })   // 🙋 은 나를 부른 말만(학생 이름만 나온 말은 내용만 보여 줌)
         return Closeness(level, { c -> Relevance.replyOk(c, level(c), names, parent, hasMine, mine = if (hasMine) mine else names) }, mentions,
             pinned = { c -> tiers[RoomTier.key(c)] == Relevance.ME })
     }

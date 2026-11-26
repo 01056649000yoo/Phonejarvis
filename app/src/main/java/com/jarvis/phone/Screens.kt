@@ -37,10 +37,12 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** 이번 버전에서 바뀐 점 한 줄 (버전 올릴 때 같이 고치기). 새 것을 앞에 — 앞 세 가지가 릴리스·안내 페이지의 '바뀐 점'으로도 나감(build.yml) */
-private const val WHATS_NEW = "놓치기 싫은 방은 앞 요약과 이어서 풀어 쓴 요약으로 · 놓치기 싫은 방을 설정에서 고르기 · 알림이 몰려도 화면이 덜 끊기게 · 정기 요약은 나와 관련된 것만 · 두세 마디 방은 최근 말 하나만 · 처음 설치할 때 모아서 받을지 물어봄 · 답할 것에는 나를 부른 말과 1:1만 · 하루 정리가 더 짧게 · 놓치던 알림·빠지던 백업 고침 · 앱 아이콘이 엇갈리던 것 고침 · 설정 백업 매일 자동 · 알림 앱 정리 화면 정리 · 받아 둔 모델 자동 찾기 · 설치 방법 안내 · 요약 탭에 최근 요약이 늘 보이게 · 할 일·마감 카드 없앰 · 나와 관련된 것만 요약 · 버전·업데이트 일시 표시 · 하루 정리는 하루 종일 온 알림을 총정리 · 빠지던 알림 없게 · 카톡 단톡방은 원문 줄로 · 이어진 대화 ↪ · 답한 물음 내리기 · 메일은 제목 그대로 · 짧으면 원문 그대로 · 오해 없는 요약 · 어제 메시지가 섞이지 않게 · 오픈채팅 한 방으로 · 내가 만든 묶음별 연락 · 모든 연락을 간단한 내용까지 · 중요한 대화만 요약해요 · 캘린더는 일정 그대로 · 요약 문장 다듬기"
+private const val WHATS_NEW = "꼭 볼 것만: 나를 부른 말·1:1·꼭 받을 사람·키워드 · 설정을 간단하게 · 놓치기 싫은 방은 앞 요약과 이어서 풀어 쓴 요약으로 · 놓치기 싫은 방을 설정에서 고르기 · 알림이 몰려도 화면이 덜 끊기게 · 정기 요약은 나와 관련된 것만 · 두세 마디 방은 최근 말 하나만 · 처음 설치할 때 모아서 받을지 물어봄 · 답할 것에는 나를 부른 말과 1:1만 · 하루 정리가 더 짧게 · 놓치던 알림·빠지던 백업 고침 · 앱 아이콘이 엇갈리던 것 고침 · 설정 백업 매일 자동 · 알림 앱 정리 화면 정리 · 받아 둔 모델 자동 찾기 · 설치 방법 안내 · 요약 탭에 최근 요약이 늘 보이게 · 할 일·마감 카드 없앰 · 나와 관련된 것만 요약 · 버전·업데이트 일시 표시 · 하루 정리는 하루 종일 온 알림을 총정리 · 빠지던 알림 없게 · 카톡 단톡방은 원문 줄로 · 이어진 대화 ↪ · 답한 물음 내리기 · 메일은 제목 그대로 · 짧으면 원문 그대로 · 오해 없는 요약 · 어제 메시지가 섞이지 않게 · 오픈채팅 한 방으로 · 내가 만든 묶음별 연락 · 모든 연락을 간단한 내용까지 · 중요한 대화만 요약해요 · 캘린더는 일정 그대로 · 요약 문장 다듬기"
 
 /** 업데이트 내역 큰 창 (버전 올릴 때 같이 고치기) */
 private val WHATS_NEW_DETAIL = listOf(
+    "🎯 꼭 볼 것만 모아 보는 앱으로" to "쌤톡스가 보여 주는 것을 넷으로 정했어요: 나를 부르거나 멘션한 말, 나에게 온 1:1, 꼭 받을 사람(지인), 키워드. 단톡방은 나를 언급한 말만 요약하고, 나머지는 건수만 적어요. 예전의 '내가 속한 방 한 줄'은 없앴어요 — 나를 안 불러도 꼭 볼 방은 '놓치기 싫은 방'에 넣으면 돼요.",
+    "🧹 설정을 간단하게" to "설정 첫 화면에 '쌤톡스가 보여 주는 것' 네 가지(나를 부르는 말·꼭 받을 사람·키워드·놓치기 싫은 방)를 모았어요. 방마다 '저절로·늘 중요·한 줄·건수만'을 고르던 것은 '놓치기 싫은 방' 하나로, '중요한 대화만 요약' 스위치는 없앴어요(늘 켬).",
     "📌 놓치기 싫은 방" to "설정에 '놓치기 싫은 방'이 생겼어요. 여기 넣은 방은 나를 부르지 않아도 정한 시각 요약과 하루 정리에 늘 내용까지 요약해요. 읽기만 하는 동학년방·공지방을 넣어 두세요. 이 방들은 원문 줄을 그대로 보여 주지 않고 AI가 요점을 풀어 써요. 앞서 그 방을 요약한 내용과 비교해서, 이어진 이야기면 무엇이 정해졌고 달라졌는지를 중심으로 정리해요.",
     "🪶 더 가볍게" to "알림을 모으는 일을 화면과 다른 줄에서 하고, 모으는 규칙은 설정이 바뀔 때만 다시 읽어요. 단톡방 알림이 몰려도 앱 화면이 덜 끊겨요. 앱 목록과 통계는 알림 앱 정리·키워드 화면을 열 때만 읽어서 첫 화면도 가벼워졌어요.",
     "🗞 정기 요약은 나와 관련된 것만" to "정한 시각에 오는 요약과 하루 정리에는 답할 것·나에게 온 대화·사람 묶음·업무만 보여 줘요. 내가 속한 방은 줄을 쓰지 않고 곳 수와 건수만 적어요(AI도 쓰지 않아 폰도 가벼워져요). 직접 누른 '지금 정리'와 위젯 요약에서는 내가 속한 방도 한 줄씩 볼 수 있어요.",
@@ -835,20 +837,30 @@ private fun SettingsTab(vm: JarvisViewModel) {
     ).joinToString(" · ").ifEmpty { if (rev >= 0) "꺼짐" else "" }
     val permsMissing = listOf(vm.listenerEnabled, vm.notiPermission).count { !it }
 
+    // 2026-11-26 선생님: 컨셉을 명확하게, 설정은 적게 — 쌤톡스가 보여 주는 것은 넷뿐:
+    // 나를 부르거나 멘션한 말(단톡방은 이것만) · 나에게 온 1:1 · 꼭 받을 사람 · 키워드. 그 밖의 방은 건수만
+    Text("쌤톡스가 보여 주는 것", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
     MenuGroup(listOf(
-        Triple("🌱 알림 앱 정리", "뺀 앱 ${vm.excludedApps.size}개 · 광고 ${vm.adCount}건") { vm.open(JarvisViewModel.Page.APPS) },
-        Triple("📌 놓치기 싫은 방", if (vm.pinnedRooms.isEmpty()) "정기 요약에 늘 내용까지 볼 방 고르기" else "${vm.pinnedRooms.size}곳 · 늘 내용까지 요약") { vm.open(JarvisViewModel.Page.PINNED) },
+        Triple("🙋 나를 부르는 말",
+            if (vm.myNames.isEmpty()) "아직 없음 — 넣어야 단톡방에서 나를 부른 말을 찾아요" else vm.myNames.take(3).joinToString(", ") + if (vm.myNames.size > 3) " 외 ${vm.myNames.size - 3}개" else "") {
+            vm.open(JarvisViewModel.Page.MY_NAMES) },
+        Triple("👥 꼭 받을 사람", "묶음 ${vm.groups.count { !it.hidden }}개 · 이 사람들 연락은 늘 요약") { vm.open(JarvisViewModel.Page.PEOPLE) },
+        Triple("⭐ 키워드",
+            if (vm.keywords.isEmpty()) "아직 없음 · 이 말이 나오면 놓치지 않게" else vm.keywords.take(2).joinToString(", ") + if (vm.keywords.size > 2) " 외 ${vm.keywords.size - 2}개" else "") {
+            vm.open(JarvisViewModel.Page.KEYWORDS) },
+        Triple("📌 놓치기 싫은 방", if (vm.pinnedRooms.isEmpty()) "나를 안 불러도 꼭 볼 단톡방" else "${vm.pinnedRooms.size}곳 · 늘 내용까지 요약") { vm.open(JarvisViewModel.Page.PINNED) },
+    ))
+    Text("나에게 온 1:1(문자·답한 적 있는 사람)은 따로 정하지 않아도 보여 줘요. 그 밖의 단톡방은 건수만 적어요.",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    MenuGroup(listOf(
         Triple("🔕 모아서 알림", scheduleStatus) { vm.open(JarvisViewModel.Page.SCHEDULE) },
+        Triple("🌱 알림 앱 정리", "뺀 앱 ${vm.excludedApps.size}개 · 광고 ${vm.adCount}건") { vm.open(JarvisViewModel.Page.APPS) },
         Triple("🏠 홈 화면 위젯", if (vm.hasWidget) "놓여 있어요 · 하나 더 놓기" else "위젯 놓기 — 요약을 홈 화면에서 바로") { vm.pinWidget() },
     ))
     // 📖 설치 방법(2026-11-25 선생님: Play 프로텍트 '앱 차단됨' 등 — 동료에게 보낼 안내 페이지). 앱은 인터넷 권한이 없어 브라우저로 엶
     MenuGroup(listOf(
         Triple("📖 설치 방법 보기", "Play 프로텍트 차단·알림 접근 잠김 풀기") { vm.openInstallGuide() },
         Triple("📤 동료에게 설치 링크 보내기", "카톡·문자로 설치 방법 페이지 보내기") { vm.shareInstallGuide() },
-    ))
-    // 👥 사람 묶음은 선택 사항: 안 만들어도 요약은 그대로 됨
-    MenuGroup(listOf(
-        Triple("👥 사람 묶음", "묶음 ${vm.groups.count { !it.hidden }}개 · 선택") { vm.open(JarvisViewModel.Page.PEOPLE) },
     ))
     MenuGroup(listOf(
         Triple("🤖 AI 모델·권한",
@@ -957,14 +969,6 @@ private fun PeoplePage(vm: JarvisViewModel) {
         Text("숨긴 묶음:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         hidden.forEach { g -> TextButton(onClick = { vm.unhideGroup(g.id) }) { Text("${g.title} 다시 보기") } }
     }
-    MenuGroup(listOf(
-        Triple("🙋 나를 부르는 말",
-            if (vm.myNames.isEmpty()) "아직 없음 — 넣어 주세요" else vm.myNames.take(3).joinToString(", ") + if (vm.myNames.size > 3) " 외 ${vm.myNames.size - 3}개" else "") {
-            vm.open(JarvisViewModel.Page.MY_NAMES) },
-        Triple("⭐ 중요 키워드",
-            if (vm.keywords.isEmpty()) "아직 없음" else vm.keywords.take(2).joinToString(", ") + if (vm.keywords.size > 2) " 외 ${vm.keywords.size - 2}개" else "") {
-            vm.open(JarvisViewModel.Page.KEYWORDS) },
-    ))
     if (making) GroupNameDialog(title = "＋ 묶음 만들기", initEmoji = "👔", initName = "", suggest = true,
         onDone = { emoji, name -> making = false; vm.addGroup(emoji, name) }, onDismiss = { making = false })
 }
@@ -1640,7 +1644,7 @@ private fun RoomPickerDialog(vm: JarvisViewModel, pkg: String, name: String) {
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("방을 누르거나 스위치로 켜고 꺼요. 끈 방은 모으지도, 요약하지도 않아요. 단, 중요 키워드·등록한 사람은 모아요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("켠 방은 요약에서 어떻게 보일지도 고를 수 있어요. 저절로: 나를 부르거나 1:1이면 내용까지, 내가 말한 방은 한 줄, 그 밖은 이름과 건수만.",
+                Text("단톡방은 나를 부르거나 멘션한 말만 요약해요. 나를 부르지 않아도 꼭 볼 방은 📌 놓치기 싫은 방으로 정해 두세요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 // ＋ 방 이름 직접 추가: 다른 앱은 카톡 방 목록을 읽을 수 없어서, 아직 알림이 안 온 방은 이름으로 미리 넣음
                 var newRoom by rememberSaveable { mutableStateOf("") }
@@ -1672,12 +1676,11 @@ private fun RoomPickerDialog(vm: JarvisViewModel, pkg: String, name: String) {
                         }
                         Switch(checked = on, onCheckedChange = { vm.setRoom(pkg, room, it) })
                     }
-                    // 🎯 요약에서 보일 모양(2026-11-25): 저절로 · 늘 중요 · 한 줄 · 건수만
-                    if (on) Row(Modifier.horizontalScroll(rememberScrollState()).padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        val cur = vm.roomTier(pkg, room)
-                        listOf(Relevance.AUTO to "저절로", Relevance.ME to "늘 중요", Relevance.JOINED to "한 줄", Relevance.OTHER to "건수만").forEach { (t, label) ->
-                            FilterChip(selected = cur == t, onClick = { vm.setRoomTier(pkg, room, t) }, label = { Text(label, style = MaterialTheme.typography.labelSmall) })
-                        }
+                    // 📌 놓치기 싫은 방(2026-11-26: 방마다 '저절로·늘 중요·한 줄·건수만' 네 가지를 고르던 것을 하나로 줄임)
+                    if (on) Row(Modifier.padding(bottom = 6.dp)) {
+                        val pinned = vm.roomTier(pkg, room) == Relevance.ME
+                        FilterChip(selected = pinned, onClick = { if (pinned) vm.unpinRoom(pkg, room) else vm.pinRoom(pkg, room) },
+                            label = { Text("📌 놓치기 싫은 방", style = MaterialTheme.typography.labelSmall) })
                     }
                 }
             }
@@ -1874,16 +1877,6 @@ private fun SchedulePage(vm: JarvisViewModel) {
         }
     }
     // 🎯 중요한 대화만 요약 (IDENTITY.md 원칙 2 — 온 연락은 간단한 내용까지, 많으면 핵심 요약)
-    Card(Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("🎯 중요한 대화만 요약", style = MaterialTheme.typography.titleSmall, modifier = Modifier.asHeading())
-                Text(if (vm.focusTalk) "명부·키워드·사람 묶음·업무 앱, '선생님'을 부르는 대화, 1:1 연락은 AI가 꼼꼼히 요약해요. 몇 마디뿐인 잡담 방은 AI 없이 그 말을 짧게 보여 줘요."
-                    else "몇 마디뿐인 잡담 방까지 모든 대화방을 AI가 요약해요.", style = MaterialTheme.typography.bodySmall)
-            }
-            Switch(checked = vm.focusTalk, onCheckedChange = { vm.changeFocusTalk(it) })
-        }
-    }
     // 🗓 하루 정리 (모아서 알림을 꺼도 따로)
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

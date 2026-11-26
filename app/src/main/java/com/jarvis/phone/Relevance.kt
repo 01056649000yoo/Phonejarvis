@@ -47,6 +47,11 @@ object Relevance {
     /** 내가 그 방에서 말한 뒤 이만큼 안에 이어진 말은 나와 나누는 대화 */
     const val THREAD_MS = 30 * 60_000L
     fun inMyThread(n: NotiItem, saidAt: Long) = saidAt > 0 && n.time > saidAt && n.time - saidAt <= THREAD_MS
+    /** 내 말에 이어진 말로 보는 것은 내 말 바로 뒤 이만큼까지 — 여럿이 떠드는 방에서 30분 동안의 모든 말이 나에게 한 말이 되지 않게 */
+    const val THREAD_TURNS = 5
+    /** 이 대화에서 내 말에 이어진 말들(내가 말한 뒤 30분 안, 앞에서 [THREAD_TURNS]개) */
+    fun myThread(items: List<NotiItem>, saidAt: Long): List<NotiItem> =
+        if (saidAt <= 0) emptyList() else items.filter { inMyThread(it, saidAt) }.sortedBy { it.time }.take(THREAD_TURNS)
     /** 나에게 한 말: 나를 부르거나, 내가 말한 직후 이어진 말([saidAt] = 그 방에서 내가 마지막으로 말한 시각) */
     fun toMe(n: NotiItem, names: Collection<String>, saidAt: Long = 0L) = addressesMe(n.text, names) || inMyThread(n, saidAt)
 
@@ -71,18 +76,19 @@ object Relevance {
               /** 익히는 기간인가 */ learning: Boolean = false,
               /** 그 방에서 내가 마지막으로 말한 시각 */ saidAt: Long = 0L,
               /** true 면 나를 부른 말은 보지 않은 '방 자체의' 거리(문장 단위로 보여 줄 때 나머지 대화의 거리) */ ignoreCalls: Boolean = false): Int {
-        if (override in ME..OTHER) return override
+        // 📌 놓치기 싫은 방(ME)·건수만(OTHER)은 직접 정한 대로. 예전 '한 줄'(JOINED)은 없어져 저절로 정함
+        if (override == ME || override == OTHER) return override
         val called = !ignoreCalls && conv.items.any { toMe(it, names, saidAt) }
         // 처음 보는 1:1 이라도 '선생님/쌤'하고 나를 부르며 묻거나 부탁하면 나에게 온 것(2026-11-26 선생님: 답할 것에 1:1 도 포함 —
         // 명부에 없는 학부모의 첫 카톡 "선생님 내일 상담 가능할까요?"가 한 줄로 내려가 답할 것에 안 올라갔다).
         // 부르는 말 없이 묻기만 한 것은 그대로 한 줄 — 1:1 처럼 오는 오픈채팅의 "계정 이관 방법이 있을지요?"가 답할 것에 섞이지 않게
         if (conv.items.all { it.room.isEmpty() }) return if (trusted1to1 || joined(conv.room) || roster(conv) || called ||
-            conv.items.any { callsTeacher(it.text) && BriefingComposer.asksSomething(it.text) && !isBroadcast(it.text) }) ME else JOINED
+            conv.items.any { callsTeacher(it.text) && BriefingComposer.asksSomething(it.text) && !isBroadcast(it.text) }) ME else OTHER
         if (roster(conv) || called) return ME
         if (!hasMyNames && BriefingComposer.important(conv, roster)) return ME      // 이름을 모르면 예전 규칙으로
-        if (joined(conv.room)) return JOINED
-        if (speakers(conv) >= CROWD) return OTHER
-        return if (learning || !hasMyNames) JOINED else OTHER
+        // 2026-11-26 선생님: 컨셉을 명확하게 — 단톡방은 나를 언급한 말만. '내가 속한 방'(한 줄) 단계는 없앰:
+        // 내가 말해 본 방이라도 나를 부르지 않은 말은 건수만. 꼭 볼 방은 📌 놓치기 싫은 방으로 직접 정함
+        return OTHER
     }
 
     /** 말한 사람 수(맞장구뿐인 말은 셈) */

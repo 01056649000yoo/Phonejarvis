@@ -433,9 +433,9 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     enum class Page(val title: String, val tab: Tab, val parent: Page? = null) {
         APPS("🌱 알림 앱 정리", Tab.SETTINGS), SCHEDULE("🔕 모아서 알림", Tab.SETTINGS),
         SYSTEM("🤖 AI 모델·권한", Tab.SETTINGS), BACKUP("💾 백업·복원", Tab.SETTINGS), STORAGE("🧹 저장 공간", Tab.SETTINGS),
-        PEOPLE("👥 사람 묶음", Tab.SETTINGS),
-        GROUP("👥 묶음", Tab.SETTINGS, PEOPLE), KEYWORDS("⭐ 중요 키워드", Tab.SETTINGS, PEOPLE),
-        MY_NAMES("🙋 나를 부르는 말", Tab.SETTINGS, PEOPLE),
+        PEOPLE("👥 꼭 받을 사람", Tab.SETTINGS),
+        GROUP("👥 묶음", Tab.SETTINGS, PEOPLE), KEYWORDS("⭐ 키워드", Tab.SETTINGS),
+        MY_NAMES("🙋 나를 부르는 말", Tab.SETTINGS),
         PINNED("📌 놓치기 싫은 방", Tab.SETTINGS),
     }
     /** 지금 열린 세부 화면 (null이면 탭의 첫 화면) */

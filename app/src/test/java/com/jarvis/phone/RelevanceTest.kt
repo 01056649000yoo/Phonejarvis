@@ -75,13 +75,13 @@ class RelevanceTest {
         val joined = setOf("6학년 동학년방", "사랑하는 마누라")
         fun lv(c: BriefingComposer.Conversation, override: Int = Relevance.AUTO, sms: Boolean = false) =
             Relevance.level(c, names, noRoster, { it in joined }, override, sms)
-        // 단톡방: 나를 부르면 1, 내가 말한 방이면 2, 그 밖은 3
+        // 단톡방: 나를 부르면 1, 그 밖은 3 — 내가 말해 본 방이라도 나를 부르지 않으면 건수만(2026-11-26: '내가 속한 방' 단계 없앰)
         assertEquals(Relevance.ME, lv(conv("끄적끄적아지트", msg("끄적끄적아지트", "햅삐", "[나를 멘션] @친절한유쌤 응답바랍니다."))))
-        assertEquals(Relevance.JOINED, lv(conv("6학년 동학년방", msg("6학년 동학년방", "김", "학예회 금요일"), msg("6학년 동학년방", "박", "네"))))
+        assertEquals(Relevance.OTHER, lv(conv("6학년 동학년방", msg("6학년 동학년방", "김", "학예회 금요일"), msg("6학년 동학년방", "박", "네"))))
         assertEquals(Relevance.OTHER, lv(conv("라이프오브파이", msg("라이프오브파이", "A", "INK REALM 오픈소스 공개"), msg("라이프오브파이", "B", "대박"))))
         // 1:1: 문자·내가 답한 사람·나를 부름이면 1, 처음 보는 카톡 1:1(오픈채팅일 수 있음)은 2
         assertEquals(Relevance.ME, lv(conv("", msg("", "사랑하는 마누라", "학원비는 12월에"))))
-        assertEquals(Relevance.JOINED, lv(conv("", msg("", "크림치즈컵케이크", "계정 이관 방법이 있을지요?"))))
+        assertEquals(Relevance.OTHER, lv(conv("", msg("", "크림치즈컵케이크", "계정 이관 방법이 있을지요?"))))
         assertEquals(Relevance.ME, lv(conv("", msg("", "01012345678", "내일 상담 가능할까요?", "com.samsung.android.messaging")), sms = true))
         // 방 고르기에서 직접 정한 값이 먼저
         assertEquals(Relevance.OTHER, lv(conv("", msg("", "사랑하는 마누라", "학원비")), override = Relevance.OTHER))
@@ -93,15 +93,15 @@ class RelevanceTest {
             Relevance.level(c, if (hasMine) names else emptyList(), noRoster, { false }, hasMyNames = hasMine, learning = learning)
         val small = conv("우리 학년방", msg("우리 학년방", "김", "학예회 금요일"), msg("우리 학년방", "박", "명단은 제가 모을게요"))
         val crowd = conv("교사 커뮤니티", *Array(9) { msg("교사 커뮤니티", "사람$it", "AI 수업 자료 공유합니다 $it") })
-        // 익히는 기간: 작은 단톡방은 한 줄, 사람이 아주 많은 방만 그 밖의 방
-        assertEquals(Relevance.JOINED, lv(small, hasMine = true, learning = true))
+        // 익히는 기간은 없앰: 나를 부르지 않은 단톡방은 처음부터 건수만
+        assertEquals(Relevance.OTHER, lv(small, hasMine = true, learning = true))
         assertEquals(Relevance.OTHER, lv(crowd, hasMine = true, learning = true))
         // 익힌 뒤에는 내가 말한 적 없는 방은 그 밖의 방
         assertEquals(Relevance.OTHER, lv(small, hasMine = true, learning = false))
         // 나를 부르는 말을 아직 안 넣었으면: '선생님'을 부르는 방은 나에게(예전 규칙), 나머지는 한 줄
         val calls = conv("우리 학년방", msg("우리 학년방", "김", "선생님 내일 회의 몇 시에 하나요?"), msg("우리 학년방", "박", "네"))
         assertEquals(Relevance.ME, lv(calls, hasMine = false, learning = false))
-        assertEquals(Relevance.JOINED, lv(small, hasMine = false, learning = false))
+        assertEquals(Relevance.OTHER, lv(small, hasMine = false, learning = false))
         assertTrue(Relevance.replyOk(calls, Relevance.ME, emptyList(), noRoster, hasMyNames = false))
     }
 
@@ -153,29 +153,38 @@ class RelevanceTest {
         assertTrue(Relevance.replyOk(first, lv, all, noRoster, mine = mine))
         // 1:1 처럼 온 오픈채팅: 나를 부르지 않은 물음·여럿에게 돌린 말은 그대로 한 줄
         listOf("이거 써 보신 분 계실까요", "계정 이관 방법이 있을지요?", "선생님들 이거 어떻게 하세요?", "샘플 파일 보내 주실 수 있나요?").forEach { t ->
-            assertEquals(t, Relevance.JOINED, Relevance.level(conv("", msg("", "택배 상자를 든 네오", t)), all, noRoster, { false }))
+            assertEquals(t, Relevance.OTHER, Relevance.level(conv("", msg("", "택배 상자를 든 네오", t)), all, noRoster, { false }))
         }
     }
 
-    // 2026-11-26 선생님: 정기 요약은 나와 관련된 것만, 직접 누른 요약은 내가 속한 방도 한 줄(가장 최근 말 하나)
-    @Test fun 정기_요약은_내가_속한_방을_줄로_쓰지_않음() = runBlocking {
+    // 2026-11-26 선생님: 컨셉을 명확하게 — 단톡방은 나를 언급한 말만 요약, 나머지는 건수만(직접 누른 요약도 같음)
+    @Test fun 단톡방은_나를_언급한_말만_요약() = runBlocking {
         val items = listOf(
             msg("동학년방", "김", "렉서스 새로 나온 건 가격이 그리 안 올랐대요"), msg("동학년방", "박", "보급형차로 옵션질하면 회사 힘들어져요"),
             msg("동학년방", "이", "사이즈가 좀 커졌죠"),
+            msg("연구회", "최", "다음 주 모임 장소 정해야 해요"), msg("연구회", "정", "유쌤 금요일까지 발표 자료 보내 주실 수 있나요?"),
             msg("", "김민준 어머니", "선생님 내일 준비물이 뭔가요?", "com.samsung.android.messaging"))
-        val joined = setOf("동학년방")
+        val joined = setOf("동학년방")   // 내가 말해 본 방이라도
         val levels = { c: BriefingComposer.Conversation -> Relevance.level(c, names, noRoster, { it in joined }, trusted1to1 = c.items.all { Sms.isSms(it.pkg) }) }
-        suspend fun run(compact: Boolean) = BriefingComposer.compose(items, ask = { "" }, focus = true, levels = levels,
-            replyAllowed = { c -> Relevance.replyOk(c, levels(c), names, noRoster) }, compact = compact).people
-        // 직접 누른 요약: 가장 최근 말 하나만(이어 붙이지 않음)
-        val manual = run(false)
-        assertTrue(manual, "- 동학년방 (3건): 이: 사이즈가 좀 커졌죠" in manual)
-        assertFalse(manual, "렉서스" in manual || " / " in manual.lines().first { it.startsWith("- 동학년방") })
-        // 정기 요약: 줄 없이 곳 수·건수만, 나에게 온 것은 그대로
-        val auto = run(true)
-        assertFalse(auto, "사이즈가" in auto || "- 동학년방" in auto)
-        assertTrue(auto, "- 그 밖의 방: 내가 속한 방 1곳 3건" in auto)
-        assertTrue(auto, "김민준 어머니" in auto && "준비물" in auto)
+        val base = { c: BriefingComposer.Conversation -> Relevance.level(c, names, noRoster, { it in joined }, trusted1to1 = c.items.all { Sms.isSms(it.pkg) }, ignoreCalls = true) }
+        val mentions = BriefingComposer.Mentions(base, { _, n -> Relevance.addressesMe(n.text, names) }, { n -> Relevance.addressesMe(n.text, names) })
+        for (compact in listOf(false, true)) {
+            val out = BriefingComposer.compose(items, ask = { "" }, focus = true, levels = levels, mentions = mentions,
+                replyAllowed = { c -> Relevance.replyOk(c, levels(c), names, noRoster) }, compact = compact).people
+            assertFalse(out, "렉서스" in out || "사이즈가" in out || "- 동학년방 (" in out)        // 나를 부르지 않은 방은 줄 없음
+            assertTrue(out, "동학년방 3건" in out || "그 밖 1곳 3건" in out)                         // 건수만
+            assertTrue(out, "🙋 연구회" in out && "유쌤 금요일까지 발표 자료" in out)                 // 나를 언급한 말
+            assertTrue(out, "🙋 김민준 어머니" in out && "준비물" in out)                             // 1:1
+        }
+    }
+
+    @Test fun 내_말에_이어진_말은_바로_뒤_다섯_마디까지() {
+        val saidAt = 5_000_000L
+        val after = List(12) { NotiItem(it.toLong(), "com.kakao.talk", "카카오톡", "닉$it", "말 $it", saidAt + (it + 1) * 60_000L, "큰 방") }
+        val t = Relevance.myThread(after, saidAt)
+        assertEquals(Relevance.THREAD_TURNS, t.size)
+        assertEquals(after.take(5), t)
+        assertTrue(Relevance.myThread(after, 0L).isEmpty())
     }
 
     // 2026-11-26 선생님: 놓치기 싫은 방은 원문 줄 대신 요약으로, 앞의 요약과 비교해서

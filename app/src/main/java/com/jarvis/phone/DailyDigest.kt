@@ -453,7 +453,7 @@ object DailyDigest {
         val since = if (d.from in 1 until SummarySchedule.startOfDay(now)) " (${SimpleDateFormat("M/d (E) HH:mm", Locale.KOREA).format(d.from)}부터)" else ""
         val meRooms = (meLines.map { it.first.key } + asks.filter { it.first.kind == RoomDay.TALK }.map { it.first.key }).distinct().size
         val intro = "요약 ${d.briefings}번 · 알림 ${d.count}건${since}을 정리했어요. 대화방 ${talk.size}곳 중 " +
-            "나에게 온 대화 ${meRooms}곳 · 내가 속한 방 ${joinedRooms.size}곳 · 그 밖의 방 ${others.size}곳."
+            "나에게 온 대화 ${meRooms}곳" + (if (joinedRooms.isNotEmpty()) " · 내가 속한 방 ${joinedRooms.size}곳" else "") + " · 그 밖의 방 ${others.size}곳."
         val top = StringBuilder()
         core?.let { (c, t) ->
             if (c.isNotEmpty()) { top.append("✨ 오늘의 핵심\n"); c.forEach { top.append(it).append('\n') }; top.append('\n') }
