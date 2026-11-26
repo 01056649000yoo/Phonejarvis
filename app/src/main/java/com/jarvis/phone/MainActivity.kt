@@ -420,7 +420,7 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
     }
     /** 지금 열린 세부 화면 (null이면 탭의 첫 화면) */
     var page by mutableStateOf<Page?>(if (prefs.getBoolean("apps_setup_done", false)) null else Page.APPS)
-    fun open(p: Page) { tab = p.tab; page = p; if (p == Page.APPS) loadApps(ai = true) }
+    fun open(p: Page) { tab = p.tab; page = p; if (p == Page.APPS) loadApps(ai = true) else if (p == Page.KEYWORDS) loadApps() }
 
     // ── 👥 사람들: 쓰는 사람이 만드는 묶음 ──
     var groups by mutableStateOf(People.groups(app))
@@ -1047,7 +1047,9 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         lastBackup = Backup.lastBackupTime(ctx)
         reloadSchedule()
         autoLog = AutoLog.all(ctx)
-        if (onboardingDone) loadApps(ai = page == Page.APPS)
+        // 앱 목록·통계(설치된 앱 훑기, 앱별 건수, 7일치 알림에서 키워드 세기)는 그 화면을 볼 때만 —
+        // 예전엔 앱을 열 때마다 읽어서 첫 화면이 무거웠다(2026-11-26 선생님: 더 가볍게)
+        if (onboardingDone && (page == Page.APPS || page == Page.KEYWORDS)) loadApps(ai = page == Page.APPS)
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { Storage.autoClean(ctx) }   // 🧹 보관 기간이 지난 기록 자동 정리 (6시간에 한 번)
             val use = runCatching { Storage.usage(ctx) }.getOrNull()

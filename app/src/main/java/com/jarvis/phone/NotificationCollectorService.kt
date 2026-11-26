@@ -9,9 +9,16 @@ import android.service.notification.StatusBarNotification
 class NotificationCollectorService : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
-        // 알림 하나에서 난 오류(저장 공간 부족·이상한 알림)로 수집 서비스가 죽으면 그 뒤 알림을 모두 놓침 — 그 알림만 건너뜀
-        try { collect(sbn) } catch (e: Exception) { android.util.Log.w("Collector", "알림 하나를 모으지 못함: ${sbn.packageName}", e) }
+        // 화면을 그리는 줄(메인 스레드)에서 하지 않고 따로 한 줄로(온 순서대로) — 알림마다 DB 를 읽고 쓰는 일이라,
+        // 앱 화면이 떠 있을 때 단톡방 알림이 몰리면 화면이 끊겼다(2026-11-26 선생님: 더 가볍게)
+        worker.execute {
+            // 알림 하나에서 난 오류(저장 공간 부족·이상한 알림)로 수집 서비스가 죽으면 그 뒤 알림을 모두 놓침 — 그 알림만 건너뜀
+            try { collect(sbn) } catch (e: Exception) { android.util.Log.w("Collector", "알림 하나를 모으지 못함: ${sbn.packageName}", e) }
+        }
     }
+
+    /** 앱 이름은 알림마다 시스템에 묻지 않고 기억해 둠 */
+    private val labels = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     private fun collect(sbn: StatusBarNotification) {
         val n = sbn.notification ?: return
@@ -53,7 +60,7 @@ class NotificationCollectorService : NotificationListenerService() {
         if (sbn.packageName in AppFilter.excluded(this)) return            // 설정에서 '빼기'한 앱
 
         // 설정에서 뺀 방은 모으지 않음 (단, 중요 키워드가 있으면 모음)
-        val rules = AppFilter.rules(this)
+        val rules = AppFilter.cachedRules(this)
         val incoming = if (burst.isNotEmpty()) burst.map { Incoming(it.who.ifEmpty { title }, it.text, it.time, it.key) }
             else listOf(Incoming(title, text, sbn.postTime, null))
         var kept = 0
@@ -151,8 +158,10 @@ class NotificationCollectorService : NotificationListenerService() {
      * 지금 상태바에 남아 있는, 모으는 앱의 알림을 지움(이미 도착할 때 모아 두었으므로 지우기만).
      * 모아 두는 시간이 시작될 때·'언제나 숨기기'를 켤 때 부름. 전화·알람·재난 문자·인증번호는 남김.
      */
-    fun sweep() {
-        val rules = AppFilter.rules(this)
+    fun sweep() = worker.execute { runCatching { sweepNow() } }
+
+    private fun sweepNow() {
+        val rules = AppFilter.cachedRules(this)
         val excluded = AppFilter.excluded(this)
         val db = NotificationDb.get(this)
         val since = System.currentTimeMillis() - 3 * 24L * 3600 * 1000
@@ -189,10 +198,10 @@ class NotificationCollectorService : NotificationListenerService() {
         return urgentWords("$title $text") || isSecretCode("$title $text")
     }
 
-    private fun appLabel(pkg: String): String = try {
+    private fun appLabel(pkg: String): String = labels[pkg] ?: try {
         val pm = packageManager
         @Suppress("DEPRECATION")
-        pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+        pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString().also { if (labels.size < 300) labels[pkg] = it }
     } catch (_: Exception) { pkg }
 
     /** 모을 메시지 하나: 보낸 사람(제목), 내용, 저장 시각, 메시지 목록에서 왔으면 그 메시지의 보낸 시각(중복 막는 키) */
@@ -242,6 +251,11 @@ class NotificationCollectorService : NotificationListenerService() {
         fun arrivals(raw: List<Triple<String, String, Long>>, postTime: Long): List<Msg> = raw.mapIndexed { i, (who, text, ts) ->
             val late = postTime - ts > 2 * 60_000L
             Msg(who, text, if (late || ts <= 0) postTime - (raw.size - 1 - i) else ts, ts)
+        }
+
+        /** 알림을 온 순서대로 하나씩 처리하는 줄(메인 스레드 밖). 서비스가 다시 만들어져도 순서가 섞이지 않게 하나만 */
+        private val worker: java.util.concurrent.ExecutorService = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+            Thread(r, "collector").apply { isDaemon = true }
         }
 
         /** 지금 연결된 알림 수집 서비스(모아 두는 시간이 시작될 때 상태바 정리에 씀) */

@@ -164,6 +164,27 @@ object AppFilter {
         excluded(ctx), excludedRooms(ctx), keywords(ctx) + Students.allTerms(Students.names(ctx)),
         AdFilter.enabled(ctx), ParentAdvisor.parentRooms(ctx), ParentBook.links(ctx), People.allNames(ctx),
     )
+
+    /**
+     * 알림이 올 때마다 쓰는 규칙 — 설정이 바뀔 때만 다시 읽음(2026-11-26 선생님: 더 가볍게).
+     * 예전엔 알림 한 건마다 뺀 앱·방, 키워드, 학생 명부, 학부모 연결, 사람 묶음을 모두 새로 읽고 풀었다(단톡방이 몰리면 초당 여러 번).
+     * 규칙의 재료는 'apps'·'people' 설정 묶음뿐이라, 그 둘이 바뀌면 버린다(백업 불러오기도 같은 묶음을 고치므로 함께 버려짐)
+     */
+    @Volatile private var cached: Rules? = null
+    private var watching = false
+    // 약한 참조로 등록되므로 여기 붙들어 둠
+    private val onChange = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> cached = null }
+    fun cachedRules(ctx: Context): Rules {
+        cached?.let { return it }
+        return synchronized(this) {
+            if (!watching) {
+                val app = ctx.applicationContext
+                listOf("apps", "people").forEach { app.getSharedPreferences(it, Context.MODE_PRIVATE).registerOnSharedPreferenceChangeListener(onChange) }
+                watching = true
+            }
+            cached ?: rules(ctx).also { cached = it }
+        }
+    }
 }
 
 /**
