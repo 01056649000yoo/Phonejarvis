@@ -435,11 +435,19 @@ object BriefingComposer {
     private fun tailBlock(context: List<String>) =
         if (context.isEmpty()) "" else "[바로 앞 대화 — 위 정리에 이미 들어 있어. 새 메시지를 이해하는 데만 써]\n${context.joinToString("\n")}\n"
 
-    fun prompt(conv: Conversation, context: List<String> = emptyList()): String = if (rulesFirst)
-        HEAD + "\n" + RULES.trim() + "\n\n" + contextBlock(context) + "이제 '${conv.room}'(${conv.app})에 온 메시지 ${conv.items.size}개야.\n---\n${transcript(conv)}\n---\n위 메시지만 보고 두 줄로 답해."
+    /**
+     * 앞서 이 방을 요약한 것(📌 놓치기 싫은 방, 2026-11-26 선생님: 앞의 요약과 비교해서 맥락을 파악하고 요약) —
+     * 같은 이야기를 되풀이하지 않고, 이어진 일이면 무엇이 정해지거나 달라졌는지를 쓰게
+     */
+    private fun earlierBlock(earlier: String) =
+        if (earlier.isBlank()) "" else "[앞서 이 방을 이렇게 요약했어 — 다시 쓰지 말고 비교만 해]\n$earlier\n" +
+            "새 메시지가 위 이야기에서 이어지면 무엇이 정해졌는지·달라졌는지·새로 나왔는지를 중심으로 써. 위와 같은 내용은 되풀이하지 마.\n"
+
+    fun prompt(conv: Conversation, context: List<String> = emptyList(), earlier: String = ""): String = if (rulesFirst)
+        HEAD + "\n" + RULES.trim() + "\n\n" + contextBlock(context) + earlierBlock(earlier) + "이제 '${conv.room}'(${conv.app})에 온 메시지 ${conv.items.size}개야.\n---\n${transcript(conv)}\n---\n위 메시지만 보고 두 줄로 답해."
     else
         "너는 교사인 사용자의 비서야. 아래는 '${conv.room}'(${conv.app})에 온 메시지 ${conv.items.size}개야. 사용자도 이 대화에 들어 있는 사람이야.\n" +
-        contextBlock(context) + "---\n${transcript(conv)}\n---\n" +
+        contextBlock(context) + earlierBlock(earlier) + "---\n${transcript(conv)}\n---\n" +
         "위 메시지만 보고 정확히 두 줄로 답해. 다른 말, 꾸밈, 별표는 쓰지 마.\n" + RULES.trim()
 
     /**
@@ -854,6 +862,10 @@ object BriefingComposer {
          * true 면 '내가 속한 방'은 AI 도 쓰지 않고 줄도 쓰지 않음(곳 수·건수만). 직접 누른 '지금 정리'·위젯은 false — 한 줄씩 훑어봄
          */
         compact: Boolean = false,
+        /** 📌 놓치기 싫은 방인가 — 원문 줄 고르기 대신 AI 가 풀어 쓴 요약(요점·요청)으로 */
+        prose: (Conversation) -> Boolean = { false },
+        /** 그 방을 앞서(오늘·어제) 요약한 마지막 줄 — [prose] 방을 요약할 때 비교할 맥락 */
+        earlier: (Conversation) -> String? = { null },
     ): Result {
         val (people, apps) = items.partition(::isPerson)
         val groupList = groups.map { it.title to groupConvs(it) }.filter { it.second.isNotEmpty() }
@@ -911,7 +923,9 @@ object BriefingComposer {
             if (prev == null) direct(conv)?.let { rooms += it.copy(prevLine = prevLine); continue }
             var covered = c?.count ?: 0
             // 🧵 여러 사람이 말한 단톡방은 고르기만 — 원문 줄을 그대로(2026-11-24)
-            if (pickLines && multiSpeaker(conv) && keyOf(conv) !in groupKeys && fresh.any { !isFiller(it.text) }) {
+            val wantProse = keyOf(conv) !in groupKeys && runCatching { prose(conv) }.getOrDefault(false)
+            val earlierText = if (wantProse) runCatching { earlier(conv) }.getOrNull().orEmpty() else ""
+            if (pickLines && !wantProse && multiSpeaker(conv) && keyOf(conv) !in groupKeys && fresh.any { !isFiller(it.text) }) {
                 if (cut == null) cut = stopReason()
                 if (cut == null) {
                     asked++
@@ -933,7 +947,7 @@ object BriefingComposer {
                 continue
             }
             // 🧩 사실 먼저(factFirst): 단톡방은 앱이 부탁 후보를 (보낸 사람, 문장)으로 뽑고 AI 는 번호만 골라 줄임 — 이름은 앱이 붙임
-            if (factFirst && conv.items.any { it.room.isNotEmpty() } && fresh.any { !isFiller(it.text) }) {
+            if (factFirst && !wantProse && conv.items.any { it.room.isNotEmpty() } && fresh.any { !isFiller(it.text) }) {
                 if (cut == null) cut = stopReason()
                 if (cut == null) {
                     asked++
@@ -958,9 +972,9 @@ object BriefingComposer {
                 val p = prev
                 // 🧵 꼬리 겹치기: 이어서 정리할 때는 바로 앞 말 차례를 참고로(요약 두 줄만으로는 '네 그때로 할게요'의 '그때'를 모름)
                 val tail = if (p == null) emptyList() else tailBefore(conv, chunk.first())
-                val q = if (p == null) prompt(part, context) else updatePrompt(part, p, covered, tail.map { contextLine(conv, it, chunk.first().time) })
+                val q = if (p == null) prompt(part, context, earlierText) else updatePrompt(part, p, covered, tail.map { contextLine(conv, it, chunk.first().time) })
                 // 참고로 준 말의 숫자(7시·금요일 3교시)는 요약에 써도 지어낸 것이 아님
-                val src = (chunk.map { it.text } + tail.map { it.text } + contextSrc).joinToString(" ")
+                val src = (chunk.map { it.text } + tail.map { it.text } + contextSrc + earlierText).joinToString(" ")
                 var got = parse(part, ask(q), p, src)
                 // 원문에 없는 숫자를 써서 버렸으면 한 번 더 — 숫자는 그대로 옮기라고 덧붙여(2026-11-23, 원문으로 떨어지는 일 줄이기)
                 if (got.fellBack && (cut ?: stopReason()) == null) {

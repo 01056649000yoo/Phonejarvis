@@ -169,7 +169,8 @@ object PreSummary {
         Summarizer.get(ctx).summarize(rest, onStatus, cache = cache, since = from,
             onCached = { save(ctx, it); rooms++ },
             extraStop = { keepGoingBlock(PhoneLoad.state(ctx), screenOn(ctx)) }, groups = split.groups,
-            replyAllowed = near.reply, focus = Briefings.focusOn(ctx), before = Briefings.beforeOf(NotificationDb.get(ctx), from, ThreadMemo.load(ctx)), levels = near.levels, mentions = near.mentions, compact = true)   // 미리 요약은 정기 요약 준비 — 내가 속한 방은 묻지 않음
+            replyAllowed = near.reply, focus = Briefings.focusOn(ctx), before = Briefings.beforeOf(NotificationDb.get(ctx), from, ThreadMemo.load(ctx)), levels = near.levels, mentions = near.mentions, compact = true,
+            prose = near.pinned, earlier = Briefings.earlierOf(NotificationDb.get(ctx), cutoff))   // 미리 요약은 정기 요약 준비 — 내가 속한 방은 묻지 않음
         val after = BriefingComposer.pendingForModel(rest, load(ctx, from), from, split.groups, near.skipCompact)
         return "메시지 ${before - after}개 정리 · ${(System.currentTimeMillis() - start) / 1000}초" + if (after > 0) " · 남음 $after" else ""
     }

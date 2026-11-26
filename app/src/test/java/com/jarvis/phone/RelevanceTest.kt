@@ -177,4 +177,21 @@ class RelevanceTest {
         assertTrue(auto, "- 그 밖의 방: 내가 속한 방 1곳 3건" in auto)
         assertTrue(auto, "김민준 어머니" in auto && "준비물" in auto)
     }
+
+    // 2026-11-26 선생님: 놓치기 싫은 방은 원문 줄 대신 요약으로, 앞의 요약과 비교해서
+    @Test fun 놓치기_싫은_방은_앞_요약과_비교해_풀어_쓴_요약() = runBlocking {
+        val items = listOf(
+            msg("6학년 동학년방", "김", "학예회 리허설 시간 바꿔야 할 것 같아요"), msg("6학년 동학년방", "박", "강당이 2시까지 다른 행사예요"),
+            msg("6학년 동학년방", "이", "그럼 3시로 하죠"), msg("6학년 동학년방", "김", "네 3시 강당에서 봬요"))
+        val asked = mutableListOf<String>()
+        val r = BriefingComposer.compose(items, ask = { q -> asked += q; "요점: 학예회 리허설이 3시 강당으로 정해짐\n요청: 없음" }, focus = true,
+            levels = { Relevance.ME }, prose = { true }, earlier = { "김: 학예회 리허설을 2시에 하자고 함" })
+        assertEquals(1, asked.size)
+        assertTrue(asked[0], "앞서 이 방을 이렇게 요약했어" in asked[0] && "리허설을 2시에 하자고 함" in asked[0])
+        assertTrue(r.people, "- 6학년 동학년방 (4건): 학예회 리허설이 3시 강당으로 정해짐" in r.people)
+        // 놓치기 싫은 방이 아니면 예전처럼 원문 줄 고르기(앞 요약을 넣지 않음)
+        asked.clear()
+        BriefingComposer.compose(items, ask = { q -> asked += q; "" }, focus = true, levels = { Relevance.ME }, earlier = { "앞 요약" })
+        assertFalse(asked.joinToString(), asked.any { "앞서 이 방을 이렇게 요약했어" in it })
+    }
 }
