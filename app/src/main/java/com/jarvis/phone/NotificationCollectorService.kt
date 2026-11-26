@@ -68,9 +68,10 @@ class NotificationCollectorService : NotificationListenerService() {
         val incoming = if (burst.isNotEmpty()) burst.map { Incoming(it.who.ifEmpty { title }, it.text, it.time, it.key) }
             else listOf(Incoming(title, text, sbn.postTime, null))
         var kept = 0
+        var ads = 0
         for (m in incoming) {
             // 🚫 광고성 문자·카톡은 모으지 않음 (오늘 거른 수만 셈)
-            if (rules.isBlockedAd(sbn.packageName, room, m.title, m.text)) { AdFilter.addOne(this); continue }
+            if (rules.isBlockedAd(sbn.packageName, room, m.title, m.text)) { AdFilter.addOne(this); ads++; continue }
             if (!rules.allows(sbn.packageName, room, m.title, m.text)) continue
             // 🔐 인증번호·승인번호 알림은 모으지 않음(저장·요약·위젯에 남지 않게) — 상태바에는 그대로 둠
             if (isSecretCode("${m.title} ${m.text}")) continue
@@ -87,7 +88,15 @@ class NotificationCollectorService : NotificationListenerService() {
                 // 📌 마감·할 일 자동 등록은 하지 않음(2026-11-23 선생님: 변수가 너무 많아 엉뚱한 것이 들어감)
             }
         }
-        if (kept == 0 && incoming.none { rules.allows(sbn.packageName, room, it.title, it.text) }) return   // 모으지 않는 알림은 숨기지도 않음
+        if (kept == 0 && incoming.none { rules.allows(sbn.packageName, room, it.title, it.text) }) {
+            // 🚫 거른 광고뿐인 알림은 숨기는 때라면 상태바에서도 지움(2026-11-26 선생님 캡처: 카톡 채널 '(광고)' 알림이 요약 뒤에도 위에 그대로 남음).
+            //    광고는 일부러 버리는 것이라 저장하지 않고 지워도 됨 — 끈 앱·끈 방·인증번호처럼 '안 모으는' 알림은 지금처럼 그대로 둠
+            if (ads == incoming.size && shouldHide(this) && !mustNeverHide(sbn, title, judgeText(text, burst))) {
+                runCatching { cancelNotification(sbn.key) }
+                cleanGroup(sbn.packageName, sbn.groupKey)
+            }
+            return   // 모으지 않는 알림은 숨기지도 않음
+        }
         // ✉️ 문자면 '답장' 단추·번호를 메모리에 들고 있음(답장 초안을 바로 보내려고)
         if (Sms.isSms(sbn.packageName) && room.isEmpty()) runCatching { ReplyHandles.capture(sbn, title.take(200)) }
         if (kept > 0) AppScope.io.launch { runCatching { PreSummary.nudge(this@NotificationCollectorService) } }   // ⚡ 쌓였으면 미리 요약 예약
@@ -198,8 +207,9 @@ class NotificationCollectorService : NotificationListenerService() {
                     val who = (newest?.who?.ifEmpty { title } ?: title).take(200)
                     val body = (newest?.text ?: text).take(1000)
                     // 상태바에 남은 알림은 최근 것 — 사흘 안에서만 찾음(시각 색인을 써서 표 전체를 훑지 않게)
-                    if (rules.allows(sbn.packageName, room, who, body) && db.has(sbn.packageName, who, body, since) &&
-                        !mustNeverHide(sbn, title, judgeText(text, burst))) cancelNotification(sbn.key)
+                    val stored = rules.allows(sbn.packageName, room, who, body) && db.has(sbn.packageName, who, body, since)
+                    val ad = rules.isBlockedAd(sbn.packageName, room, who, body)   // 거른 광고도 함께 지움
+                    if ((stored || ad) && !mustNeverHide(sbn, title, judgeText(text, burst))) cancelNotification(sbn.key)
                 }
             }
         active.map { it.packageName to it.groupKey }.distinct().forEach { (p, g) -> if (p !in excluded) cleanGroup(p, g) }
