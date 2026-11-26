@@ -68,8 +68,13 @@ object Relevance {
     fun myThread(items: List<NotiItem>, saidAt: Long, myText: String = ""): List<NotiItem> {
         if (saidAt <= 0) return emptyList()
         val after = items.filter { inMyThread(it, saidAt) }.sortedBy { it.time }
-        // 💬 답글 대상(2026-11-26 고도화): 다섯 마디 뒤라도 내 말과 내용이 겹치면(같은 낱말 조각) 내 말에 한 답
-        return (after.take(THREAD_TURNS) + after.drop(THREAD_TURNS).filter { repliesTo(it.text, myText) }).sortedBy { it.time }
+        // 🧑‍🤝‍🧑 대화 상대(2026-11-26 시뮬레이션으로 고침): 내가 말하기 직전([PARTNER_MS])에 말하던 사람들 — 내 말은 그 사람들에게 한 답일 가능성이 큼.
+        // 예전엔 내 말 뒤 다섯 마디를 누구 말이든 나에게 한 말로 봐서, 내가 한 번 답하면 그 뒤의 남들 잡담 다섯 줄이 잡혔다(잘못 잡은 것의 대부분).
+        // 이제 다섯 마디 안에서도 ① 대화 상대의 말 ② 묻거나 부탁하는 말 ③ 내 말과 내용이 겹치는 말만
+        val partners = items.filter { it.time < saidAt && saidAt - it.time <= PARTNER_MS }.map { it.title }.toSet()
+        fun mine(n: NotiItem) = n.title in partners || (BriefingComposer.asksSomething(n.text) && !isBroadcast(n.text)) || repliesTo(n.text, myText)
+        // 💬 답글 대상: 다섯 마디 뒤라도 내 말과 내용이 겹치면(같은 낱말 조각) 내 말에 한 답
+        return (after.take(THREAD_TURNS).filter(::mine) + after.drop(THREAD_TURNS).filter { repliesTo(it.text, myText) }).sortedBy { it.time }
     }
 
     /** [text] 가 내가 한 말 [mine] 에 대한 답 같은가: 두 글자 조각이 넉넉히 겹침(짧은 맞장구는 빼고) */
@@ -79,6 +84,7 @@ object Relevance {
         return maxOf(BriefingComposer.overlapPublic(t, m), BriefingComposer.overlapPublic(m, t)) >= REPLY_OVERLAP
     }
     const val REPLY_OVERLAP = 0.3
+    const val PARTNER_MS = 10 * 60_000L
 
     /** 나를 부른 사람이 이어서 한 말(2026-11-26 고도화: 대화 상대 추적) — 부른 뒤 [FOLLOW_MS] 안, 그 사람 말 [FOLLOW_TURNS]개까지 */
     const val FOLLOW_MS = 10 * 60_000L

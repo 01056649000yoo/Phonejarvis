@@ -180,11 +180,18 @@ class RelevanceTest {
 
     @Test fun 내_말에_이어진_말은_바로_뒤_다섯_마디까지() {
         val saidAt = 5_000_000L
-        val after = List(12) { NotiItem(it.toLong(), "com.kakao.talk", "카카오톡", "닉$it", "말 $it", saidAt + (it + 1) * 60_000L, "큰 방") }
+        val after = List(12) { NotiItem(it.toLong(), "com.kakao.talk", "카카오톡", "닉$it", "이건 어떻게 하나요 $it?", saidAt + (it + 1) * 60_000L, "큰 방") }
         val t = Relevance.myThread(after, saidAt)
         assertEquals(Relevance.THREAD_TURNS, t.size)
         assertEquals(after.take(5), t)
         assertTrue(Relevance.myThread(after, 0L).isEmpty())
+        // 다섯 마디 안이라도 남들 잡담은 아님 — 내가 말하기 직전에 말하던 사람(대화 상대)의 말과 묻는 말만
+        val before = NotiItem(100, "com.kakao.talk", "카카오톡", "김", "자료 어디 있죠?", saidAt - 60_000L, "큰 방")
+        val mix = listOf(before,
+            NotiItem(101, "com.kakao.talk", "카카오톡", "박", "오늘 급식 맛있었어요", saidAt + 60_000L, "큰 방"),
+            NotiItem(102, "com.kakao.talk", "카카오톡", "김", "아 감사합니다", saidAt + 120_000L, "큰 방"),
+            NotiItem(103, "com.kakao.talk", "카카오톡", "최", "날씨가 춥네요", saidAt + 180_000L, "큰 방"))
+        assertEquals(listOf(102L), Relevance.myThread(mix, saidAt).map { it.id })
     }
 
     // 2026-11-26 선생님: 놓치기 싫은 방은 원문 줄 대신 요약으로, 앞의 요약과 비교해서
@@ -222,7 +229,7 @@ class RelevanceTest {
         val reply = NotiItem(50, "com.kakao.talk", "카카오톡", "박", "금요일 3시 강당 좋아요", saidAt + 12 * 60_000L, "큰 방")
         val late = reply.copy(id = 51, time = saidAt + 45 * 60_000L)                 // 30분 지나면 아님
         val t = Relevance.myThread(chat + reply + late, saidAt, mine)
-        assertEquals(Relevance.THREAD_TURNS + 1, t.size)
+        assertEquals(listOf(reply), t)                                                // 남들 점심 잡담은 아니고, 내용이 겹치는 답만
         assertTrue(reply in t)
         assertFalse(late in t)
         assertFalse(Relevance.repliesTo("네", mine))

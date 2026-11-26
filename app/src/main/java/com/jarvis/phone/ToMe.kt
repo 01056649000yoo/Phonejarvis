@@ -6,58 +6,82 @@ import android.content.Context
  * 🧭 나에게 한 말인가 — 점수로 판정하고, 쓸수록 다듬는다 (2026-11-26 선생님: "가중치 방식으로, 쓰면 쓸수록 잘 구분하게.
  * 하루 정리 때 가중치를 조정하는 작업이 자동으로 — 그게 AI 를 쓰는 방향").
  *
- * 예전엔 '이름이 있나 / 내 말 바로 뒤인가' 같은 규칙 하나만 맞으면 예, 아니면 아니오였다. 이제 단서마다 점수(가중치)를 주고 더한다:
- *   멘션·내 이름(고정, 늘 넘김) · 학생 이름 · 내 말 바로 뒤 · 내 말과 내용이 겹침 · 나를 부른 사람이 이어서 한 말 ·
- *   묻거나 부탁함 · 말하는 사람이 적은 방 · 보낸 사람(내가 자주 답하는 사람일수록 +)
- * 합이 [THRESHOLD] 이상이면 나에게 한 말. 처음 가중치는 예전 규칙과 같은 결과가 나오게 잡았다.
+ * 판정은 점수로:
+ *   ① 멘션·내 이름 → 늘 나에게 한 말
+ *   ② 규칙 단서(학생 이름 · 내 말 바로 뒤 · 내 말과 내용이 겹침 · 나를 부른 사람이 이어서 한 말) → 나에게 한 말.
+ *      단, 그 방에서 이 규칙이 자꾸 틀리면(AI 가 '아니오'를 일곱 번 더 많이) 그 방에서는 꺼짐 = '방 점수'
+ *   ③ 묻는 말 + 작은 방 + '내가 자주 답하는 사람' 점수 → 넘으면 나에게 한 말(이름 없이 묻는 동료의 말) = '사람 점수'
+ * 배우는 것은 방 점수·사람 점수 둘뿐. 규칙 자체는 고정이라 배워서 나빠지지 않는다.
  *
- * 다듬기([learn], 하루 정리 때 한 번 — 폰 안에서만):
- *  ① 내가 답한 말: 내가 그 방에서 말하기 바로 전의 말은 나에게 한 말이었다(정답 '예')
- *  ② 애매한 말은 폰 안의 AI 에게 '예/아니오'만 물어 정답으로 삼는다(하루 [MAX_AI]번까지)
- * 틀린 쪽으로 판정한 말의 단서·보낸 사람 점수를 조금씩 올리거나 내린다. 이름·멘션은 내리지 않는다(놓치면 안 되는 단서).
+ * 다듬기([learn], 밤에 폰을 안 쓸 때 — 폰 안에서만):
+ *  · 내가 답한 말: 내가 그 방에서 말하기 바로 전의 물음은 나에게 한 말이었다 → 그 사람 점수를 올림(네 번이면 넘음)
+ *  · 애매한 말은 폰 안의 AI 에게 '예/아니오'만 물음 → '아니오'면 방 점수(규칙으로 잡은 말)나 사람 점수(사람으로 잡은 말)를 내림
  * 안드로이드에 기대지 않는 순수 규칙([score]·[adjust])은 시험할 수 있다.
  */
 object ToMe {
-    const val MENTION = "mention"; const val NAME = "name"          // 고정
+    const val MENTION = "mention"; const val NAME = "name"          // 늘 넘김(배우지 않음)
+    // 기본 단서(규칙): 하나라도 있으면 나에게 한 말 — 값은 고정. 다만 그 방에서 자꾸 틀리면 '방 점수'가 내려가 그 방에서는 안 잡힘
     const val STUDENT = "student"; const val THREAD = "thread"; const val REPLY = "reply"; const val FOLLOW = "follow"
+    val CORE = setOf(STUDENT, THREAD, REPLY, FOLLOW)
+    // 덧단서: 그것만으로는 모자라고, '내가 자주 답하는 사람' 점수가 쌓여야 넘음
     const val ASK = "ask"; const val SMALL = "small"
-    val LEARNED = listOf(STUDENT, THREAD, REPLY, FOLLOW, ASK, SMALL)
-    val DEFAULT = mapOf(STUDENT to 1.0, THREAD to 1.0, REPLY to 1.0, FOLLOW to 1.0, ASK to 0.2, SMALL to 0.2)
     const val THRESHOLD = 1.0
-    const val LR = 0.1                 // 한 번에 고치는 크기
-    const val W_MIN = 0.0; const val W_MAX = 1.3
-    const val S_MIN = -0.5; const val S_MAX = 0.8          // 보낸 사람 점수
+    const val CORE_SCORE = 1.6         // 방 점수가 -0.7 아래로 내려가야(AI 가 '아니오'를 일곱 번 더 많이) 그 방의 기본 단서가 꺼짐
+    const val ASK_SCORE = 0.2; const val SMALL_SCORE = 0.2
+    const val S_MIN = -0.3; const val S_MAX = 0.6          // 보낸 사람 점수 — 0.6 이면 '작은 방에서 그 사람이 묻는 말'이 넘음(잡담은 안 넘음)
+    // 시뮬레이션으로 고침: 점수는 0.9 까지 쌓아 두되 판정에는 0.6 까지만 씀 — AI 가 몇 번 틀리게 '아니오'라고 해도 바로 문턱 아래로 떨어지지 않게(여유)
+    const val S_STORE_MAX = 0.9
+    // AI 의 '예'만으로는 여기까지만 — 내가 실제로 답한 사람이어야 문턱을 넘음(AI 가 틀려서 엉뚱한 사람이 올라가지 않게)
+    const val S_AI_MAX = 0.3
+    const val B_MIN = -1.0; const val B_MAX = 0.0          // 방 점수 — 내려가기만 하고 0 까지만 되돌아옴
+    const val UP_ANSWERED = 0.15       // 내가 답한 말: 그 사람 점수를 이만큼(네 번이면 넘음)
+    const val UP_AI = 0.05             // AI 가 '예'라고만 한 말은 조금만(AI 는 틀릴 수 있음)
+    const val DOWN = 0.1
     const val SMALL_ROOM = 4           // 말하는 사람이 이만큼 이하면 작은 방
     const val MAX_AI = 8               // 하루에 AI 에게 묻는 말 수(충전 중이 아닐 때)
     const val MAX_AI_CHARGING = 20     // 충전 중이면 더 많이 물어 더 빨리 익힘
     const val LABEL = "🧭 나에게 한 말 다듬기"
     const val MAX_SENDERS = 200
 
-    data class Weights(val w: Map<String, Double> = DEFAULT, val senders: Map<String, Double> = emptyMap(), val trained: Int = 0) {
-        fun of(f: String) = w[f] ?: DEFAULT[f] ?: 0.0
-    }
-
-    /** 점수(순수): 고정 단서가 있으면 넘김, 아니면 단서 가중치 + 보낸 사람 점수 */
-    fun score(features: Set<String>, sender: String, wt: Weights): Double {
-        if (MENTION in features || NAME in features) return THRESHOLD + 1.0
-        return features.sumOf { wt.of(it) } + (wt.senders[sender] ?: 0.0)
-    }
-    fun isToMe(features: Set<String>, sender: String, wt: Weights) = score(features, sender, wt) >= THRESHOLD
+    /** senders: 보낸 사람 → 점수, rooms: 'pkg|방' → 방 점수(0 이하) */
+    data class Weights(val senders: Map<String, Double> = emptyMap(), val rooms: Map<String, Double> = emptyMap(), val trained: Int = 0)
 
     /**
-     * 정답([toMe])과 다르게 판정했으면 가중치를 조금 고침(순수). 맞게 판정했으면 그대로.
-     * '예'인데 놓쳤으면 그 말의 단서·보낸 사람을 올리고, '아니오'인데 잡았으면 내림(고정 단서로 잡은 것은 건드리지 않음)
+     * 점수(순수). 2026-11-26 시뮬레이션으로 고침: 예전엔 단서 가중치를 통째로 올리고 내려서
+     *  - AI 없이 배우면 '묻는 말·작은 방' 점수만 계속 올라 작은 방의 모든 물음이 잡혔고(정밀도 55%),
+     *  - AI 가 서툴면(60%) 점수가 날마다 출렁여 어떤 날은 거의 다 놓쳤다(재현율 0~20%).
+     * 이제 규칙 단서는 고정(배워서 나빠지지 않음)하고, 배우는 것은 둘뿐: 사람(내가 자주 답하는 사람) · 방(그 방에서는 규칙이 자꾸 틀림)
      */
-    fun adjust(wt: Weights, features: Set<String>, sender: String, toMe: Boolean, lr: Double = LR): Weights {
-        val fixed = MENTION in features || NAME in features
-        val pred = isToMe(features, sender, wt)
-        if (pred == toMe || fixed) return wt
-        val d = if (toMe) lr else -lr
-        val w = wt.w.toMutableMap()
-        features.filter { it in LEARNED }.forEach { f -> w[f] = (wt.of(f) + d).coerceIn(W_MIN, W_MAX) }
-        val s = wt.senders.toMutableMap()
-        if (sender.isNotBlank()) s[sender] = ((s[sender] ?: 0.0) + d).coerceIn(S_MIN, S_MAX)
-        return Weights(w, s, wt.trained)
+    fun score(features: Set<String>, sender: String, room: String, wt: Weights): Double {
+        if (MENTION in features || NAME in features) return THRESHOLD + 1.0
+        val core = if (features.any { it in CORE }) CORE_SCORE + (wt.rooms[room] ?: 0.0) else 0.0
+        val extra = (if (ASK in features) ASK_SCORE else 0.0) + (if (SMALL in features) SMALL_SCORE else 0.0) + (wt.senders[sender] ?: 0.0).coerceAtMost(S_MAX)
+        return maxOf(core, extra)
+    }
+    fun isToMe(features: Set<String>, sender: String, room: String, wt: Weights) = score(features, sender, room, wt) >= THRESHOLD
+
+    /**
+     * 정답([toMe])으로 조금 고침(순수). [answered] = 내가 실제로 답한 말(믿을 만함), 아니면 AI 의 판단(조금만).
+     *  - '예'인데 놓침: 그 사람 점수를 올림. 방 점수 때문에 놓친 것이면 방 점수도 되돌림
+     *  - '아니오'인데 잡음: 규칙 단서로 잡은 것이면 방 점수를 내리고, 사람 점수로 잡은 것이면 그 사람 점수를 내림
+     *  - 이름·멘션으로 잡은 것은 건드리지 않음(놓치면 안 되는 단서)
+     */
+    fun adjust(wt: Weights, features: Set<String>, sender: String, room: String, toMe: Boolean, answered: Boolean = false): Weights {
+        if (MENTION in features || NAME in features) return wt
+        val pred = isToMe(features, sender, room, wt)
+        val hasCore = features.any { it in CORE }
+        val s = wt.senders.toMutableMap(); val b = wt.rooms.toMutableMap()
+        fun sender(d: Double, max: Double = S_STORE_MAX) { if (sender.isNotBlank()) { val cur = s[sender] ?: 0.0; s[sender] = (cur + d).coerceIn(S_MIN, maxOf(max, cur)) } }
+        fun room(d: Double) { if (room.isNotBlank()) b[room] = ((b[room] ?: 0.0) + d).coerceIn(B_MIN, B_MAX) }
+        when {
+            toMe && !pred -> { if (hasCore) room(DOWN) else if (answered) sender(UP_ANSWERED) else sender(UP_AI, S_AI_MAX) }
+            toMe && pred && hasCore -> room(DOWN)                    // 맞게 잡음 — 내려가 있던 방 점수를 되돌림
+            toMe && pred && answered -> sender(UP_ANSWERED)          // 이미 잡는 사람도 내가 또 답했으면 여유를 쌓음
+            !toMe && pred -> { if (hasCore) room(-DOWN) else sender(-DOWN / 2) }   // 사람 점수는 AI 의 '아니오'로는 절반만 내림(내가 답해서 쌓은 것)
+            else -> return wt
+        }
+        val next = Weights(s, b, wt.trained)
+        return if (next.senders == wt.senders && next.rooms == wt.rooms) wt else next
     }
 
     /** 대화방 하나의 말마다 단서를 뽑아 주는 것 — 이름·내 말·부른 사람을 한 번만 계산 */
@@ -85,7 +109,7 @@ object ToMe {
             if (x.small) add(SMALL)
         }
         fun sender(c: BriefingComposer.Conversation, n: NotiItem) = c.who(n).ifEmpty { n.title.trim() }
-        fun score(c: BriefingComposer.Conversation, n: NotiItem) = score(features(c, n), sender(c, n), weights)
+        fun score(c: BriefingComposer.Conversation, n: NotiItem) = score(features(c, n), sender(c, n), RoomTier.key(c), weights)
         fun toMe(c: BriefingComposer.Conversation, n: NotiItem) = score(c, n) >= THRESHOLD
     }
 
@@ -93,19 +117,17 @@ object ToMe {
     private fun p(ctx: Context) = ctx.getSharedPreferences("to_me", Context.MODE_PRIVATE)
     fun load(ctx: Context): Weights {
         val all = p(ctx).all
-        return Weights(
-            LEARNED.associateWith { f -> (all["w_$f"] as? Float)?.toDouble() ?: DEFAULT.getValue(f) },
-            all.filterKeys { it.startsWith("s_") }.mapNotNull { (k, v) -> (v as? Float)?.let { k.removePrefix("s_") to it.toDouble() } }.toMap(),
-            (all["trained"] as? Int) ?: 0)
+        fun map(prefix: String) = all.filterKeys { it.startsWith(prefix) }.mapNotNull { (k, v) -> (v as? Float)?.let { k.removePrefix(prefix) to it.toDouble() } }.toMap()
+        return Weights(map("s_"), map("b_"), (all["trained"] as? Int) ?: 0)
     }
     fun save(ctx: Context, wt: Weights) {
         val old = p(ctx).all.keys
         p(ctx).edit().apply {
-            old.filter { it.startsWith("s_") }.forEach { remove(it) }   // 보낸 사람 점수만 새로(방 기록·추천 기록은 그대로)
-            LEARNED.forEach { putFloat("w_$it", wt.of(it).toFloat()) }
-            // 점수가 0에 가까운 사람은 지우고, 많으면 점수가 큰 사람부터 남김
-            wt.senders.filterValues { kotlin.math.abs(it) >= 0.05 }.entries.sortedByDescending { kotlin.math.abs(it.value) }.take(MAX_SENDERS)
+            old.filter { it.startsWith("s_") || it.startsWith("b_") || it.startsWith("w_") }.forEach { remove(it) }   // 점수만 새로(방 기록·추천 기록은 그대로)
+            // 점수가 0에 가까운 것은 지우고, 많으면 점수가 큰 것부터 남김
+            wt.senders.filterValues { kotlin.math.abs(it) >= 0.04 }.entries.sortedByDescending { kotlin.math.abs(it.value) }.take(MAX_SENDERS)
                 .forEach { putFloat("s_${it.key}", it.value.toFloat()) }
+            wt.rooms.filterValues { it <= -0.05 }.forEach { putFloat("b_${it.key}", it.value.toFloat()) }
             putInt("trained", wt.trained)
         }.apply()
     }
@@ -113,8 +135,10 @@ object ToMe {
     fun status(ctx: Context): String {
         val wt = load(ctx)
         if (wt.trained == 0) return "아직 다듬기 전이에요. 밤에 폰을 쓰지 않을 때 지난 하루 대화를 보고 저절로 다듬어요."
-        val close = wt.senders.filterValues { it >= 0.2 }.entries.sortedByDescending { it.value }.take(4).map { it.key }
-        return "지금까지 ${wt.trained}건으로 다듬었어요." + if (close.isNotEmpty()) " 자주 대화하는 사람: ${close.joinToString(", ")}" else ""
+        val close = wt.senders.filterValues { it >= 0.3 }.entries.sortedByDescending { it.value }.take(4).map { it.key }
+        val off = wt.rooms.filterValues { it <= -0.7 }.keys.map { it.substringAfter('|') }.take(3)
+        return "지금까지 ${wt.trained}건으로 다듬었어요." + (if (close.isNotEmpty()) " 자주 대화하는 사람: ${close.joinToString(", ")}." else "") +
+            (if (off.isNotEmpty()) " 나와 상관없다고 익힌 방: ${off.joinToString(", ")}." else "")
     }
 
     // ── 다듬기 ──
@@ -135,7 +159,7 @@ object ToMe {
     }
 
     /** 배울 말 하나: 그 말의 단서·보낸 사람과 정답 */
-    data class Example(val features: Set<String>, val sender: String, val toMe: Boolean)
+    data class Example(val features: Set<String>, val sender: String, val room: String, val toMe: Boolean, val answered: Boolean = false)
 
     /**
      * ① 내가 답한 말(순수): 내가 그 방에서 말하기 전 [BEFORE_MS] 안의 마지막 두 마디 — 나에게 한 말이었던 것.
@@ -143,7 +167,7 @@ object ToMe {
      */
     const val BEFORE_MS = 10 * 60_000L
     fun answered(c: BriefingComposer.Conversation, saidAt: Long, sc: Scorer): List<Example> =
-        answeredItems(c, saidAt, sc).map { n -> Example(sc.features(c, n), sc.sender(c, n), true) }
+        answeredItems(c, saidAt, sc).map { n -> Example(sc.features(c, n), sc.sender(c, n), RoomTier.key(c), true, answered = true) }
 
     /** 내가 답한 말(원문) */
     fun answeredItems(c: BriefingComposer.Conversation, saidAt: Long, sc: Scorer): List<NotiItem> {
@@ -186,11 +210,13 @@ object ToMe {
         val convs = BriefingComposer.conversations(items)
         val examples = mutableListOf<Example>()
         val judged = HashMap<String, Pair<Int, Int>>()   // 방 → AI 가 (예, 아니오)라고 한 수
+        val answeredIn = HashMap<String, Int>()          // 방 → 내가 답한 말 수
         // ① 내가 답한 말
         val answeredTexts = mutableListOf<String>()
         convs.forEach { c ->
             val got = answeredItems(c, said[c.room] ?: 0L, sc)
-            got.forEach { n -> examples += Example(sc.features(c, n), sc.sender(c, n), true); answeredTexts += n.text }
+            got.forEach { n -> examples += Example(sc.features(c, n), sc.sender(c, n), RoomTier.key(c), true, answered = true); answeredTexts += n.text }
+            if (got.isNotEmpty()) answeredIn[RoomTier.key(c)] = got.size
         }
         // 🙋 사람들이 나를 부르는 꼴을 추천으로(설정 → 나를 부르는 말)
         runCatching { nicknames(answeredTexts, mine).forEach { MyNames.noteMe(ctx, it) } }
@@ -200,14 +226,15 @@ object ToMe {
             val cands = convs.flatMap { c -> c.items.filterNot { BriefingComposer.isFiller(it.text) }.map { n -> Cand(c, n, sc.features(c, n), sc.score(c, n)) } }
                 .filter { MENTION !in it.f && NAME !in it.f }
             val caught = cands.filter { it.s >= THRESHOLD }.sortedBy { it.s }.take(maxAi / 2)
-            val near = cands.filter { it.s < THRESHOLD && it.s >= 0.4 }.sortedByDescending { it.s }.take(maxAi - caught.size)
+            // 아깝게 놓친 말: 묻는 말이고(작은 방이거나 아는 사람) 아직 문턱 아래
+            val near = cands.filter { it.s < THRESHOLD && ASK in it.f && it.s >= ASK_SCORE + SMALL_SCORE }.sortedByDescending { it.s }.take(maxAi - caught.size)
             for (x in caught + near) {
                 if (stop()) break
                 val rk = RoomTier.key(x.c)
                 val before = x.c.items.filter { it.time < x.n.time }.sortedBy { it.time }.takeLast(3)
                     .map { "${sc.sender(x.c, it)}: ${it.text.replace('\n', ' ').take(80)}" }
                 val y = runCatching { parseYesNo(ask(askPrompt(x.c.room, mine.first(), before, sc.sender(x.c, x.n), x.n.text))) }.getOrNull() ?: continue
-                examples += Example(x.f, sc.sender(x.c, x.n), y)
+                examples += Example(x.f, sc.sender(x.c, x.n), rk, y)
                 judged[rk] = (judged[rk] ?: (0 to 0)).let { (a, b) -> if (y) a + 1 to b else a to b + 1 }
             }
         }
@@ -218,9 +245,10 @@ object ToMe {
                 val k = RoomTier.key(c)
                 val hits = c.items.count { sc.toMe(c, it) }
                 val (yes, no) = judged[k] ?: (0 to 0)
-                if (hits == 0 && yes == 0 && no == 0) return@forEach
+                val ans = answeredIn[k] ?: 0
+                if (hits == 0 && yes == 0 && no == 0 && ans == 0) return@forEach
                 val old = roomStat(p(ctx).getString("r_$k", null))
-                ed.putString("r_$k", RoomStat(old.hits + hits, old.days + if (hits > 0) 1 else 0, old.yes + yes, old.no + no, now).pack())
+                ed.putString("r_$k", RoomStat(old.hits + hits, old.days + if (hits > 0) 1 else 0, old.yes + yes, old.no + no, now, old.ans + ans).pack())
             }
             // 60일 동안 소식 없는 방 기록은 지움
             p(ctx).all.forEach { (key, v) -> if (key.startsWith("r_") && roomStat(v as? String).last < now - 60L * 24 * 3600_000L) ed.remove(key) }
@@ -228,7 +256,7 @@ object ToMe {
         }
         var changed = 0
         for (e in examples) {
-            val next = adjust(wt, e.features, e.sender, e.toMe)
+            val next = adjust(wt, e.features, e.sender, e.room, e.toMe, e.answered)
             if (next != wt) { wt = next; changed++ }
         }
         if (changed > 0) save(ctx, wt.copy(trained = wt.trained + changed))
@@ -238,15 +266,18 @@ object ToMe {
 
     // ── 💡 추천(2026-11-26 선생님: 추천은 하루 정리하면서 — 더 나에게 맞는 앱으로) ──
     /** 방 하나의 기록: 나에게 한 말 건수·나온 날 수, AI 가 예/아니오라고 한 수, 마지막으로 고친 때 */
-    data class RoomStat(val hits: Int = 0, val days: Int = 0, val yes: Int = 0, val no: Int = 0, val last: Long = 0L) {
-        fun pack() = "$hits|$days|$yes|$no|$last"
+    data class RoomStat(val hits: Int = 0, val days: Int = 0, val yes: Int = 0, val no: Int = 0, val last: Long = 0L,
+                        /** 그 방에서 내가 답한 말 수 */ val ans: Int = 0) {
+        fun pack() = "$hits|$days|$yes|$no|$last|$ans"
     }
-    fun roomStat(s: String?): RoomStat = s?.split('|')?.takeIf { it.size == 5 }?.let { v ->
-        RoomStat(v[0].toIntOrNull() ?: 0, v[1].toIntOrNull() ?: 0, v[2].toIntOrNull() ?: 0, v[3].toIntOrNull() ?: 0, v[4].toLongOrNull() ?: 0L) } ?: RoomStat()
+    fun roomStat(s: String?): RoomStat = s?.split('|')?.takeIf { it.size >= 5 }?.let { v ->
+        RoomStat(v[0].toIntOrNull() ?: 0, v[1].toIntOrNull() ?: 0, v[2].toIntOrNull() ?: 0, v[3].toIntOrNull() ?: 0, v[4].toLongOrNull() ?: 0L,
+            v.getOrNull(5)?.toIntOrNull() ?: 0) } ?: RoomStat()
 
     const val PIN_DAYS = 3             // 나에게 한 말이 이만큼의 날에 나온 방은 놓치기 싫은 방으로 권함
-    const val MUTE_NO = 3              // AI 가 이만큼 '아니오'라고만 한 방은 건수만 보기를 권함
-    const val PERSON_SCORE = 0.4       // 보낸 사람 점수가 이만큼 넘으면 꼭 받을 사람으로 권함
+    const val PIN_ANSWERS = 3          // 그리고 내가 그 방에서 이만큼 답했거나, AI 가 '예'를 더 많이(둘 이상) 했어야 — 잡히기만 한 방은 권하지 않음
+    const val MUTE_NO = 4              // AI 가 '아니오'를 이만큼, 그리고 '예'의 세 배 넘게 한 방은 건수만 보기를 권함
+    const val PERSON_SCORE = 0.45      // 보낸 사람 점수가 이만큼 넘으면(세 번 답함) 꼭 받을 사람으로 권함
     const val REC_AGAIN_MS = 14L * 24 * 3600_000L   // 한 번 권한 것은 2주 뒤에나 다시
 
     data class Recs(val pin: List<Pair<String, Int>>, val mute: List<Pair<String, Int>>, val people: List<String>)
@@ -259,9 +290,9 @@ object ToMe {
                  asked: Map<String, Long>, now: Long): Recs {
         fun fresh(k: String) = now - (asked[k] ?: 0L) >= REC_AGAIN_MS
         val free = stats.filterKeys { it !in tiers }
-        val pin = free.filter { (k, s) -> s.days >= PIN_DAYS && s.no <= s.yes && fresh("pin|$k") }
+        val pin = free.filter { (k, s) -> s.days >= PIN_DAYS && (s.ans >= PIN_ANSWERS || (s.yes >= 3 && s.yes >= 2 * s.no)) && s.no < MUTE_NO.coerceAtLeast(3 * s.yes + 1) && fresh("pin|$k") }
             .entries.sortedByDescending { it.value.hits }.take(3).map { it.key.substringAfter('|') to it.value.hits }
-        val mute = free.filter { (k, s) -> s.no >= MUTE_NO && s.yes == 0 && s.hits > 0 && fresh("mute|$k") }
+        val mute = free.filter { (k, s) -> s.no >= MUTE_NO && s.no >= 3 * s.yes && s.ans == 0 && s.hits > 0 && fresh("mute|$k") }
             .entries.sortedByDescending { it.value.no }.take(3).map { it.key.substringAfter('|') to it.value.hits }
         val people = senders.filter { (name, v) -> v >= PERSON_SCORE && known.none { it in name || name in it } && fresh("person|$name") }
             .entries.sortedByDescending { it.value }.take(3).map { it.key }
