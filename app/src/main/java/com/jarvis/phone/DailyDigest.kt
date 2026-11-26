@@ -414,15 +414,25 @@ object DailyDigest {
         fun details(e: RoomDay.Entry): List<String> = placed[e.key]!!.second.takeIf { it.size >= 2 }.orEmpty()
             .map { p -> "$DETAIL${span.format(p.from)}~${span.format(p.to)} · ${p.count}건: ${BriefingComposer.clip(p.point, 160)}" }
 
-        // 🙋 답할 것 — 상한 없이 모두(최근 것부터)
-        val asks = rooms.flatMap { e -> openAsks(e, replied).map { e to it } }.sortedByDescending { it.second.time }
-        val askLines = asks.map { (e, a) -> "- ${e.room} · ${fmt.format(a.time)}: ${a.text}" }
+        // 🙋 답할 것 — 사람(방)마다 한 줄(2026-11-26 선생님: 하루 정리에 같은 사람이 여러 번 — 하루 20번 요약하며 물음이 구간마다 한 줄씩 쌓였다).
+        // 가장 최근 물음을 보이고, 앞선 물음과 그 사람의 하루 대화는 접어 둠(펼치면 보임). 빠지는 사람은 없음
+        val askRooms = rooms.mapNotNull { e -> openAsks(e, replied).takeIf { it.isNotEmpty() }?.let { e to it.sortedByDescending { a -> a.time } } }
+            .sortedByDescending { it.second.first().time }
+        val asks = askRooms.flatMap { (e, l) -> l.map { e to it } }
+        val askKeys = askRooms.map { it.first.key }.toSet()
+        val askLines = askRooms.flatMap { (e, l) ->
+            val more = if (l.size > 1) " (외 ${l.size - 1}건)" else ""
+            listOf("- ${e.room} · ${fmt.format(l.first().time)}: ${l.first().text}$more") +
+                l.drop(1).map { a -> "$DETAIL${fmt.format(a.time)} · ${BriefingComposer.clip(a.text, 160)}" } +
+                placed[e.key]!!.second.map { p -> "$DETAIL${span.format(p.from)}~${span.format(p.to)} · ${p.count}건: ${BriefingComposer.clip(p.point, 160)}" }
+        }
 
         // 🎯 나와의 거리(2026-11-25 선생님: 나와 관련된 것만): 나에게 온 대화(내용 + 구간별 요약) · 내가 속한 방(한 줄) · 그 밖의 방(이름·건수)
         val talk = rooms.filter { it.kind == RoomDay.TALK }
         val talkLines = talk.mapNotNull { e -> line(e)?.let { e to it } }
             .sortedWith(compareBy<Pair<RoomDay.Entry, String>> { lvOf(it.first) }.thenByDescending { it.first.count })
-        val meLines = talkLines.filter { lvOf(it.first) == Relevance.ME }
+        // 🙋 에 나온 사람(방)은 아래 칸에 다시 쓰지 않음 — 한 사람은 한 곳에(2026-11-26)
+        val meLines = talkLines.filter { lvOf(it.first) == Relevance.ME && it.first.key !in askKeys }
         // 🗞 하루 정리는 나와 관련된 것만(2026-11-26 선생님): 내가 속한 방은 줄을 쓰지 않고 이름·건수만
         val shownKeys = meLines.map { it.first.key }.toSet() + asks.map { it.first.key }
         val joinedRooms = talk.filter { it.key !in shownKeys && lvOf(it) == Relevance.JOINED }.sortedByDescending { it.count }
@@ -435,11 +445,13 @@ object DailyDigest {
         }
         // 👥 묶음 · 💼 업무
         val grouped = rooms.filter { it.kind == RoomDay.GROUP || it.kind == RoomDay.WORK }
-        val groupBlocks = grouped.groupBy { it.app }.entries
-            .sortedBy { if (it.key == BriefingComposer.WORK_TITLE) 1 else 0 }
-            .map { (title, list) ->
-                val shown = list.mapNotNull { e -> line(e)?.let { e to it } }.sortedByDescending { it.first.last }
-                val rest = list.filter { e -> shown.none { it.first.key == e.key } && asks.none { it.first.key == e.key } }
+        // 화면에 보이는 이름이 같은 묶음은 한 칸으로(이모지는 화면에서 지워져 '지인 연락'이 두 칸으로 보이던 것 — 2026-11-26)
+        val groupBlocks = grouped.groupBy { e -> e.app.dropWhile { !it.isLetterOrDigit() }.trim().ifEmpty { e.app } }.entries
+            .sortedBy { (_, l) -> if (l.first().app == BriefingComposer.WORK_TITLE) 1 else 0 }
+            .map { (_, list) ->
+                val title = list.first().app
+                val shown = list.filter { it.key !in askKeys }.mapNotNull { e -> line(e)?.let { e to it } }.sortedByDescending { it.first.last }
+                val rest = list.filter { e -> shown.none { it.first.key == e.key } && e.key !in askKeys }
                 val n = list.sumOf { it.count }
                 val head = if (title == BriefingComposer.WORK_TITLE) "$title (앱 ${list.size}개 · ${n}건)" else "$title 연락 (${list.size}명 · ${n}건)"
                 head to (shown.flatMap { (e, l) -> listOf("- ${e.room} (${e.count}건) · ${fmt.format(e.last)}: $l") + details(e) } +
@@ -449,7 +461,8 @@ object DailyDigest {
         // ✨ 오늘의 핵심 · 📅 내일 — AI 한 번
         var core: Pair<List<String>, List<String>>? = null
         if (ask != null) {
-            val material = coreMaterial(asks.map { (e, a) -> "[답할 것] ${e.room}: ${a.text}" }, d.keywords.map { "[키워드] " + it.removePrefix("- ") },
+            // 핵심은 🙋 와 겹치지 않게 — 답할 것은 바로 아래 칸에 있으니, 그 밖의 오늘 일만(2026-11-26: 핵심 5줄이 답할 것을 되풀이하던 것)
+            val material = coreMaterial(d.keywords.map { "[키워드] " + it.removePrefix("- ") },
                 groupBlocks.flatMap { (h, ls) -> ls.filter { it.startsWith("- ") && !it.startsWith("- 그 밖에") }.map { "[${h.substringBefore(" (")}] " + it.removePrefix("- ") } },
                 meLines.map { (e, l) -> "[대화] ${e.room} (${e.count}건): $l" })
             if (material.isNotEmpty()) core = runCatching { parseCore(ask(corePrompt(material)), material.joinToString(" ")) }.getOrNull()
@@ -465,7 +478,7 @@ object DailyDigest {
             if (c.isNotEmpty()) { top.append("✨ 오늘의 핵심\n"); c.forEach { top.append(it).append('\n') }; top.append('\n') }
             if (t.isNotEmpty()) { top.append("📅 내일 챙길 것\n"); t.forEach { top.append(it).append('\n') }; top.append('\n') }
         }
-        val askBlock = if (askLines.isEmpty()) "" else "🙋 답할 것 (${askLines.size})\n" + askLines.joinToString("\n") + "\n\n"
+        val askBlock = if (askRooms.isEmpty()) "" else "🙋 답할 것 (${askRooms.size})\n" + askLines.joinToString("\n") + "\n\n"
 
         if (d.taskPart.isNotBlank()) body.append(d.taskPart.trim()).append("\n\n")
         section("⭐ 키워드 알림 (${d.keywords.size})", d.keywords)
@@ -489,7 +502,9 @@ object DailyDigest {
             if (groupBlocks.isNotEmpty()) "묶음·업무" else null,
             if (apps.isNotEmpty()) "앱 알림" else null,
         ).joinToString(" · ").ifEmpty { "전체" } + "까지 모두 볼 수 있어요)"
-        val short = (intro + "\n\n" + top + askBlock + (if (top.isEmpty() && askBlock.isEmpty()) "오늘은 따로 답할 연락이 없어요.\n\n" else "") + hint).trim()
+        // 알림창에는 접어 둔 줄(앞선 물음·대화) 없이 사람마다 한 줄만
+        val askShort = if (askRooms.isEmpty()) "" else "🙋 답할 것 (${askRooms.size})\n" + askLines.filterNot { it.startsWith(DETAIL) }.joinToString("\n") + "\n\n"
+        val short = (intro + "\n\n" + top + askShort + (if (top.isEmpty() && askBlock.isEmpty()) "오늘은 따로 답할 연락이 없어요.\n\n" else "") + hint).trim()
         return Total(full, short, usedAi)
     }
 

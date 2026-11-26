@@ -132,15 +132,45 @@ class TotalDigestTest {
         val t = DailyDigest.total(day500(), emptyMap(), at(22)) { p ->
             asked += p
             if ("줄 번호" in p) "1, 2, 3"
-            else "✨ 오늘의 핵심:\n- 부탁방12: 자료12 내 달라고 함\n- 큰방1: 99시 모임\n- 학교종이: 설문지 배포\n📅 내일 챙길 것:\n- 없음"
+            else "✨ 오늘의 핵심:\n- 큰방1: 1시 모임\n- 큰방2: 99시 모임\n- 학교종이: 설문지 배포\n📅 내일 챙길 것:\n- 없음"
         }
         assertTrue(t.byAi)
         assertEquals(5 + 1, asked.size)                                   // 큰 방 5곳 고르기 + 핵심 한 번
-        assertTrue(t.full, "✨ 오늘의 핵심" in t.full && "- 부탁방12: 자료12 내 달라고 함" in t.full)
+        assertFalse(asked.last(), "[답할 것]" in asked.last())             // 핵심은 🙋 와 겹치지 않게 — 답할 것은 재료에서 뺌
+        assertTrue(t.full, "✨ 오늘의 핵심" in t.full && "- 큰방1: 1시 모임" in t.full)
         assertFalse(t.full, "99시" in t.full)                              // 원문에 없는 숫자는 버림
         assertFalse(t.full, "📅 내일 챙길 것" in t.full)                    // 없음이면 칸 없이
         assertTrue(t.full, "- 큰방1 (60건): 사람0: 큰방1 이야기0 / 1시 모임 / 다른0: 좋아요 장소는 강당0" in t.full)
         assertTrue(t.short, "✨ 오늘의 핵심" in t.short)
+    }
+
+    // 2026-11-26 선생님: 하루 정리에 같은 사람이 여러 번(핵심·답할 것 4줄·지인 연락) — 한 사람은 한 곳에 한 번만
+    @Test fun 한_사람은_한_곳에_한_번만() = runBlocking {
+        val happy = entry("햅삐", 78, listOf(RoomDay.Part(at(13), at(17), 78, "로컬로 안 하고 API로", asked = false)),
+            listOf(RoomDay.Ask(at(14, 16), "무선망에서 열리는지 물음"), RoomDay.Ask(at(14, 52), "답장할지 물음"), RoomDay.Ask(at(16, 52), "서버 죽는지 물음")),
+            kind = RoomDay.GROUP, app = "👔 지인")
+        val kim = entry("김진수", 32, listOf(RoomDay.Part(at(10), at(14), 32, "발명 지도 이야기")), kind = RoomDay.GROUP, app = "👔 지인")
+        val lee = entry("국산이형", 1, listOf(RoomDay.Part(at(9), at(9), 1, "담엔 함께 해요")), kind = RoomDay.GROUP, app = "🤝 지인")
+        val t = DailyDigest.total(DailyDigest.Day(listOf(happy, kim, lee), emptyList(), "", 3, 111), emptyMap(), at(22), ask = null)
+        val lines = t.full.lines()
+        // 🙋 은 사람마다 한 줄(가장 최근 + 외 N건), 앞선 물음과 그 사람의 대화는 접어 둔 줄로
+        assertTrue(t.full, "🙋 답할 것 (1)" in t.full)
+        assertEquals(1, lines.count { it.startsWith("- 햅삐") })
+        assertTrue(t.full, lines.any { it.startsWith("- 햅삐 · 16:52: 서버 죽는지 물음 (외 2건)") })
+        assertTrue(t.full, lines.any { it.startsWith(DailyDigest.DETAIL) && "무선망에서 열리는지" in it })
+        assertTrue(t.full, lines.any { it.startsWith(DailyDigest.DETAIL) && "로컬로 안 하고 API로" in it })
+        // 🙋 에 나온 사람은 지인 연락 칸에 다시 나오지 않고, 이름이 같은 묶음은 한 칸으로
+        assertEquals(1, lines.count { it.startsWith("👔 지인 연락") || it.startsWith("🤝 지인 연락") })
+        assertTrue(t.full, "- 김진수 (32건)" in t.full && "- 국산이형 (1건)" in t.full)
+        // 알림창에는 접어 둔 줄 없이
+        assertFalse(t.short, t.short.lines().any { it.startsWith(DailyDigest.DETAIL) })
+    }
+
+    @Test fun 꼭_받을_사람도_묻는_말만_답할_것() {
+        assertTrue(BriefingComposer.directAsk("쓰다가 맥 망가지면 서버 죽는거아냐?ㅋㅋ"))
+        assertTrue(BriefingComposer.directAsk("내일까지 자료 보내 주세요"))
+        assertFalse(BriefingComposer.directAsk("여기 있으면 된다 안 된다 / 자비스 켜놓고 수업했더니 / 지 맘대로 막 답장 보내네 ㅋㅋㅋ"))
+        assertFalse(BriefingComposer.directAsk("이번주 즐배하세요~ 회장님!"))
     }
 
     @Test fun 답한_물음은_내리고_답함_표시() = runBlocking {

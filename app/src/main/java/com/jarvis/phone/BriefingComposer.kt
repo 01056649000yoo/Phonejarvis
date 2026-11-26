@@ -166,6 +166,10 @@ object BriefingComposer {
         return base.copy(ask = ask, needReply = ask.isNotEmpty())
     }
 
+    /** 나에게 직접 묻거나 부탁하는 말(순수 — 시험): 물음표나 '…해 주세요·부탁·알려 주' 같은 말. '답장 보내네'처럼 낱말만 든 것, 혼잣말 물음은 아님 */
+    fun directAsk(text: String): Boolean = text.replace('\n', ' ').let { t ->
+        hasWords(t) && !isRhetorical(t) && (t.contains('?') || t.contains('？') || REQUEST.containsMatchIn(t)) }
+
     // 부탁처럼 보이는 문장(넘치는 부탁 세기용 — 물음표 잡담은 빼고 '해 주세요·부탁·제출' 같은 말만)
     private val REQUEST = Regex("(주세요|주시면|주실|부탁|알려 ?주|확인해|내 ?주|올려 ?주|보내 ?주|제출|참석해|도와주)")
 
@@ -1005,7 +1009,12 @@ object BriefingComposer {
             rooms += done.copy(conv = conv, prevLine = prevLine)
         }
         // 👥 묶음 사람들은 따로 떼어 묶음별로
-        val (groupRooms, plainRooms) = rooms.partition { keyOf(it.conv) in groupKeys }
+        // 🙋 꼭 받을 사람도 묻거나 부탁하는 말이 있을 때만(2026-11-26 선생님: 하루 정리에 '자비스 켜놓고 수업했더니…' 같은 혼잣말이 답할 것으로 —
+        // AI 가 '요청'을 하나라도 쓰면 답할 것이 됐다). 물음표·부탁하는 말이 있고 여러 사람에게 돌린 말이 아닐 때만. 💼 업무 앱은 그대로
+        val (groupRooms0, plainRooms) = rooms.partition { keyOf(it.conv) in groupKeys }
+        val groupRooms = groupRooms0.map { r ->
+            if (r.needReply && r.conv.app != WORK_TITLE && r.conv.items.none { directAsk(it.text) && !Relevance.isBroadcast(it.text) }) r.copy(needReply = false) else r
+        }
         val rendered = groupList.map { (title, cs) -> title to cs.mapNotNull { c -> groupRooms.firstOrNull { keyOf(it.conv) == keyOf(c) } } }
         val groupLeftover = leftover.filter { keyOf(it) in groupKeys }
         val groupText = renderGroups(rendered.filter { it.first != WORK_TITLE }, groupLeftover)
