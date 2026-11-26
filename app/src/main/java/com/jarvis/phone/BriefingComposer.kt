@@ -680,6 +680,15 @@ object BriefingComposer {
         return point
     }
 
+    /** 🙋 나를 부르는 말(요약하기 전에 넣어 둠) — 부르기만 한 말을 알아보는 데만 씀 */
+    @Volatile var myNames: Collection<String> = emptyList()
+    private val CALL_TAIL = Regex("(선생님|쌤|샘|님|씨|아|야)?[\\s~!?.,ㅎㅋㅠ^]*$")
+    /** 내 이름만 부른 말인가('유승현', '유쌤~', '승현아!') */
+    fun callsOnly(text: String, names: Collection<String> = myNames): Boolean {
+        val t = text.trim().removePrefix("@").replace(CALL_TAIL, "").filterNot { it.isWhitespace() }
+        return t.isNotEmpty() && names.any { n -> n.filterNot { it.isWhitespace() }.let { it == t || it.replace(CALL_TAIL, "") == t } }
+    }
+
     /**
      * 모델 없이 그 말을 그대로: 짧은 메시지 하나뿐인 방, 또는 짧은 메시지(60자 이하) 3개까지뿐인 1:1 대화(2026-11-22).
      * 짧은 말은 요약하는 것보다 원문이 더 정확하고, 모델을 부르지 않아 빠름. 단톡방 여러 메시지는 누구에게 한 부탁인지 봐야 해서 모델로.
@@ -687,7 +696,8 @@ object BriefingComposer {
     fun direct(conv: Conversation): RoomSummary? {
         val texts = conv.items.map { it.text.replace('\n', ' ').trim() }
         if (texts.all { isChatter(it) }) return if (texts.size == 1) RoomSummary(conv, "", "", false, byModel = false) else null
-        val said = conv.items.zip(texts).filterNot { isChatter(it.second) }
+        // 나를 부르기만 한 말('유승현', '유쌤~')은 뒤에 할 말이 따로 있으면 뺌 — '유승현 / 시지정 심사 언제해요?' 로 이어 붙던 것(2026-11-26 캡처)
+        val said = conv.items.zip(texts).filterNot { isChatter(it.second) }.let { l -> l.filterNot { callsOnly(it.second) }.ifEmpty { l } }
         // 🔍 짧으면 원문(2026-11-24 선생님): 'ㅋㅋ' 같은 말을 뺀 말이 합쳐 [RAW_CHARS]자 이하면 몇 마디든 AI 없이 그대로 이어서.
         // '에이씨...해양교육 오ㅐ이리 많오 / 화양 또 냅?' 을 AI 가 '해양교육에 불만이 많다'로 바꿔 오해가 생김 — 짧은 말은 원문이 더 빠르고 정확
         if (said.size > SHORT_MAX_MSGS) {
@@ -1128,9 +1138,11 @@ object BriefingComposer {
             val n = list.sumOf { it.conv.items.size } + rest.sumOf { it.items.size }
             append(if (title == WORK_TITLE) "$title 알림 (앱 ${list.size + rest.size}개 · ${n}건)\n" else "$title 연락 (${list.size + rest.size}명 · ${n}건)\n")
             // 사람 이름은 그대로, 그 사람이 한 말만 한 문단으로(요점 + 부탁을 이어서) — 2026-11-23 선생님
-            list.sortedByDescending { it.conv.last }.forEach { r ->
+            // 🙋 나에게 묻거나 부탁한 사람을 맨 위에, 줄 앞에 답할 것 표시(2026-11-26 선생님 캡처: '유승현 / 시지정 심사 언제해요?'가
+            // 답할 것 표시 없이 다른 연락과 섞여 있었다 — 물음이 요점 안에 들어 있으면 표시가 빠졌음)
+            list.sortedWith(compareByDescending<RoomSummary> { it.needReply }.thenByDescending { it.conv.last }).forEach { r ->
                 val point = r.point.ifBlank { r.conv.items.last().text.replace('\n', ' ').take(60) }.removePrefix("${r.conv.room}: ").let { dropName(it, r.conv.room, title) }
-                append("- ${r.conv.room} (${r.conv.items.size}건) · ${fmt.format(r.conv.last)}: ${paragraph(point, r.ask, r.needReply)}\n")
+                append("- ${if (r.needReply) "🙋 " else ""}${r.conv.room} (${r.conv.items.size}건) · ${fmt.format(r.conv.last)}: ${paragraph(point, r.ask)}\n")
             }
             if (rest.isNotEmpty()) append("- 그 밖에: " + rest.joinToString(", ") { "${it.room} ${it.items.size}건" } + "\n")
             append("\n")

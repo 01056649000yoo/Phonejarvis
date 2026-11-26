@@ -244,4 +244,23 @@ class RelevanceTest {
         val f = Relevance.followUps(items) { Relevance.addressesMe(it.text, names) }
         assertEquals(listOf(3L, 4L), f.map { it.id })                                 // 같은 사람, 10분 안
     }
+
+    // 2026-11-26 선생님 캡처: 지인 연락 '김희엽 선생님 (3건): 유승현 / 시지정 심사 언제해요?' — 답할 것 표시가 없고 이름이 앞에 붙음
+    @Test fun 꼭_받을_사람이_나에게_물으면_답할_것_표시_부르기만_한_말은_빼고() = runBlocking {
+        BriefingComposer.myNames = listOf("유승현", "유쌤")
+        assertTrue(BriefingComposer.callsOnly("유승현"))
+        assertTrue(BriefingComposer.callsOnly("유쌤~~"))
+        assertTrue(BriefingComposer.callsOnly("유승현 선생님!"))
+        assertFalse(BriefingComposer.callsOnly("유승현 선생님 자료 좀요"))
+        assertFalse(BriefingComposer.callsOnly("알겠어요"))
+        val hits = listOf(
+            "김희엽" to msg("", "김희엽 선생님", "유승현"), "김희엽" to msg("", "김희엽 선생님", "시지정 심사 언제해요?"),
+            "권지혜" to msg("", "권지혜 선생님", "1학년도 패스할게요."))
+        val r = BriefingComposer.compose(emptyList(), ask = { "" }, groups = listOf(BriefingComposer.Group("🤝 지인", hits)), focus = true)
+        val lines = r.groups.lines().filter { it.startsWith("- ") }
+        assertTrue(r.groups, lines.first().startsWith("- 🙋 김희엽 선생님 (2건)"))                // 물은 사람이 맨 위, 답할 것 표시
+        assertTrue(r.groups, "시지정 심사 언제" in lines.first() && "유승현 /" !in lines.first())   // 이름만 부른 말은 빼고
+        assertTrue(r.groups, lines.any { it.startsWith("- 권지혜 선생님 (1건)") })                 // 묻지 않은 사람은 표시 없이
+        BriefingComposer.myNames = emptyList()
+    }
 }

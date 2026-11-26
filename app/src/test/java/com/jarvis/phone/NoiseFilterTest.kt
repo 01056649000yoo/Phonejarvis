@@ -68,7 +68,7 @@ class NoiseFilterTest {
         assertEquals(1, prompts.size)                                    // 엄마 3건 → AI 한 번, 동생 한 마디 → 원문
         assertTrue(prompts[0], "꽃도 좀" in prompts[0] && "늦지 말고" in prompts[0] && "케이크" !in prompts[0])
         assertTrue(r.groups, r.groups.startsWith("🏠 가족 연락 (2명 · 4건)"))
-        assertTrue(r.groups, r.groups.contains("- 엄마 (3건)") && r.groups.contains("늦지 말라고 함. 🙋 꽃 사 와 달라고 함.") && r.groups.contains("케이크"))
+        assertTrue(r.groups, r.groups.contains("- 🙋 엄마 (3건)") && r.groups.contains("늦지 말라고 함. 꽃 사 와 달라고 함.") && r.groups.contains("케이크"))
         assertFalse(r.people.contains("엄마"))                            // 🙋·💬 에는 안 나옴
         assertEquals(3, BriefingComposer.pendingForModel(emptyList(), emptyMap(), 0, listOf(g)))
     }
@@ -82,8 +82,8 @@ class NoiseFilterTest {
         var prompt = ""
         val r = BriefingComposer.compose(emptyList(), ask = { prompt = it; "요점: 김민수 선생님이 내일 3시 2층 회의실 협의회를 알림\n요청: 학예회 명단 금요일까지 내 달라고 함" }, groups = listOf(g))
         assertTrue(prompt, "'김민수 선생님'" in prompt && "이름과 호칭" in prompt)
-        assertTrue(r.groups, r.groups.contains("- 김민수 선생님 (3건)"))
-        assertTrue(r.groups, r.groups.contains("협의회를 알림. 🙋 학예회 명단 금요일까지 내 달라고 함.") && "→" !in r.groups)
+        assertTrue(r.groups, r.groups.contains("- 🙋 김민수 선생님 (3건)"))
+        assertTrue(r.groups, r.groups.contains("협의회를 알림. 학예회 명단 금요일까지 내 달라고 함.") && "→" !in r.groups)
         // 부탁이 요점에 이미 들어 있으면 한 번만
         assertEquals("내일 3시 협의회, 반별 명단 금요일까지 올리라고 함.",
             BriefingComposer.paragraph("내일 3시 협의회, 반별 명단 금요일까지 올리라고 함", "반별 명단을 금요일까지 단톡에 올려 달라고 함"))

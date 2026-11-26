@@ -482,6 +482,7 @@ object Briefings {
         val mine = MyNames.all(ctx)                     // 🙋 나를 부르는 말(설정 → 사람 묶음 → 나를 부르는 말)
         val names = mine + Students.allTerms(Students.names(ctx))   // 학생 이름이 나오는 말도 나에게 온 것
         val hasMine = mine.isNotEmpty()
+        BriefingComposer.myNames = mine + mine.flatMap(MyNames::variants)   // 나를 부르기만 한 말을 요약 줄에서 빼려고
         // 익히는 기간(처음 14일은 작은 단톡방을 모두 '내가 속한 방'으로)은 없앰(2026-11-26 선생님) — 그 기간 내내 요약에 잡담이 한 줄씩 섞였다.
         // 나를 부른 말·1:1·학부모·묶음은 첫날부터 잡히고, 한 번 말한 방은 바로 '내가 속한 방'이 됨. 놓치기 싫은 방은 방 고르기에서 직접 정함
         val learning = false
