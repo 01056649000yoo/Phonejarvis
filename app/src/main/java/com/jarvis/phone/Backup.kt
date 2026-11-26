@@ -22,11 +22,12 @@ object Backup {
 
     /** 백업할 설정 묶음과, 그 안에서 넣지 않을 값(그때그때 바뀌는 상태) */
     // my_names(🙋 나를 부르는 말)·room_tier(방마다 정한 거리)·reply_log(내가 말한 방 — 방 이름과 시각만, 내용 X) — 폰을 바꿔도 '나와의 거리'가 이어지게(2026-11-25)
-    private val FILES = listOf("apps", "briefing", "quiet", "app", "storage", "people", "my_names", "room_tier", "reply_log")
+    private val FILES = listOf("apps", "briefing", "quiet", "app", "storage", "people", "my_names", "room_tier", "reply_log", "to_me")   // to_me: 🧭 나에게 한 말 가중치(쓰면서 다듬은 것)
     private val SKIP = mapOf(
         "apps" to setOf("handled", "ad_day", "ad_count"),
         "quiet" to setOf("last", "since", "we_set_dnd", "zen_rule", "zen_rule_v"),   // 방해 금지 모드 번호는 폰마다 다름
         "storage" to setOf("last_clean", "last_vacuum"),
+        "to_me" to setOf("day"),
     )
     /** 쓰면서 저절로 쌓이는 묶음: 불러올 때 지금 값을 지우지 않고 합침(시각은 더 최근 것) */
     private val GROWING = setOf("reply_log")

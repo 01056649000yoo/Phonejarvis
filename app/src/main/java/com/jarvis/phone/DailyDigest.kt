@@ -270,12 +270,15 @@ object DailyDigest {
         if (today.isEmpty()) return null
         val d = SimpleDateFormat("M/d (E)", Locale.KOREA).format(now)
         val entries = db.roomDays(day)
+        // 🧭 하루 한 번: 오늘 대화로 '나에게 한 말' 가중치를 다듬음(내가 답한 말 + 애매한 말은 폰 안의 AI 에게 예/아니오) — 내일 요약부터 반영
+        val learned = runCatching { ToMe.learn(ctx, now, ask) }.getOrDefault(0)
+        val learnNote = if (learned > 0) "\n\n(🧭 오늘 대화 ${learned}건으로 '나에게 한 말' 알아보기를 다듬었어요 — 쓸수록 정확해져요)" else ""
         // 🗓 총정리(방별 하루 기록이 있는 날) — 예전 판에서 요약한 날은 아래 예전 방식으로
         if (entries.isNotEmpty()) {
             val t = total(Day(entries, keywordLines(today), "",   // 📌 마감 칸은 없앰(2026-11-25 선생님)
                 today.size, today.sumOf { it.count },
                 today.minOf { it.fromTime }), ReplyLog.all(ctx), now, ask)
-            db.insertBriefing(Briefing(time = now, fromTime = day, label = LABEL, count = 0, text = t.full))
+            db.insertBriefing(Briefing(time = now, fromTime = day, label = LABEL, count = 0, text = t.full + learnNote))
             return Briefings.Outcome("$LABEL · $d" + if (t.byAi) "" else " (AI 없이)", t.short, now)
         }
         val m = material(today, "", Students.names(ctx), ReplyLog.all(ctx))

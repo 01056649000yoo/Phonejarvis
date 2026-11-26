@@ -112,10 +112,11 @@ object Relevance {
               /** 나를 부르는 말을 넣었는가(학생 이름만 있으면 false) */ hasMyNames: Boolean = true,
               /** 익히는 기간인가 */ learning: Boolean = false,
               /** 그 방에서 내가 마지막으로 말한 시각 */ saidAt: Long = 0L,
-              /** true 면 나를 부른 말은 보지 않은 '방 자체의' 거리(문장 단위로 보여 줄 때 나머지 대화의 거리) */ ignoreCalls: Boolean = false): Int {
+              /** true 면 나를 부른 말은 보지 않은 '방 자체의' 거리(문장 단위로 보여 줄 때 나머지 대화의 거리) */ ignoreCalls: Boolean = false,
+              /** 🧭 나에게 한 말인지 점수로 판정(ToMe.Scorer) — 주면 이것으로, 없으면 예전 규칙(이름·내 말 뒤) */ calledBy: ((NotiItem) -> Boolean)? = null): Int {
         // 📌 놓치기 싫은 방(ME)·건수만(OTHER)은 직접 정한 대로. 예전 '한 줄'(JOINED)은 없어져 저절로 정함
         if (override == ME || override == OTHER) return override
-        val called = !ignoreCalls && conv.items.any { toMe(it, names, saidAt) }
+        val called = !ignoreCalls && conv.items.any { calledBy?.invoke(it) ?: toMe(it, names, saidAt) }
         // 처음 보는 1:1 이라도 '선생님/쌤'하고 나를 부르며 묻거나 부탁하면 나에게 온 것(2026-11-26 선생님: 답할 것에 1:1 도 포함 —
         // 명부에 없는 학부모의 첫 카톡 "선생님 내일 상담 가능할까요?"가 한 줄로 내려가 답할 것에 안 올라갔다).
         // 부르는 말 없이 묻기만 한 것은 그대로 한 줄 — 1:1 처럼 오는 오픈채팅의 "계정 이관 방법이 있을지요?"가 답할 것에 섞이지 않게
