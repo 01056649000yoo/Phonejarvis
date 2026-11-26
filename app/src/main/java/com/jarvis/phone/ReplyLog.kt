@@ -23,6 +23,23 @@ object ReplyLog {
         }.apply()
     }
 
+    // 💬 내가 마지막으로 한 말(방마다 하나, 200자까지) — 그 뒤에 온 말이 내 말에 한 답인지 내용으로 알아보려고(Relevance.repliesTo).
+    //    백업에는 넣지 않음(다른 묶음 'my_said'): 내용이라 폰 밖으로 내보내지 않고, 30분 지나면 쓸모도 없음
+    private fun said(ctx: Context) = ctx.getSharedPreferences("my_said", Context.MODE_PRIVATE)
+    fun noteText(ctx: Context, room: String, time: Long, text: String) {
+        if (room.isBlank() || time <= 0 || text.isBlank()) return
+        val p = said(ctx)
+        val old = p.getString(room, null)?.substringBefore('\u0001')?.toLongOrNull() ?: 0L
+        if (time < old) return
+        val now = System.currentTimeMillis()
+        p.edit().apply {
+            putString(room, "$time\u0001${text.replace('\n', ' ').trim().take(200)}")
+            p.all.forEach { (k, v) -> if (((v as? String)?.substringBefore('\u0001')?.toLongOrNull() ?: 0L) < now - 24 * 3600_000L) remove(k) }   // 하루 지난 것은 지움
+        }.apply()
+    }
+    /** 방 → 내가 마지막으로 한 말 */
+    fun texts(ctx: Context): Map<String, String> = said(ctx).all.mapNotNull { (k, v) -> (v as? String)?.substringAfter('\u0001', "")?.takeIf { it.isNotBlank() }?.let { k to it } }.toMap()
+
     /** 방 → 내가 마지막으로 답한 시각 */
     fun all(ctx: Context): Map<String, Long> = p(ctx).all.mapNotNull { (k, v) -> (v as? Long)?.let { k to it } }.toMap()
 }

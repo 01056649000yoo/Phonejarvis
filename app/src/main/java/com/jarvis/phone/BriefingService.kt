@@ -475,7 +475,12 @@ object Briefings {
         val level = { c: BriefingComposer.Conversation -> memo.getOrPut(BriefingComposer.keyOf(c)) { lv(c, false) } }
         val base = { c: BriefingComposer.Conversation -> memoBase.getOrPut(BriefingComposer.keyOf(c)) { lv(c, true) } }
         val threads = HashMap<String, Set<NotiItem>>()
-        fun thread(c: BriefingComposer.Conversation) = threads.getOrPut(BriefingComposer.keyOf(c)) { Relevance.myThread(c.items, said[c.room] ?: 0L).toSet() }
+        val saidText = ReplyLog.texts(ctx)              // 내가 마지막으로 한 말(내용이 겹치는 답을 알아보려고)
+        // 나에게 한 말로 보는 것(이름·멘션 말고): 내 말 바로 뒤 다섯 마디 + 내 말과 내용이 겹치는 답 + 나를 부른 사람이 이어서 한 말
+        fun thread(c: BriefingComposer.Conversation) = threads.getOrPut(BriefingComposer.keyOf(c)) {
+            (Relevance.myThread(c.items, said[c.room] ?: 0L, saidText[c.room].orEmpty()) +
+                Relevance.followUps(c.items) { Relevance.addressesMe(it.text, names) }).toSet()
+        }
         val mentions = BriefingComposer.Mentions(base, { c, n -> Relevance.addressesMe(n.text, names) || n in thread(c) }, { n -> Relevance.addressesMe(n.text, if (hasMine) mine else names) })   // 🙋 은 나를 부른 말만(학생 이름만 나온 말은 내용만 보여 줌)
         return Closeness(level, { c -> Relevance.replyOk(c, level(c), names, parent, hasMine, mine = if (hasMine) mine else names) }, mentions,
             pinned = { c -> tiers[RoomTier.key(c)] == Relevance.ME })

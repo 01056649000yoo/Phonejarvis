@@ -407,6 +407,24 @@ class JarvisViewModel(app: Application) : AndroidViewModel(app) {
         if (!isRoomOn(pkg, r)) setRoom(pkg, r, true)   // 꺼 둔 방이면 다시 모음(꺼져 있으면 요약에 안 나옴)
     }
     fun unpinRoom(pkg: String, room: String) = setRoomTier(pkg, room, Relevance.AUTO)
+
+    // ── 🔧 틀린 것 바로잡기(2026-11-26): 요약에서 방 이름을 누르면 그 자리에서 올리거나 내림 ──
+    /** 고치려고 누른 방(패키지, 방 이름). null 이면 창 닫힘 */
+    var roomAction by mutableStateOf<Pair<String, String>?>(null)
+        private set
+    fun askRoom(name: String) {
+        val room = name.trim()
+        if (room.isEmpty()) return
+        viewModelScope.launch {
+            // 요약 글에는 방 이름만 있어 앱은 알림 기록에서 찾음(없으면 카톡으로)
+            val pkg = withContext(Dispatchers.IO) { runCatching { db.recentRooms(2000).firstOrNull { it.room == room }?.pkg }.getOrNull() }
+                ?: roomTiers.keys.firstOrNull { it.substringAfter('|') == room }?.substringBefore('|') ?: "com.kakao.talk"
+            roomAction = pkg to room
+        }
+    }
+    fun closeRoomAction() { roomAction = null }
+    /** 이 방은 건수만(나를 불러도 요약하지 않음) / 저절로 */
+    fun muteRoom(pkg: String, room: String, on: Boolean) = setRoomTier(pkg, room, if (on) Relevance.OTHER else Relevance.AUTO)
     fun appNameOf(pkg: String): String = pinCandidates.firstOrNull { it.pkg == pkg }?.app ?: labelOf(pkg)
 
     /** 앱 목록에 보여 줄 "뺀 방 N개" */

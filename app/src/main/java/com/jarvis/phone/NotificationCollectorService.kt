@@ -48,7 +48,10 @@ class NotificationCollectorService : NotificationListenerService() {
             val me = style?.user?.name?.toString().orEmpty()
             if (me.isNotBlank()) MyNames.noteMe(this, me)   // 🙋 나를 부르는 말 추천(카톡의 내 이름)
             style?.messages?.filter { m -> m.person == null || (me.isNotEmpty() && m.person?.name?.toString()?.trim() == me) }
-                ?.maxOfOrNull { it.timestamp }?.let { ReplyLog.mark(this, room.ifEmpty { title }, it) }
+                ?.maxByOrNull { it.timestamp }?.let { m ->
+                    ReplyLog.mark(this, room.ifEmpty { title }, m.timestamp)
+                    ReplyLog.noteText(this, room.ifEmpty { title }, m.timestamp, m.text?.toString().orEmpty())   // 내 말에 한 답을 내용으로 알아보려고
+                }
         }
 
         // 📒 앱·방 이름 기억 (내용 X): 뺀 앱·끈 방도 목록에서 사라지지 않고 다시 켤 수 있게

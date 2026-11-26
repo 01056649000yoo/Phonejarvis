@@ -38,10 +38,25 @@ object Relevance {
     fun addressesMe(text: String, names: Collection<String>): Boolean {
         if (MENTION_MARK.containsMatchIn(text)) return true
         // 사람이 보낸 말은 '유승현님 확인 부탁드려요'처럼 이름+님도 부르는 말(2026-11-25 — 예전엔 광고 거르기 규칙에 막혔다. 광고·업체는 앞에서 따로 거름)
-        if (AppFilter.hasKeyword(names, text)) return true
+        if (names.any { occursAsName(it, text) }) return true
         // 띄어 쓴 이름('친절한 유쌤')만 붙여 쓴 꼴('@친절한유쌤')로도 봄 — 붙여 쓴 이름은 위에서 이미 봄('OO님' 광고 거르기를 지나치지 않게)
         val flat = text.filterNot { it.isWhitespace() }
         return names.any { n -> n.trim().contains(' ') && n.filterNot { it.isWhitespace() }.let { it.length >= 3 && it in flat } }
+    }
+
+    /**
+     * 이름이 그 글에 '이름으로' 나오는가(순수 — 시험). 두 글자 이름·별명('유쌤')은 앞에 한글이 붙어 있으면 다른 말의 일부로 봄 —
+     * '자유쌤'·'공유쌤'이 '유쌤'으로 잡히던 것(2026-11-26 고도화). 세 글자 이상은 그대로, 학생 성 뺀 이름은 Students 규칙
+     */
+    fun occursAsName(name: String, text: String): Boolean {
+        if (name.isEmpty()) return false
+        if (name[0] == Students.GIVEN || name.length != 2) return Students.occurs(name, text)
+        var i = text.indexOf(name)
+        while (i >= 0) {
+            if (i == 0 || text[i - 1] !in '가'..'힣') return true
+            i = text.indexOf(name, i + 1)
+        }
+        return false
     }
 
     /** 내가 그 방에서 말한 뒤 이만큼 안에 이어진 말은 나와 나누는 대화 */
@@ -50,8 +65,30 @@ object Relevance {
     /** 내 말에 이어진 말로 보는 것은 내 말 바로 뒤 이만큼까지 — 여럿이 떠드는 방에서 30분 동안의 모든 말이 나에게 한 말이 되지 않게 */
     const val THREAD_TURNS = 5
     /** 이 대화에서 내 말에 이어진 말들(내가 말한 뒤 30분 안, 앞에서 [THREAD_TURNS]개) */
-    fun myThread(items: List<NotiItem>, saidAt: Long): List<NotiItem> =
-        if (saidAt <= 0) emptyList() else items.filter { inMyThread(it, saidAt) }.sortedBy { it.time }.take(THREAD_TURNS)
+    fun myThread(items: List<NotiItem>, saidAt: Long, myText: String = ""): List<NotiItem> {
+        if (saidAt <= 0) return emptyList()
+        val after = items.filter { inMyThread(it, saidAt) }.sortedBy { it.time }
+        // 💬 답글 대상(2026-11-26 고도화): 다섯 마디 뒤라도 내 말과 내용이 겹치면(같은 낱말 조각) 내 말에 한 답
+        return (after.take(THREAD_TURNS) + after.drop(THREAD_TURNS).filter { repliesTo(it.text, myText) }).sortedBy { it.time }
+    }
+
+    /** [text] 가 내가 한 말 [mine] 에 대한 답 같은가: 두 글자 조각이 넉넉히 겹침(짧은 맞장구는 빼고) */
+    fun repliesTo(text: String, mine: String): Boolean {
+        val t = text.replace('\n', ' ').trim(); val m = mine.replace('\n', ' ').trim()
+        if (t.length < 4 || m.length < 4) return false
+        return maxOf(BriefingComposer.overlapPublic(t, m), BriefingComposer.overlapPublic(m, t)) >= REPLY_OVERLAP
+    }
+    const val REPLY_OVERLAP = 0.3
+
+    /** 나를 부른 사람이 이어서 한 말(2026-11-26 고도화: 대화 상대 추적) — 부른 뒤 [FOLLOW_MS] 안, 그 사람 말 [FOLLOW_TURNS]개까지 */
+    const val FOLLOW_MS = 10 * 60_000L
+    const val FOLLOW_TURNS = 3
+    fun followUps(items: List<NotiItem>, calls: (NotiItem) -> Boolean): List<NotiItem> {
+        val sorted = items.sortedBy { it.time }
+        return sorted.filter(calls).flatMap { c ->
+            sorted.filter { it.title == c.title && it.time > c.time && it.time - c.time <= FOLLOW_MS && !calls(it) }.take(FOLLOW_TURNS)
+        }.distinct()
+    }
     /** 나에게 한 말: 나를 부르거나, 내가 말한 직후 이어진 말([saidAt] = 그 방에서 내가 마지막으로 말한 시각) */
     fun toMe(n: NotiItem, names: Collection<String>, saidAt: Long = 0L) = addressesMe(n.text, names) || inMyThread(n, saidAt)
 

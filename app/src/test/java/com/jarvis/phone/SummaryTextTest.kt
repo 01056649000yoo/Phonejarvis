@@ -45,4 +45,12 @@ class SummaryTextTest {
         assertEquals("감사합니다 😊", Emoji.strip("감사합니다 😊"))
         assertEquals(null to "감사합니다 😊", Emoji.lead("감사합니다 😊"))
     }
+
+    @Test fun 그_밖의_방_줄에서_방_이름_꺼내기() {
+        assertEquals("오픈방25", roomOfCount("오픈방25 25건"))
+        assertEquals("서울 5과학", roomOfCount("서울 5과학 3건"))
+        assertEquals(null, roomOfCount("외 15곳 120건"))
+        assertEquals(null, roomOfCount("내가 속한 방 1곳 3건"))
+        assertEquals(null, roomOfCount("그 밖 12곳 140건"))
+    }
 }

@@ -203,4 +203,38 @@ class RelevanceTest {
         BriefingComposer.compose(items, ask = { q -> asked += q; "" }, focus = true, levels = { Relevance.ME }, earlier = { "앞 요약" })
         assertFalse(asked.joinToString(), asked.any { "앞서 이 방을 이렇게 요약했어" in it })
     }
+
+    // 2026-11-26 고도화: 이름 경계 · 답글 대상 · 대화 상대 추적
+    @Test fun 두_글자_이름은_다른_말의_일부면_아님() {
+        val n = listOf("유쌤", "유승현")
+        assertTrue(Relevance.addressesMe("유쌤 자료 좀 보내 주세요", n))
+        assertTrue(Relevance.addressesMe("그건 유쌤이 알 거예요", n))
+        assertTrue(Relevance.addressesMe("@유쌤 확인 부탁", n))
+        assertFalse(Relevance.addressesMe("자유쌤이 내일 온대요", n))          // '자유쌤'은 다른 사람
+        assertFalse(Relevance.addressesMe("자료 공유쌤플 올려요", n))
+        assertTrue(Relevance.addressesMe("이유승현 선생님께 전달", n))            // 세 글자 이상은 그대로
+    }
+
+    @Test fun 내_말과_내용이_겹치면_다섯_마디_뒤라도_나에게_한_답() {
+        val saidAt = 9_000_000L
+        val mine = "리허설은 금요일 3시 강당에서 하면 어때요"
+        val chat = List(8) { NotiItem(it.toLong(), "com.kakao.talk", "카카오톡", "닉$it", "점심 뭐 먹을까요 $it", saidAt + (it + 1) * 60_000L, "큰 방") }
+        val reply = NotiItem(50, "com.kakao.talk", "카카오톡", "박", "금요일 3시 강당 좋아요", saidAt + 12 * 60_000L, "큰 방")
+        val late = reply.copy(id = 51, time = saidAt + 45 * 60_000L)                 // 30분 지나면 아님
+        val t = Relevance.myThread(chat + reply + late, saidAt, mine)
+        assertEquals(Relevance.THREAD_TURNS + 1, t.size)
+        assertTrue(reply in t)
+        assertFalse(late in t)
+        assertFalse(Relevance.repliesTo("네", mine))
+        assertFalse(Relevance.repliesTo("점심 뭐 먹을까요", mine))
+    }
+
+    @Test fun 나를_부른_사람이_이어서_한_말도_나에게() {
+        val t0 = 1_000_000L
+        fun m(id: Long, who: String, text: String, min: Int) = NotiItem(id, "com.kakao.talk", "카카오톡", who, text, t0 + min * 60_000L, "큰 방")
+        val items = listOf(m(1, "김", "유쌤 혹시 시간 되세요?", 0), m(2, "박", "점심 뭐 먹죠", 1), m(3, "김", "내일 연수 자료 때문에요", 2),
+            m(4, "김", "3시쯤 통화 가능할까요", 3), m(5, "김", "아 그리고 다른 얘기인데", 20))
+        val f = Relevance.followUps(items) { Relevance.addressesMe(it.text, names) }
+        assertEquals(listOf(3L, 4L), f.map { it.id })                                 // 같은 사람, 10분 안
+    }
 }

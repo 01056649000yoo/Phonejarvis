@@ -37,10 +37,12 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** 이번 버전에서 바뀐 점 한 줄 (버전 올릴 때 같이 고치기). 새 것을 앞에 — 앞 세 가지가 릴리스·안내 페이지의 '바뀐 점'으로도 나감(build.yml) */
-private const val WHATS_NEW = "설치할 때 나를 부르는 말을 꼭 넣게 · 꼭 볼 것만: 나를 부른 말·1:1·꼭 받을 사람·키워드 · 설정을 간단하게 · 놓치기 싫은 방은 앞 요약과 이어서 풀어 쓴 요약으로 · 놓치기 싫은 방을 설정에서 고르기 · 알림이 몰려도 화면이 덜 끊기게 · 정기 요약은 나와 관련된 것만 · 두세 마디 방은 최근 말 하나만 · 처음 설치할 때 모아서 받을지 물어봄 · 답할 것에는 나를 부른 말과 1:1만 · 하루 정리가 더 짧게 · 놓치던 알림·빠지던 백업 고침 · 앱 아이콘이 엇갈리던 것 고침 · 설정 백업 매일 자동 · 알림 앱 정리 화면 정리 · 받아 둔 모델 자동 찾기 · 설치 방법 안내 · 요약 탭에 최근 요약이 늘 보이게 · 할 일·마감 카드 없앰 · 나와 관련된 것만 요약 · 버전·업데이트 일시 표시 · 하루 정리는 하루 종일 온 알림을 총정리 · 빠지던 알림 없게 · 카톡 단톡방은 원문 줄로 · 이어진 대화 ↪ · 답한 물음 내리기 · 메일은 제목 그대로 · 짧으면 원문 그대로 · 오해 없는 요약 · 어제 메시지가 섞이지 않게 · 오픈채팅 한 방으로 · 내가 만든 묶음별 연락 · 모든 연락을 간단한 내용까지 · 중요한 대화만 요약해요 · 캘린더는 일정 그대로 · 요약 문장 다듬기"
+private const val WHATS_NEW = "나에게 한 말을 더 잘 알아봄 · 요약에서 방 이름을 눌러 바로잡기 · 설치할 때 나를 부르는 말을 꼭 넣게 · 꼭 볼 것만: 나를 부른 말·1:1·꼭 받을 사람·키워드 · 설정을 간단하게 · 놓치기 싫은 방은 앞 요약과 이어서 풀어 쓴 요약으로 · 놓치기 싫은 방을 설정에서 고르기 · 알림이 몰려도 화면이 덜 끊기게 · 정기 요약은 나와 관련된 것만 · 두세 마디 방은 최근 말 하나만 · 처음 설치할 때 모아서 받을지 물어봄 · 답할 것에는 나를 부른 말과 1:1만 · 하루 정리가 더 짧게 · 놓치던 알림·빠지던 백업 고침 · 앱 아이콘이 엇갈리던 것 고침 · 설정 백업 매일 자동 · 알림 앱 정리 화면 정리 · 받아 둔 모델 자동 찾기 · 설치 방법 안내 · 요약 탭에 최근 요약이 늘 보이게 · 할 일·마감 카드 없앰 · 나와 관련된 것만 요약 · 버전·업데이트 일시 표시 · 하루 정리는 하루 종일 온 알림을 총정리 · 빠지던 알림 없게 · 카톡 단톡방은 원문 줄로 · 이어진 대화 ↪ · 답한 물음 내리기 · 메일은 제목 그대로 · 짧으면 원문 그대로 · 오해 없는 요약 · 어제 메시지가 섞이지 않게 · 오픈채팅 한 방으로 · 내가 만든 묶음별 연락 · 모든 연락을 간단한 내용까지 · 중요한 대화만 요약해요 · 캘린더는 일정 그대로 · 요약 문장 다듬기"
 
 /** 업데이트 내역 큰 창 (버전 올릴 때 같이 고치기) */
 private val WHATS_NEW_DETAIL = listOf(
+    "🧭 나에게 한 말을 더 잘 알아봐요" to "내 말과 내용이 겹치는 답은 몇 마디 뒤에 와도 나에게 한 말로 봐요. 나를 부른 사람이 이어서 한 말(10분 안, 세 마디까지)도 함께 보여 줘요. '유쌤' 같은 두 글자 이름이 '자유쌤'처럼 다른 말 안에서 잘못 잡히던 것도 고쳤어요.",
+    "🔧 요약에서 바로잡기" to "요약의 방 이름(배지, '그 밖의 방'에 적힌 이름)을 누르면 그 자리에서 📌 놓치기 싫은 방으로 올리거나, 나와 상관없는 방은 건수만 보게 내릴 수 있어요.",
     "🎯 꼭 볼 것만 모아 보는 앱으로" to "쌤톡스가 보여 주는 것을 넷으로 정했어요: 나를 부르거나 멘션한 말, 나에게 온 1:1, 꼭 받을 사람(지인), 키워드. 단톡방은 나를 언급한 말만 요약하고, 나머지는 건수만 적어요. 예전의 '내가 속한 방 한 줄'은 없앴어요 — 나를 안 불러도 꼭 볼 방은 '놓치기 싫은 방'에 넣으면 돼요.",
     "🧹 설정을 간단하게" to "설정 첫 화면에 '쌤톡스가 보여 주는 것' 네 가지(나를 부르는 말·꼭 받을 사람·키워드·놓치기 싫은 방)를 모았어요. 방마다 '저절로·늘 중요·한 줄·건수만'을 고르던 것은 '놓치기 싫은 방' 하나로, '중요한 대화만 요약' 스위치는 없앴어요(늘 켬).",
     "📌 놓치기 싫은 방" to "설정에 '놓치기 싫은 방'이 생겼어요. 여기 넣은 방은 나를 부르지 않아도 정한 시각 요약과 하루 정리에 늘 내용까지 요약해요. 읽기만 하는 동학년방·공지방을 넣어 두세요. 이 방들은 원문 줄을 그대로 보여 주지 않고 AI가 요점을 풀어 써요. 앞서 그 방을 요약한 내용과 비교해서, 이어진 이야기면 무엇이 정해졌고 달라졌는지를 중심으로 정리해요.",
@@ -167,6 +169,7 @@ private val WHATS_NEW_DETAIL = listOf(
 fun JarvisScreen(vm: JarvisViewModel) {
     // 폰의 뒤로 버튼: 세부 화면 → 탭 첫 화면 → 요약 탭
     androidx.activity.compose.BackHandler(enabled = vm.page != null || vm.tab != JarvisViewModel.Tab.BRIEFING) { vm.back() }
+    vm.roomAction?.let { (pkg, room) -> RoomActionDialog(vm, pkg, room) }
     Scaffold(
         bottomBar = {
             // 하단 메뉴: 흰 바탕 + 위 옅은 줄, 선 아이콘, 고른 칸은 세이지 알약·굵은 글자
@@ -582,7 +585,7 @@ private fun HistoryTab(vm: JarvisViewModel) {
                                 AnimatedVisibility(visible = show, enter = expandVertically(Motion.size) + fadeIn(Motion.fade),
                                     exit = shrinkVertically(Motion.size) + fadeOut(Motion.fadeFast)) {
                                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        SummaryText(b.text)
+                                        SummaryText(b.text, onRoom = vm::askRoom)
                                         TextButton(onClick = { vm.openBriefingDetail(b) }) { Text("📄 원래 알림 보기") }
                                     }
                                 }
@@ -742,7 +745,7 @@ private fun BriefingDetailDialog(vm: JarvisViewModel, b: Briefing, items: List<N
         },
         text = {
             Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                SummaryText(b.text)
+                SummaryText(b.text, onRoom = vm::askRoom)
                 HorizontalDivider()
                 TextButton(onClick = { showRaw = !showRaw }) {
                     Text(if (showRaw) "▾ 원래 알림 접기" else "▸ 원래 알림 ${items.size}건 보기")
@@ -798,7 +801,7 @@ private fun BriefingCard(vm: JarvisViewModel, b: Briefing, primary: Boolean, onH
                 Column {
                     HorizontalDivider(Modifier.padding(vertical = Space.l), color = LocalContentColor.current.copy(alpha = 0.15f))
                     // 🧾 줄의 꼴을 보고 칸 제목·사람·시각·내용을 나눠 그림(SummaryText)
-                    SummaryText(b.text, accent = if (primary) Ssam.GoldPale else MaterialTheme.colorScheme.primary)
+                    SummaryText(b.text, accent = if (primary) Ssam.GoldPale else MaterialTheme.colorScheme.primary, onRoom = vm::askRoom)
                     Spacer(Modifier.height(Space.s))
                     // 좁은 화면·큰 글자에서 '숨기기'가 한 글자씩 세로로 깨지던 것(2026-11-23): 모자라면 다음 줄로, 단추 글은 한 줄로
                     FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -874,6 +877,39 @@ private fun SettingsTab(vm: JarvisViewModel) {
             (vm.storageUsage?.let { Storage.size(it.bytes) + " · " } ?: "") + "알림 ${Storage.label(vm.notiDays)} 보관 · 자동 정리") {
             vm.open(JarvisViewModel.Page.STORAGE) },
     ))
+}
+
+/**
+ * 🔧 틀린 것 바로잡기(2026-11-26): 요약에서 방·사람 이름을 누르면 뜨는 창.
+ * 놓친 방은 📌 놓치기 싫은 방으로 올리고, 나와 상관없는데 자꾸 올라오는 방은 건수만 보게 내림 — 설정에 들어가지 않고 그 자리에서
+ */
+@Composable
+private fun RoomActionDialog(vm: JarvisViewModel, pkg: String, room: String) {
+    val tier = vm.roomTier(pkg, room)
+    AlertDialog(
+        onDismissRequest = { vm.closeRoomAction() },
+        title = { Text(room, maxLines = 2) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(when (tier) {
+                        Relevance.ME -> "지금: 📌 놓치기 싫은 방 — 나를 부르지 않아도 늘 내용까지 요약해요."
+                        Relevance.OTHER -> "지금: 건수만 — 나를 불러도 요약하지 않아요."
+                        else -> "지금: 저절로 — 나를 부르거나 멘션한 말만 요약하고, 나머지는 건수만 적어요."
+                    }, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (tier != Relevance.ME) Button(onClick = { vm.pinRoom(pkg, room); vm.closeRoomAction() }, modifier = Modifier.fillMaxWidth()) {
+                    Text("📌 놓치기 싫은 방으로")
+                }
+                if (tier != Relevance.OTHER) OutlinedButton(onClick = { vm.muteRoom(pkg, room, true); vm.closeRoomAction() }, modifier = Modifier.fillMaxWidth()) {
+                    Text("이 방은 건수만 보기")
+                }
+                if (tier != Relevance.AUTO) OutlinedButton(onClick = { vm.muteRoom(pkg, room, false); vm.closeRoomAction() }, modifier = Modifier.fillMaxWidth()) {
+                    Text("저절로 돌리기")
+                }
+                Text("다음 요약부터 적용돼요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        confirmButton = { TextButton(onClick = { vm.closeRoomAction() }) { Text("닫기") } },
+    )
 }
 
 // ───────────────────────── 📌 놓치기 싫은 방 (설정 → 세부 화면) ─────────────────────────

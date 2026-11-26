@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -108,8 +110,20 @@ fun MenuTitle(title: String, modifier: Modifier = Modifier, style: androidx.comp
 }
 
 
+/** '그 밖의 방' 줄의 조각 '방 이름 12건' → 방 이름. '외 3곳 40건'·'그 밖 12곳 140건' 같은 셈 조각은 null (순수 — 시험) */
+internal fun roomOfCount(piece: String): String? {
+    val m = Regex("""^(.+?) (\d+)건$""").find(piece.trim()) ?: return null
+    val name = m.groupValues[1].trim()
+    return name.takeUnless { Regex("""(^외 |\d+곳$)""").containsMatchIn(it) }
+}
+
+/**
+ * [onRoom]: 방·사람 이름을 눌렀을 때(2026-11-26 틀린 것 바로잡기) — 이름 배지와 '그 밖의 방' 줄의 방 이름을 누르면
+ * 그 방을 📌 놓치기 싫은 방으로 올리거나 건수만 보게 내릴 수 있게. null 이면 누를 수 없음
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun SummaryText(text: String, modifier: Modifier = Modifier, accent: Color = MaterialTheme.colorScheme.primary) {
+fun SummaryText(text: String, modifier: Modifier = Modifier, accent: Color = MaterialTheme.colorScheme.primary, onRoom: ((String) -> Unit)? = null) {
     val base = LocalContentColor.current
     val muted = base.copy(alpha = 0.68f)
     val blocks = remember(text) {
@@ -117,6 +131,7 @@ fun SummaryText(text: String, modifier: Modifier = Modifier, accent: Color = Mat
     }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(Space.l)) {
         blocks.forEach { lines ->
+            val section = lines.firstOrNull { isSectionHead(it) }.orEmpty()
             Column(verticalArrangement = Arrangement.spacedBy(Space.s)) {
                 attachDetails(lines).forEach { (line, details) ->
                     when {
@@ -137,6 +152,9 @@ fun SummaryText(text: String, modifier: Modifier = Modifier, accent: Color = Mat
                         line.startsWith("-") -> {
                             val (ask, clean) = splitAsk(line)
                             val l = splitLine(clean)
+                            // 방 이름만 늘어놓은 줄('그 밖의 방: A 3건, B 2건', 하루 정리의 내가 속한 방·그 밖의 방): 이름마다 누를 수 있게
+                            val namesLine = onRoom != null && (l.who.startsWith("그 밖의 방") ||
+                                (l.who.isEmpty() && ("그 밖의 방" in section || "내가 속한 방" in section)))
                             Row(verticalAlignment = Alignment.Top) {
                                 // 🙋 답할 것은 점 대신 답장 화살표
                                 if (ask) Icon(painterResource(R.drawable.ic_line_reply), contentDescription = "답할 것", tint = accent,
@@ -149,12 +167,23 @@ fun SummaryText(text: String, modifier: Modifier = Modifier, accent: Color = Mat
                                         if (l.who.isNotEmpty()) Text(Emoji.strip(l.who), style = MaterialTheme.typography.labelLarge, maxLines = 1,
                                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                                             modifier = Modifier.weight(1f, fill = false)
+                                                .then(if (onRoom != null && !namesLine) Modifier.clickable { onRoom(Emoji.strip(l.who).trim()) } else Modifier)
                                                 .background(base.copy(alpha = 0.12f), MaterialTheme.shapes.extraSmall)
                                                 .padding(horizontal = Space.s, vertical = 2.dp))
                                         if (l.meta.isNotEmpty()) Text(l.meta, style = MaterialTheme.typography.labelMedium, color = muted,
                                             modifier = if (l.who.isEmpty()) Modifier else Modifier.padding(start = Space.s))
                                     }
-                                    Text(Emoji.strip(l.body), style = MaterialTheme.typography.bodyMedium)
+                                    if (namesLine) FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.s), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        l.body.split(", ").forEach { piece ->
+                                            val room = roomOfCount(piece)
+                                            Text(Emoji.strip(piece), style = MaterialTheme.typography.bodyMedium,
+                                                color = if (room != null) base else muted,
+                                                modifier = if (room != null) Modifier.clickable { onRoom!!(room) }
+                                                    .background(base.copy(alpha = 0.07f), MaterialTheme.shapes.extraSmall).padding(horizontal = Space.s, vertical = 2.dp)
+                                                else Modifier)
+                                        }
+                                    }
+                                    else Text(Emoji.strip(l.body), style = MaterialTheme.typography.bodyMedium)
                                     // 🗓 구간별 요약(3층): 눌러서 펼침
                                     if (details.isNotEmpty()) {
                                         var open by rememberSaveable(line) { mutableStateOf(false) }
