@@ -53,6 +53,7 @@ class BriefingService : Service() {
         val draftOnly = intent?.getBooleanExtra(EXTRA_DRAFT_ONLY, false) == true
         val daily = intent?.getBooleanExtra(EXTRA_DAILY, false) == true
         val pre = intent?.getBooleanExtra(EXTRA_PRE, false) == true
+        val learn = intent?.getBooleanExtra(EXTRA_LEARN, false) == true
         val title = if (pre) "⚡ 미리 요약 중" else if (prepare) "요약 미리 준비 중" else "쌤톡스가 알림을 정리하는 중"
         ServiceCompat.startForeground(
             this, Notifications.ID_PROGRESS, Notifications.progress(this, "브리핑 준비 중…", title = title, quiet = prepare || topUp || draftOnly || pre),
@@ -83,6 +84,28 @@ class BriefingService : Service() {
             .apply { acquire(30 * 60 * 1000L) }
 
         scope.launch {
+            if (learn) {
+                // 🧭 밤에 폰을 안 쓸 때: 지난 하루 대화로 '나에게 한 말' 가중치를 다듬음(결과 알림 없음). 화면이 켜지거나 폰이 따뜻해지면 멈춤
+                try {
+                    val ctx = this@BriefingService
+                    val s = Summarizer.get(ctx)
+                    val load = PhoneLoad.state(ctx)
+                    val ask: (suspend (String) -> String)? = if (s.hasModel() && PhoneLoad.skipAiReason(load) == null) { p -> s.complete(p, {}, 8) } else null
+                    val n = ToMe.learn(ctx, System.currentTimeMillis(), ask, maxAi = if (load.charging) ToMe.MAX_AI_CHARGING else ToMe.MAX_AI,
+                        stop = { PreSummary.keepGoingBlock(PhoneLoad.state(ctx), PreSummary.screenOn(ctx)) != null })
+                    AutoLog.add(ctx, ToMe.LABEL, if (n > 0) "${n}건으로 다듬음" else "바꿀 것 없음")
+                } catch (t: Throwable) {
+                    AutoLog.add(this@BriefingService, ToMe.LABEL, "실패 · ${t.javaClass.simpleName}")
+                } finally {
+                    runCatching { Summarizer.get(this@BriefingService).release() }
+                    if (wake.isHeld) wake.release()
+                    running = false; active = false; preparing = false
+                    val next = queued; queued = null
+                    ServiceCompat.stopForeground(this@BriefingService, ServiceCompat.STOP_FOREGROUND_REMOVE)
+                    if (next != null) onStartCommand(next, 0, startId) else stopSelf()
+                }
+                return@launch
+            }
             if (pre) {
                 // ⚡ 미리 요약: 결과 알림 없이 방마다 정리해 저장만. 화면이 켜지거나 진짜 요약이 오면 멈춤
                 PreSummary.running = true
@@ -206,6 +229,7 @@ class BriefingService : Service() {
         const val EXTRA_DRAFT_ONLY = "draft_only"
         const val EXTRA_DAILY = "daily"
         const val EXTRA_PRE = "pre"
+        const val EXTRA_LEARN = "learn"
         /** 미리 요약 중에 온 진짜 요약(미리 요약이 멈추면 이어서) */
         @Volatile private var queued: Intent? = null
         /** 🗓 하루 정리 시각에 다른 요약이 돌고 있었으면 그 요약 끝에 이어서 */

@@ -78,4 +78,12 @@ class ToMeTest {
         val p = ToMe.askPrompt("연구회", "유쌤", listOf("박: 점심 뭐 먹죠"), "김", "발표 자료 금요일까지 될까요?")
         assertTrue(p, "'유쌤'에게 한 말이야" in p && "▶ 김: 발표 자료" in p)
     }
+
+    @Test fun 나를_부르는_꼴_추천() {
+        val texts = listOf("승현쌤 발표 자료 금요일까지 될까요?", "승현쌤 내일 회의 몇 시죠", "김쌤은 어떻게 생각하세요?", "유 부장님 결재 부탁드려요", "유 부장님 확인 부탁드립니다")
+        val rec = ToMe.nicknames(texts, listOf("유승현"))
+        assertTrue(rec.toString(), "승현쌤" in rec && "유부장님" in rec)
+        assertFalse(rec.toString(), "김쌤" in rec)                                   // 한 번뿐인 것은 추천하지 않음
+        assertTrue(ToMe.nicknames(texts, listOf("승현쌤", "유부장님")).isEmpty())     // 이미 넣은 것은 뺌
+    }
 }

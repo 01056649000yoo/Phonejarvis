@@ -66,6 +66,26 @@ object BriefingScheduler {
         am.setInexactRepeating(AlarmManager.RTC_WAKEUP, first, AlarmManager.INTERVAL_DAY, pi)
     }
 
+    const val ACTION_LEARN = "com.jarvis.phone.ACTION_LEARN"
+    /**
+     * 🧭 폰을 안 쓰고 있으면(화면 꺼짐 · 뜨겁지 않음 · 충전 중이거나 배터리 30% 이상 · 다른 요약이 안 돎) 다듬기를 시작.
+     * 화면이 켜져 있으면 한 시간 뒤 다시 살핌 — 아침 6시가 넘으면 그날은 그만(하루 정리 때의 예비가 있음)
+     */
+    fun learnIfIdle(ctx: Context) {
+        if (!Summarizer.get(ctx).hasModel() || MyNames.all(ctx).isEmpty()) return
+        val load = PhoneLoad.state(ctx)
+        val block = PreSummary.keepGoingBlock(load, PreSummary.screenOn(ctx)) ?: if (BriefingService.active) "다른 요약 중" else null
+        if (block == null) {
+            startService(ctx, Intent(ctx, BriefingService::class.java).putExtra(BriefingService.EXTRA_LABEL, ToMe.LABEL)
+                .putExtra(BriefingService.EXTRA_LEARN, true), ToMe.LABEL)
+            return
+        }
+        if (Calendar.getInstance().get(Calendar.HOUR_OF_DAY) >= 6) return
+        val pi = PendingIntent.getBroadcast(ctx, 41, Intent(ctx, BriefingReceiver::class.java).setAction(ACTION_LEARN),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        ctx.getSystemService(AlarmManager::class.java).set(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + 3600_000L, pi)
+    }
+
     private fun set(am: AlarmManager, at: Long, pi: PendingIntent) = setAlarm(am, at, pi)
     /** 정확한 알람(권한이 있으면) — 울릴 때 요약 서비스를 백그라운드에서 시작할 수 있게 */
     fun setAlarm(am: AlarmManager, at: Long, pi: PendingIntent) {
@@ -154,7 +174,10 @@ class BriefingReceiver : BroadcastReceiver() {
             BriefingScheduler.ACTION_BACKUP -> {
                 val pending = goAsync()
                 AppScope.io.launch { try { runCatching { Backup.autoBackup(ctx, minGapHours = 6) } } finally { pending.finish() } }
+                // 🧭 같은 새벽 알람에: 폰을 안 쓰고 있으면 '나에게 한 말' 가중치 다듬기(2026-11-26 선생님: 폰 쓰지 않을 때 자동으로)
+                BriefingScheduler.learnIfIdle(ctx)
             }
+            BriefingScheduler.ACTION_LEARN -> BriefingScheduler.learnIfIdle(ctx)
             BriefingScheduler.ACTION_PREPARE -> {
                 if (kind != null) BriefingScheduler.startNow(ctx, BriefingScheduler.labelOf(kind, minute), prepare = true, auto = true)
             }

@@ -28,7 +28,9 @@ object ToMe {
     const val W_MIN = 0.0; const val W_MAX = 1.3
     const val S_MIN = -0.5; const val S_MAX = 0.8          // 보낸 사람 점수
     const val SMALL_ROOM = 4           // 말하는 사람이 이만큼 이하면 작은 방
-    const val MAX_AI = 8               // 하루에 AI 에게 묻는 말 수
+    const val MAX_AI = 8               // 하루에 AI 에게 묻는 말 수(충전 중이 아닐 때)
+    const val MAX_AI_CHARGING = 20     // 충전 중이면 더 많이 물어 더 빨리 익힘
+    const val LABEL = "🧭 나에게 한 말 다듬기"
     const val MAX_SENDERS = 200
 
     data class Weights(val w: Map<String, Double> = DEFAULT, val senders: Map<String, Double> = emptyMap(), val trained: Int = 0) {
@@ -109,7 +111,7 @@ object ToMe {
     /** 설정 화면에 보일 한 줄: 몇 번 다듬었고 누구의 말을 더 잘 보는지 */
     fun status(ctx: Context): String {
         val wt = load(ctx)
-        if (wt.trained == 0) return "아직 다듬기 전이에요. 하루 정리 때마다 그날 대화를 보고 저절로 다듬어요."
+        if (wt.trained == 0) return "아직 다듬기 전이에요. 밤에 폰을 쓰지 않을 때 지난 하루 대화를 보고 저절로 다듬어요."
         val close = wt.senders.filterValues { it >= 0.2 }.entries.sortedByDescending { it.value }.take(4).map { it.key }
         return "지금까지 ${wt.trained}건으로 다듬었어요." + if (close.isNotEmpty()) " 자주 대화하는 사람: ${close.joinToString(", ")}" else ""
     }
@@ -139,41 +141,66 @@ object ToMe {
      * 여럿이 떠드는 방에서는 바로 앞 말이 꼭 나에게 한 말은 아니어서, 묻거나 부탁한 말이거나 작은 방일 때만
      */
     const val BEFORE_MS = 10 * 60_000L
-    fun answered(c: BriefingComposer.Conversation, saidAt: Long, sc: Scorer): List<Example> {
+    fun answered(c: BriefingComposer.Conversation, saidAt: Long, sc: Scorer): List<Example> =
+        answeredItems(c, saidAt, sc).map { n -> Example(sc.features(c, n), sc.sender(c, n), true) }
+
+    /** 내가 답한 말(원문) */
+    fun answeredItems(c: BriefingComposer.Conversation, saidAt: Long, sc: Scorer): List<NotiItem> {
         if (saidAt <= 0) return emptyList()
         return c.items.filter { it.time < saidAt && saidAt - it.time <= BEFORE_MS && !BriefingComposer.isFiller(it.text) }
             .sortedBy { it.time }.takeLast(2)
-            .map { it to sc.features(c, it) }.filter { (_, f) -> ASK in f || SMALL in f }
-            .map { (n, f) -> Example(f, sc.sender(c, n), true) }
+            .filter { n -> sc.features(c, n).let { f -> ASK in f || SMALL in f } }
     }
+
+    private val CALLING = Regex("([가-힣]{1,4}) ?(쌤|샘|선생님|부장님)(?![가-힣])")
+    /**
+     * 🙋 호칭 추천(순수 — 시험): 내가 답한 말들에서 사람들이 나를 부른 꼴('승현쌤', '유 부장님')을 찾아, 두 번 넘게 나온 것만.
+     * 이미 넣은 이름이 들어 있는 꼴은 뺌(이미 알아봄). 추천일 뿐 — 설정 → 나를 부르는 말에 '추천'으로 보이고 눌러야 들어감
+     */
+    fun nicknames(texts: List<String>, mine: Collection<String>): List<String> =
+        texts.flatMap { t -> CALLING.findAll(t).map { m -> (m.groupValues[1] + m.groupValues[2]) }.toList().distinct() }
+            .filter { n -> mine.none { it in n || n in it } }
+            .groupingBy { it }.eachCount().filterValues { it >= 2 }.keys.toList()
 
     /**
      * 하루 정리 때 한 번: 오늘 온 단톡방 말로 가중치를 다듬는다. 돌려주는 값은 다듬은 건수(0이면 바뀐 것 없음).
      * [ask] 가 null(폰이 뜨겁거나 모델 없음)이면 ①만.
      */
-    suspend fun learn(ctx: Context, now: Long, ask: (suspend (String) -> String)?): Int {
+    /**
+     * [minGapHours]: 지난 다듬기 뒤 이만큼 안 지났으면 안 함(밤에 폰을 안 쓸 때 도는 것이 기본 20시간, 하루 정리 때의 예비는 44시간 —
+     * 이틀 밤 내리 못 돌았을 때만). [maxAi]: AI 에게 묻는 말 수. [stop]: 멈출 때가 됐나(화면이 켜짐·폰이 따뜻해짐) — AI 에게 묻기 전마다 봄
+     */
+    suspend fun learn(ctx: Context, now: Long, ask: (suspend (String) -> String)?, minGapHours: Int = 20, maxAi: Int = MAX_AI,
+                      stop: () -> Boolean = { false }): Int {
         val mine = MyNames.all(ctx)
         if (mine.isEmpty()) return 0
-        val day = SummarySchedule.startOfDay(now)
         val meta = p(ctx)
-        if (meta.getLong("day", 0L) == day) return 0          // 하루에 한 번만
+        if (now - meta.getLong("day", 0L) < minGapHours * 3600_000L) return 0
         val rules = AppFilter.rules(ctx)
-        val items = NotificationDb.get(ctx).since(day).filter { rules.allows(it) && BriefingComposer.isPerson(it) && it.room.isNotEmpty() }
+        // 지난 24시간의 단톡방 말
+        val items = NotificationDb.get(ctx).since(now - 24 * 3600_000L).filter { rules.allows(it) && BriefingComposer.isPerson(it) && it.room.isNotEmpty() }
         val said = ReplyLog.all(ctx); val texts = ReplyLog.texts(ctx)
         var wt = load(ctx)
         val sc = Scorer(wt, mine, Students.allTerms(Students.names(ctx)), { said[it] ?: 0L }, { texts[it].orEmpty() })
         val convs = BriefingComposer.conversations(items)
         val examples = mutableListOf<Example>()
         // ① 내가 답한 말
-        convs.forEach { c -> examples += answered(c, said[c.room] ?: 0L, sc) }
+        val answeredTexts = mutableListOf<String>()
+        convs.forEach { c ->
+            val got = answeredItems(c, said[c.room] ?: 0L, sc)
+            got.forEach { n -> examples += Example(sc.features(c, n), sc.sender(c, n), true); answeredTexts += n.text }
+        }
+        // 🙋 사람들이 나를 부르는 꼴을 추천으로(설정 → 나를 부르는 말)
+        runCatching { nicknames(answeredTexts, mine).forEach { MyNames.noteMe(ctx, it) } }
         // ② 애매한 말을 AI 에게: 이름 없이 잡은 말(맞게 잡았나)과 아깝게 놓친 말(놓친 것 아닌가)을 반반
         if (ask != null) {
             data class Cand(val c: BriefingComposer.Conversation, val n: NotiItem, val f: Set<String>, val s: Double)
             val cands = convs.flatMap { c -> c.items.filterNot { BriefingComposer.isFiller(it.text) }.map { n -> Cand(c, n, sc.features(c, n), sc.score(c, n)) } }
                 .filter { MENTION !in it.f && NAME !in it.f }
-            val caught = cands.filter { it.s >= THRESHOLD }.sortedBy { it.s }.take(MAX_AI / 2)
-            val near = cands.filter { it.s < THRESHOLD && it.s >= 0.4 }.sortedByDescending { it.s }.take(MAX_AI - caught.size)
+            val caught = cands.filter { it.s >= THRESHOLD }.sortedBy { it.s }.take(maxAi / 2)
+            val near = cands.filter { it.s < THRESHOLD && it.s >= 0.4 }.sortedByDescending { it.s }.take(maxAi - caught.size)
             for (x in caught + near) {
+                if (stop()) break
                 val before = x.c.items.filter { it.time < x.n.time }.sortedBy { it.time }.takeLast(3)
                     .map { "${sc.sender(x.c, it)}: ${it.text.replace('\n', ' ').take(80)}" }
                 val y = runCatching { parseYesNo(ask(askPrompt(x.c.room, mine.first(), before, sc.sender(x.c, x.n), x.n.text))) }.getOrNull() ?: continue
@@ -186,7 +213,7 @@ object ToMe {
             if (next != wt) { wt = next; changed++ }
         }
         if (changed > 0) save(ctx, wt.copy(trained = wt.trained + changed))
-        p(ctx).edit().putLong("day", day).apply()
+        p(ctx).edit().putLong("day", now).apply()
         return changed
     }
 }

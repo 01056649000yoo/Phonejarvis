@@ -89,7 +89,7 @@ object PreSummary {
         !l.charging && (l.powerSave || l.battery < MIN_BATTERY) -> "배터리를 아끼려고 멈춤"
         else -> null
     }
-    private fun screenOn(ctx: Context) = runCatching { ctx.getSystemService(PowerManager::class.java).isInteractive }.getOrDefault(true)
+    fun screenOn(ctx: Context) = runCatching { ctx.getSystemService(PowerManager::class.java).isInteractive }.getOrDefault(true)
 
     fun check(ctx: Context): Check {
         val db = NotificationDb.get(ctx)
