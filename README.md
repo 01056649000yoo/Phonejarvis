@@ -9,7 +9,7 @@
 ## 폰에서 앱(APK) 받기
 항상 최신 버전을 받는 고정 링크 (폰 브라우저에서 북마크·홈 화면에 추가해 두면 편해요):
 
-**https://github.com/01056649000yoo/Phonejarvis/releases/latest/download/SsamTox.apk**
+**https://github.com/yoossam/Phonejarvis/releases/latest/download/SsamTox.apk**
 
 받은 뒤 **업데이트**로 덮어 설치하면 모델과 기록은 그대로 남아요.
 

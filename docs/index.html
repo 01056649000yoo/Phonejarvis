@@ -380,7 +380,7 @@
         <h1>단톡방 수십 개,<br><em>한 장으로 읽고 끝</em></h1>
         <p class="lead">동학년 단톡, 학부모 카톡, 문자, 밴드, SNS, 업무 메일. 방마다 열어 읽던 알림을 쌤톡스가 모아 두었다가 정한 시각에 폰 안의 AI가 <b>한 장으로 요약</b>해 드려요. 누가 무엇을 묻고 부탁했는지는 맨 위에, 잡담은 짧게, 광고는 건수만. 알림 읽는 시간은 줄이고, 알림 내용은 <b>폰 밖으로 한 글자도 나가지 않아요</b>.</p>
         <div class="cta">
-          <a class="btn primary" id="heroBtn" href="https://github.com/01056649000yoo/Phonejarvis/releases/latest/download/SsamTox.apk">
+          <a class="btn primary" id="heroBtn" href="https://github.com/yoossam/Phonejarvis/releases/latest/download/SsamTox.apk">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0l-5-5m5 5l5-5M5 21h14"/></svg>
             안드로이드 앱 받기
           </a>
@@ -586,7 +586,7 @@
           <h2>설치하기</h2>
           <p class="sub">이 링크는 늘 최신 버전이에요. 업데이트할 때도 같은 링크로 받아 덮어 설치하면 설정과 알림은 그대로예요.</p>
           <div class="verbox" id="verBox" aria-live="polite"><b id="verBoxNum">최신 버전</b><span id="verBoxDate">버전 정보를 불러오는 중이에요…</span><span class="note" id="verBoxNote" hidden></span></div>
-          <a class="btn primary" href="https://github.com/01056649000yoo/Phonejarvis/releases/latest/download/SsamTox.apk">최신 APK 받기 · 무료</a>
+          <a class="btn primary" href="https://github.com/yoossam/Phonejarvis/releases/latest/download/SsamTox.apk">최신 APK 받기 · 무료</a>
           <a class="btn ghost" href="install.html" style="margin-left:6px;color:var(--band-fg);border-color:var(--band-muted)">설치 방법 자세히</a>
           <ol>
             <li>다운로드가 끝나면 알림창에서 <b>SsamTox.apk</b>를 눌러요</li>
@@ -664,7 +664,7 @@
   </div>
 </footer>
 
-<div class="dock" id="dock"><a class="btn primary" href="https://github.com/01056649000yoo/Phonejarvis/releases/latest/download/SsamTox.apk">안드로이드 앱 받기 · 무료</a></div>
+<div class="dock" id="dock"><a class="btn primary" href="https://github.com/yoossam/Phonejarvis/releases/latest/download/SsamTox.apk">안드로이드 앱 받기 · 무료</a></div>
 
 <script>
   // 앱 안 브라우저면 안내 띠를 보여 주고, 다운로드 버튼도 크롬으로 넘김
@@ -731,7 +731,7 @@
       return k.getUTCFullYear() + "년 " + (k.getUTCMonth() + 1) + "월 " + k.getUTCDate() + "일(" + "일월화수목금토"[k.getUTCDay()] + ") " +
         (h < 12 ? "오전 " : "오후 ") + (h % 12 || 12) + ":" + String(k.getUTCMinutes()).padStart(2, "0");
     };
-    fetch("https://api.github.com/repos/01056649000yoo/Phonejarvis/releases/latest", { headers: { Accept: "application/vnd.github+json" } })
+    fetch("https://api.github.com/repos/yoossam/Phonejarvis/releases/latest", { headers: { Accept: "application/vnd.github+json" }, cache: "no-store" })   // 늘 새로 읽음 — 브라우저가 예전 답을 기억해 지난 버전을 보여 주던 것
       .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
       .then(function (rel) {
         var m = /v(\d+(?:\.\d+)+)/.exec(rel.name || "");
@@ -753,7 +753,7 @@
   })();
   try {
     new QRCode(document.getElementById("qr"), {
-      text: "https://github.com/01056649000yoo/Phonejarvis/releases/latest/download/SsamTox.apk",
+      text: "https://github.com/yoossam/Phonejarvis/releases/latest/download/SsamTox.apk",
       width: 180, height: 180, colorDark: "#1C1B1A", colorLight: "#F7F1E8",
     });
   } catch (e) { document.getElementById("qr").textContent = "QR을 불러오지 못했어요"; }
