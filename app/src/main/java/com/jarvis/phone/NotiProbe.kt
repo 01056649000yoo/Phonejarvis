@@ -14,7 +14,7 @@ object NotiProbe {
     private const val SEP = "\n────────\n"
     private fun p(ctx: Context) = ctx.getSharedPreferences("probe", Context.MODE_PRIVATE)
 
-    fun record(ctx: Context, ex: Bundle, style: NotificationCompat.MessagingStyle?, senders: List<String>, room: String) {
+    fun record(ctx: Context, ex: Bundle, style: NotificationCompat.MessagingStyle?, senders: List<String>, room: String, conv: String = "") {
         fun cs(k: String) = runCatching { ex.getCharSequence(k)?.toString() }.getOrNull()?.take(60)
         val entry = buildString {
             append("시각 ${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.KOREA).format(System.currentTimeMillis())}\n")
@@ -23,6 +23,7 @@ object NotiProbe {
             append("subText: ${cs(Notification.EXTRA_SUB_TEXT)}\n")
             append("conversationTitle: ${cs(Notification.EXTRA_CONVERSATION_TITLE)}\n")
             append("hiddenConversationTitle: ${cs("android.hiddenConversationTitle")}\n")
+            append("대화 표시(shortcut·tag·id): $conv\n")
             append("isGroupConversation: ${ex.getBoolean("android.isGroupConversation", false)} / style: ${style?.isGroupConversation}\n")
             append("style.conversationTitle: ${style?.conversationTitle?.toString()?.take(60)}\n")
             append("summaryText: ${cs(Notification.EXTRA_SUMMARY_TEXT)} · infoText: ${cs(Notification.EXTRA_INFO_TEXT)}\n")

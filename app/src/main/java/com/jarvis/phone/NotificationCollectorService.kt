@@ -40,9 +40,10 @@ class NotificationCollectorService : NotificationListenerService() {
         // 💬 메시지 목록이 든 알림(카톡·문자 등): 한 번에 여러 메시지가 오면 마지막 것만 남던 것(2026-11-24 점검) → 목록의 메시지를 하나씩
         val style = runCatching { androidx.core.app.NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(n) }.getOrNull()
         val burst = runCatching { style?.let { messagesOf(it, sbn.postTime) } }.getOrNull().orEmpty()
-        val room = roomOf(sbn, style, burst, title)
+        val room = roomOf(sbn, style, burst, title, learn = true)
         // 🔧 카톡 알림 구조 기록(메시지 내용 없이) — 오픈채팅 방 이름이 어디 들어오는지 설정 → 시스템에서 보려고
-        if (sbn.packageName == "com.kakao.talk") runCatching { NotiProbe.record(this, ex, style, burst.map { it.who }, room) }
+        if (sbn.packageName == "com.kakao.talk") runCatching { NotiProbe.record(this, ex, style, burst.map { it.who }, room,
+            "${n.shortcutId ?: "없음"} · ${sbn.tag ?: "없음"} · ${sbn.id}") }
         // ✔ 내가 이 방에 답한 시각(알림에 딸려 온 내 말) — 하루 정리에서 답한 🙋 물음을 내리려고
         runCatching {
             val me = style?.user?.name?.toString().orEmpty()
@@ -139,8 +140,10 @@ class NotificationCollectorService : NotificationListenerService() {
      * 이 알림의 방 이름(없으면 빈 값 — 1:1·일반 앱). 모을 때와 상태바를 정리할 때(sweep) 같은 규칙으로 —
      * 예전엔 sweep 이 방 이름을 따로(더 단순하게) 구해, 오픈채팅처럼 제목에서 방을 알아낸 '끈 방'을 켠 방으로 보고 모으지도 않은 알림을 지웠다.
      */
-    private fun roomOf(sbn: StatusBarNotification, style: androidx.core.app.NotificationCompat.MessagingStyle?, burst: List<Msg>, title: String): String {
+    private fun roomOf(sbn: StatusBarNotification, style: androidx.core.app.NotificationCompat.MessagingStyle?, burst: List<Msg>, title: String,
+                       /** 모을 때만 true: 이 대화에서 본 보낸 사람을 기억함(ConvRooms) */ learn: Boolean = false): String {
         val ex = sbn.notification.extras
+        val groupFlag = ex.getBoolean("android.isGroupConversation", false) || style?.isGroupConversation == true
         return (ex.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)
             ?: style?.conversationTitle
             ?: (if (sbn.packageName == "com.kakao.talk") ex.getCharSequence(Notification.EXTRA_SUB_TEXT) else null)
@@ -150,7 +153,14 @@ class NotificationCollectorService : NotificationListenerService() {
             ?.toString()?.trim().orEmpty().take(100)
             // 방 이름은 못 찾았지만 알림이 '여럿이 있는 대화'라고 알려 주면 1:1 로 보지 않음(2026-11-26 선생님 캡처: 같은 단톡방의 말이
             // 사람마다 1:1 연락처럼 '지인 연락'에 올라옴). 이름을 모르니 한데 묶어 건수만 — 나를 부른 말은 그래도 찾음
-            .ifEmpty { if (ex.getBoolean("android.isGroupConversation", false) || style?.isGroupConversation == true) UNNAMED_GROUP else "" }
+            // 💬 이름 없는 단톡방: 같은 대화(대화 바로가기 id)에서 보낸 사람이 둘 넘게 나오면 단톡방으로 — 방 이름은 '김희엽·최성우 단톡방'
+            .ifEmpty {
+                val conv = sbn.notification.shortcutId?.takeIf { it.isNotBlank() }?.let { "${sbn.packageName}|$it" }
+                if (conv != null && AppAdvisor.isMessaging("", sbn.packageName))
+                    runCatching { ConvRooms.roomFor(this, conv, burst.map { it.who }.ifEmpty { listOf(title) }, groupFlag, learn) }.getOrDefault("")
+                else ""
+            }
+            .ifEmpty { if (groupFlag) UNNAMED_GROUP else "" }
     }
 
     /** 묶음 안에 보이는 알림이 하나도 없으면 묶음 요약("새 메시지 N개")도 지움 */
