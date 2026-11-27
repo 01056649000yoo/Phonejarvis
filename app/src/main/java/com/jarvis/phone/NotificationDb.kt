@@ -35,7 +35,7 @@ data class Briefing(
 
 /** 수집한 알림을 휴대폰 안에만 저장하는 SQLite DB (7일 보관). */
 class NotificationDb private constructor(ctx: Context) :
-    SQLiteOpenHelper(ctx, "jarvis.db", null, 8) {
+    SQLiteOpenHelper(ctx, "jarvis.db", null, 9) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -76,6 +76,9 @@ class NotificationDb private constructor(ctx: Context) :
             db.execSQL("ALTER TABLE briefing ADD COLUMN upto_id INTEGER NOT NULL DEFAULT 0")
             createRoomDayTable(db)
         }
+        // v9: '여럿이 있는 대화' 표시만 보고 단톡방으로 잘못 넣은 1:1 메시지를 되돌림(2026-11-27 — 지인 연락이 '류성하 외 단톡방'·'단톡방(이름 미확인)'으로)
+        if (oldV < 9) db.execSQL("UPDATE noti SET room='' WHERE room LIKE ? OR room=?",
+            arrayOf<Any>("%" + ConvRooms.FLAG_ONLY_SUFFIX, NotificationCollectorService.UNNAMED_GROUP))
     }
 
     /**

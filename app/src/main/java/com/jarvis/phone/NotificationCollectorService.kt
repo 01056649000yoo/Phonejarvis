@@ -169,7 +169,8 @@ class NotificationCollectorService : NotificationListenerService() {
                     runCatching { ConvRooms.roomFor(this, conv, burst.map { it.who }.ifEmpty { listOf(title) }, groupFlag, learn) }.getOrDefault("")
                 else ""
             }
-            .ifEmpty { if (groupFlag) UNNAMED_GROUP else "" }
+            // '여럿이 있는 대화' 표시만으로는 단톡방으로 보지 않음 — 카톡은 1:1 에도 붙임(2026-11-27: 지인 1:1 이 사라짐). 이 알림 안에 보낸 사람이 둘 넘을 때만
+            .ifEmpty { if (groupFlag && burst.map { it.who.trim() }.filter { it.isNotEmpty() }.distinct().size >= 2) UNNAMED_GROUP else "" }
     }
 
     /** 묶음 안에 보이는 알림이 하나도 없으면 묶음 요약("새 메시지 N개")도 지움 */

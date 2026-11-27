@@ -21,22 +21,23 @@ object ConvRooms {
     data class Entry(val senders: List<String> = emptyList(), val label: String = "")
 
     /**
-     * 새로 본 보낸 사람을 더하고, 단톡방인지 정함(순수 — 시험).
-     * [groupFlag]: 알림이 '여럿이 있는 대화'라고 알려 줌 — 한 사람만 봤어도 단톡방으로
+     * 새로 본 보낸 사람을 더하고, 단톡방인지 정함(순수 — 시험). 같은 대화에서 **보낸 사람이 둘 이상 나와야** 단톡방.
+     * [groupFlag]('여럿이 있는 대화' 표시)만으로는 정하지 않음(2026-11-27 선생님: 12시 요약에 지인 연락이 사라짐 — 카톡은 1:1 대화에도
+     * 이 표시를 붙여, 지인과의 1:1 이 '류성하 외 단톡방'이 되어 꼭 받을 사람 칸에서 빠지고 그 밖의 방 건수로만 남았다. 한 번 정한 이름은
+     * 그대로 남아 그 사람 연락이 계속 사라졌다)
      */
+    @Suppress("UNUSED_PARAMETER")
     fun note(old: Entry?, senders: List<String>, groupFlag: Boolean = false): Entry {
         val all = ((old?.senders.orEmpty()) + senders.map { it.trim() }.filter { it.isNotEmpty() }).distinct().take(MAX_SENDERS)
-        val label = old?.label.orEmpty().ifEmpty {
-            when {
-                all.size >= 2 -> "${all[0]}·${all[1]} 단톡방"
-                groupFlag && all.isNotEmpty() -> "${all[0]} 외 단톡방"
-                else -> ""
-            }
-        }
+        val label = old?.label.orEmpty().ifEmpty { if (all.size >= 2) "${all[0]}·${all[1]} 단톡방" else "" }
         return Entry(all, label.take(100))
     }
 
-    private fun parse(s: String?): Entry? = s?.split(SEP)?.let { v -> Entry(v.drop(1).filter { it.isNotEmpty() }, v.firstOrNull().orEmpty()) }
+    /** 표시만 보고 잘못 붙였던 이름('OO 외 단톡방'인데 보낸 사람이 한 명)은 지우고 1:1 로 되돌림 */
+    fun repair(e: Entry): Entry = if (e.label.endsWith(FLAG_ONLY_SUFFIX) && e.senders.size < 2) e.copy(label = "") else e
+    const val FLAG_ONLY_SUFFIX = " 외 단톡방"
+
+    private fun parse(s: String?): Entry? = s?.split(SEP)?.let { v -> repair(Entry(v.drop(1).filter { it.isNotEmpty() }, v.firstOrNull().orEmpty())) }
 
     /** 이 대화의 방 이름("" = 1:1). [learn] 이면 보낸 사람을 기억함 */
     fun roomFor(ctx: Context, convId: String, senders: List<String>, groupFlag: Boolean, learn: Boolean): String {

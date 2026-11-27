@@ -17,8 +17,15 @@ class ConvRoomsTest {
         assertEquals(4, e.senders.size)
     }
 
-    @Test fun 알림이_여럿이라고_알려_주면_한_사람만_봐도_단톡방() {
-        assertEquals("김희엽 선생님 외 단톡방", ConvRooms.note(null, listOf("김희엽 선생님"), groupFlag = true).label)
+    // 2026-11-27: 카톡은 1:1 에도 '여럿이 있는 대화' 표시를 붙여 지인 1:1 이 '류성하 외 단톡방'이 되어 사라짐 — 표시만으로는 단톡방이 아님
+    @Test fun 여럿이라는_표시만으로는_단톡방이_아님() {
+        assertEquals("", ConvRooms.note(null, listOf("류성하"), groupFlag = true).label)
         assertEquals("", ConvRooms.note(null, emptyList(), groupFlag = true).label)
+        assertEquals("류성하·최성우 단톡방", ConvRooms.note(ConvRooms.note(null, listOf("류성하"), true), listOf("최성우"), true).label)
+        // 예전에 표시만 보고 붙인 이름은 지우고 1:1 로, 두 사람 넘게 본 단톡방은 그대로
+        assertEquals("", ConvRooms.repair(ConvRooms.Entry(listOf("류성하"), "류성하 외 단톡방")).label)
+        assertEquals("류성하 외 단톡방", ConvRooms.repair(ConvRooms.Entry(listOf("류성하", "최성우"), "류성하 외 단톡방")).label)
+        // 한 번 지운 뒤 같은 사람만 다시 나오면 계속 1:1
+        assertEquals("", ConvRooms.note(ConvRooms.repair(ConvRooms.Entry(listOf("류성하"), "류성하 외 단톡방")), listOf("류성하"), true).label)
     }
 }
