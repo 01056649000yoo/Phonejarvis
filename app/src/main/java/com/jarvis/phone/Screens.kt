@@ -10,8 +10,6 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -1836,10 +1834,13 @@ private fun SetupCard(
  * 손을 떼는 순간처럼 빠르게 시작해 자연스럽게 멈춤. 크기·위치·투명도 모두 같은 느낌으로.
  */
 internal object Motion {
-    val fade = spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)
-    val fadeFast = spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium)
-    val size = spring<IntSize>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)
-    val offset = spring<IntOffset>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)
+    // 2026-11-27 Astryx 움직임: 빠른 125ms · 보통 300ms, 곡선 cubic-bezier(0.24, 1, 0.4, 1)(빨리 출발해 부드럽게 멈춤).
+    // 폰의 '애니메이션 배율·끄기'는 Compose 가 그대로 따른다.
+    private val ease = androidx.compose.animation.core.CubicBezierEasing(0.24f, 1f, 0.4f, 1f)
+    val fade: androidx.compose.animation.core.FiniteAnimationSpec<Float> = tween(300, easing = ease)
+    val fadeFast: androidx.compose.animation.core.FiniteAnimationSpec<Float> = tween(125, easing = ease)
+    val size: androidx.compose.animation.core.FiniteAnimationSpec<IntSize> = tween(300, easing = ease)
+    val offset: androidx.compose.animation.core.FiniteAnimationSpec<IntOffset> = tween(300, easing = ease)
 }
 
 /** 폰에 깔린 앱의 실제 아이콘(없으면 📱). 한 번 그린 것은 다시 읽지 않음 */

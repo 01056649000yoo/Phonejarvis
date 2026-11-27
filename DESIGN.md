@@ -7,6 +7,16 @@
 
 2026-11-25: 색·모서리·제목 굵기를 [Oura 디자인 분석](https://github.com/VoltAgent/awesome-design-md/tree/main/design-md/oura)에서 가져왔다(글꼴은 한글 고딕 유지). 따뜻한 종이 크림 바탕, 회갈색 주색, 흙빛 보조색, 초록 단추는 화면마다 하나(Oura 의 파랑 대신 로고의 칠판 그린).
 
+2026-11-27: 색은 그대로 두고 **디테일(모서리·움직임·강조·상태 표시 원칙)은 [Astryx](https://github.com/meta/astryx)(MIT) 디자인 원칙**에서 가져왔다(선생님 "기존 색감에 디테일은 이 디자인"). 쌤보드와 같은 모서리·움직임 값을 쓴다.
+
+### Astryx 에서 가져온 원칙 (`docs/design/*.md`)
+- 강조는 묶음마다 하나: 한 묶음에 진한 단추는 하나, 나머지는 테두리·글자 단추(color-emphasis).
+- 바탕 위에서 대비를 잰다: 글자색은 놓이는 바탕과 함께 본다(color-emphasis).
+- 상태는 색 + 글자/아이콘 함께: 색만으로 뜻을 전하지 않는다. 늘 떠 있는 표시는 옅은 칠, 급한 것만 진한 칠(system-states).
+- 높이는 조용히: 카드는 테두리 한 줄 **또는** 옅은 그림자 하나, 둘 다 세게 쓰지 않는다(elevation-hierarchy).
+- 간격은 줄 < 묶음 < 칸 순으로 커진다. 카드·테두리를 더하기 전에 간격으로 먼저 나눈다(spatial-hierarchy).
+- 작아 보여도 누르는 자리는 크게(48dp)(control-rhythm). 읽어 들이는 동안 자리가 밀리지 않게(system-states).
+
 ## 색
 - `MaterialTheme.colorScheme` 의 역할로만 쓴다(화면에 `Color(0x…)` 직접 쓰지 않기). 이름 붙은 색은 `Ssam`(Theme.kt).
 - 폰 배경화면 색을 따르는 동적 색은 쓰지 않는다 — 쌤톡스 색을 지킨다.
@@ -26,7 +36,7 @@
 
 ## 간격·모서리
 - 간격은 `Space` 의 4·8·12·16·20(카드 안쪽)·24·32 만. 10·14·6 같은 값은 쓰지 않는다.
-- 모서리는 `MaterialTheme.shapes`(칩 8 · 작은 칸 12 · 카드 24 · 창 24~28, 단추는 알약). `RoundedCornerShape(n.dp)` 를 화면에 쓰지 않는다.
+- 모서리는 `MaterialTheme.shapes` — Astryx 역할 4단계(2026-11-27): 안쪽(칩·표시) `extraSmall` 6 · 부품(입력칸·작은 칸) `small` 10 · 카드 `medium` 12 · 창 `extraLarge` 24, 단추는 알약. 안에 든 것은 바깥보다 덜 둥글게. `RoundedCornerShape(n.dp)` 를 화면에 쓰지 않는다.
 - 카드는 그림자 대신 흰 종이 + 옅은 테두리 한 줄(`Card` — Theme.kt).
 
 ## 요약 글
@@ -37,7 +47,7 @@
 ## 접근성
 - 누르는 칸은 48dp 이상. 칸 제목에는 `semantics { heading() }`, 한 덩어리로 읽어야 하는 줄은 `semantics(mergeDescendants = true)`.
 - 밝은·어두운 모드 둘 다 확인. 글자 대비 4.5:1(본문)·3:1(큰 글·단추).
-- 움직임은 `Motion`(Screens.kt) 하나로 — 폰의 '애니메이션 끄기'를 따르게 Compose 기본 시간 배율을 그대로 둔다.
+- 움직임은 `Motion`(Screens.kt) 하나로 — Astryx 값(빠른 125ms · 보통 300ms, 곡선 cubic-bezier(0.24, 1, 0.4, 1)). 폰의 '애니메이션 끄기'를 따르게 Compose 기본 시간 배율을 그대로 둔다.
 
 ## 고치기 전 점검(android-ux 의 Material 3 점검표에서)
 ```

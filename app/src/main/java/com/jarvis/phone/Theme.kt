@@ -118,10 +118,14 @@ object Space {
 /** 칸·카드 제목: 화면 읽기(TalkBack)가 '제목'으로 읽어 칸 사이를 건너뛸 수 있게 (DESIGN.md 접근성) */
 fun androidx.compose.ui.Modifier.asHeading() = this.then(androidx.compose.ui.Modifier.semantics { heading() })
 
-/** 모서리: 칩 8 · 입력칸 12 · 카드 24 · 창 28 (Oura). 단추는 Material 3 기본대로 알약(완전히 둥글게). */
+/**
+ * 모서리 (2026-11-27 Astryx 모서리 역할 4단계 — DESIGN.md): 안쪽(칩·표시) 6 · 부품(입력칸·작은 칸) 10 · 카드 12 · 창 24.
+ * 역할마다 한 값, 안에 든 것은 바깥보다 덜 둥글게(카드 12 안 칩 6). 단추는 Material 3 기본대로 알약(완전히 둥글게).
+ * 색은 그대로(크림·회갈색·칠판 그린) — 선생님 "기존 색감에 디테일은 Astryx".
+ */
 private val SsamShapes = Shapes(
-    extraSmall = RoundedCornerShape(8.dp), small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(24.dp), large = RoundedCornerShape(24.dp), extraLarge = RoundedCornerShape(28.dp),
+    extraSmall = RoundedCornerShape(6.dp), small = RoundedCornerShape(10.dp),
+    medium = RoundedCornerShape(12.dp), large = RoundedCornerShape(12.dp), extraLarge = RoundedCornerShape(24.dp),
 )
 
 /** 폰 설정의 다크 모드를 따라 밝은(종이 크림)/어두운(먹색) 테마. */
